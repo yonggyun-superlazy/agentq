@@ -79,6 +79,34 @@ describe("AgentQ hook config installer", () => {
       code: "ENOENT"
     });
   });
+
+  it("preserves non-AgentQ hooks that share a nested hook group with AgentQ", async () => {
+    const workspace = await createWorkspace();
+    await applyHookConfigInstall(workspace);
+
+    const claudeSettingsPath = path.join(workspace, ".claude", "settings.json");
+    const claudeSettings = JSON.parse(await readFile(claudeSettingsPath, "utf8")) as {
+      hooks: { Stop: Array<{ hooks: unknown[] }> };
+    };
+    claudeSettings.hooks.Stop[0]?.hooks.push({
+      type: "command",
+      command: "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/self-check-scan.py\"",
+      statusMessage: "Scanning self-check trap phrases",
+      timeout: 5
+    });
+    await writeJson(claudeSettingsPath, claudeSettings);
+
+    await expect(planHookConfigInstall(workspace)).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ relativePath: ".claude/settings.json", action: "unchanged" })
+      ])
+    });
+
+    await applyHookConfigUninstall(workspace);
+
+    await expect(readFile(claudeSettingsPath, "utf8")).resolves.toContain("self-check-scan.py");
+    await expect(readFile(claudeSettingsPath, "utf8")).resolves.not.toContain("agentq hook claude-code stop");
+  });
 });
 
 async function createWorkspace(): Promise<string> {

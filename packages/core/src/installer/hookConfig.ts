@@ -261,11 +261,18 @@ function upsertNestedHookConfig(
 ): JsonObject {
   const root = cloneObject(existing ?? {});
   const hooks = ensureObject(root, "hooks");
+  const adapter = commandAdapterFromAdditions(additions);
 
   for (const addition of additions) {
-    const eventGroups = ensureArray(hooks, addition.event).filter(
-      (group) => !containsAgentQCommand(group, commandAdapterFromAdditions(additions))
-    );
+    const currentEventGroups = ensureArray(hooks, addition.event);
+    if (containsExpectedNestedHookEntries(currentEventGroups, addition.group)) {
+      hooks[addition.event] = currentEventGroups;
+      continue;
+    }
+
+    const eventGroups = currentEventGroups
+      .map((group) => removeNestedAgentQHookGroupEntries(group, adapter))
+      .filter(isDefined);
     eventGroups.push(cloneValue(addition.group));
     hooks[addition.event] = eventGroups;
   }
@@ -292,7 +299,7 @@ function removeNestedHookConfig(
       continue;
     }
 
-    const remaining = value.filter((group) => !containsAgentQCommand(group, adapter));
+    const remaining = value.map((group) => removeNestedAgentQHookGroupEntries(group, adapter)).filter(isDefined);
     if (remaining.length === 0) {
       delete hooks[event];
     } else {
@@ -305,6 +312,39 @@ function removeNestedHookConfig(
   }
 
   return Object.keys(root).length === 0 ? null : root;
+}
+
+function removeNestedAgentQHookGroupEntries(value: JsonValue, adapter: HookAdapterTarget): JsonValue | undefined {
+  if (!containsAgentQCommand(value, adapter)) {
+    return cloneValue(value);
+  }
+
+  const group = asObject(value);
+  if (group === undefined || !Array.isArray(group.hooks)) {
+    return undefined;
+  }
+
+  const remainingHooks = group.hooks.filter((hook) => !containsAgentQCommand(hook, adapter));
+  if (remainingHooks.length === 0) {
+    return undefined;
+  }
+
+  const next = cloneObject(group);
+  next.hooks = cloneValue(remainingHooks);
+  return next;
+}
+
+function containsExpectedNestedHookEntries(groups: readonly JsonValue[], expectedGroup: JsonObject): boolean {
+  if (!Array.isArray(expectedGroup.hooks)) {
+    throw new Error("Expected nested AgentQ hook group hooks to be an array.");
+  }
+
+  return expectedGroup.hooks.every((expectedHook) =>
+    groups.some((group) => {
+      const hooks = asObject(group)?.hooks;
+      return Array.isArray(hooks) && hooks.some((hook) => jsonValueEquals(hook, expectedHook));
+    })
+  );
 }
 
 function upsertFlatHookConfig(existing: JsonObject | undefined, addition: JsonObject): JsonObject {
@@ -456,6 +496,38 @@ function cloneArray(value: JsonValue): JsonValue[] {
 
 function cloneValue<T extends JsonValue>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
+}
+
+function jsonValueEquals(left: JsonValue, right: JsonValue): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => jsonValueEquals(item, right[index] as JsonValue))
+    );
+  }
+
+  const leftObject = asObject(left);
+  const rightObject = asObject(right);
+  if (leftObject !== undefined || rightObject !== undefined) {
+    if (leftObject === undefined || rightObject === undefined) {
+      return false;
+    }
+
+    const leftKeys = Object.keys(leftObject).sort();
+    const rightKeys = Object.keys(rightObject).sort();
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every((key, index) => key === rightKeys[index] && jsonValueEquals(leftObject[key] as JsonValue, rightObject[key] as JsonValue))
+    );
+  }
+
+  return left === right;
 }
 
 function asObject(value: JsonValue | undefined): JsonObject | undefined {
