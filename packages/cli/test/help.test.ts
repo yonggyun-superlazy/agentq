@@ -7,6 +7,7 @@ describe("CLI help", () => {
 
     expect(help).toContain("The handshake between coding agents.");
     expect(help).toContain("done-check");
+    expect(help).toContain("question");
     expect(help).toContain("accept-blocked");
     expect(help).toContain("coordination, not orchestration");
     expect(help).not.toContain("init");

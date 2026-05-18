@@ -71,6 +71,27 @@ describe("blocker routing", () => {
     ).rejects.toBeInstanceOf(NoRecipientError);
   });
 
+  it("routes implicit blockers to broad actors but excludes the sender unless explicit", async () => {
+    const store = await createStore();
+    const sender = await enterActor(store, "codex", "session-1", ["."], ["sender broad scope"]);
+    const receiver = await enterActor(store, "claude-code", "session-2", ["."], ["receiver broad scope"]);
+
+    const plan = await createRoutedBlocker(store, {
+      message: {
+        ...blocker("AQ-1", ["ProjectDD/DDUnity/DD.Game.csproj"], []),
+        createdBy: sender.actorId
+      },
+      now: "2026-05-18T00:00:10.000Z",
+      staleAfterMs: 60_000
+    });
+
+    expect(plan.recipients.map((recipient) => recipient.actorId)).toEqual([receiver.actorId]);
+    expect(plan.recipients[0]?.evidence).toContainEqual({
+      kind: "path",
+      detail: "."
+    });
+  });
+
   it("keeps route path case distinct by default", async () => {
     const store = await createStore();
     await enterActor(store, "codex", "session-1", ["SRC/**"], ["source"]);

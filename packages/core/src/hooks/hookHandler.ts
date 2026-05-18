@@ -10,6 +10,7 @@ import type { AgentKind } from "../domain/types.js";
 import {
   appendActiveWorkTouch,
   planWorkStopContinuation,
+  readActiveWorkState,
   runWorkDoneCheck
 } from "../work/workStack.js";
 
@@ -57,25 +58,33 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   }
 
   if (options.event === "pre-tool") {
-    const activePaths = extractActivePaths(payload, cwd);
-    const binding = await createOrRefreshSessionBinding(store, {
-      adapter: adapterKind(options.adapter),
+    const hookPaths = extractActivePaths(payload, cwd);
+    const adapter = adapterKind(options.adapter);
+    const actorId = await resolveOrCreateHookActorId(store, {
+      adapter,
       sessionId,
-      cwd,
-      activePaths,
+      cwd
+    }, {
+      activePaths: hookPaths,
       responsibilities: [`${options.adapter} active tool scope`],
       summary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
-    await appendActiveWorkTouch(store, {
-      actorId: binding.actorId,
-      paths: activePaths,
+    await appendSpecificActiveWorkTouch(store, actorId, hookPaths, options.now);
+    await refreshHookPresence(store, {
+      adapter,
+      sessionId,
+      cwd,
+      actorId,
+      hookPaths,
+      fallbackResponsibilities: [`${options.adapter} active tool scope`],
+      fallbackSummary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
 
     return {
       code: 0,
-      stdout: `${JSON.stringify(preToolOutput(options.adapter, binding.actorId))}\n`,
+      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId))}\n`,
       stderr: ""
     };
   }
@@ -91,9 +100,16 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     summary: `${options.adapter} stop gate`,
     now: options.now
   });
-  await appendActiveWorkTouch(store, {
+  const stopPaths = extractActivePaths(payload, cwd);
+  await appendSpecificActiveWorkTouch(store, actorId, stopPaths, options.now);
+  await refreshHookPresence(store, {
+    adapter,
+    sessionId,
+    cwd,
     actorId,
-    paths: extractActivePaths(payload, cwd),
+    hookPaths: stopPaths,
+    fallbackResponsibilities: [`${options.adapter} stop gate`],
+    fallbackSummary: `${options.adapter} stop gate`,
     now: options.now
   });
 
@@ -121,6 +137,78 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     stdout: "{}\n",
     stderr: ""
   };
+}
+
+async function appendSpecificActiveWorkTouch(
+  store: WorkspaceStore,
+  actorId: string,
+  paths: readonly string[],
+  now: string
+): Promise<void> {
+  const specificPaths = paths.filter(isSpecificPath);
+  if (specificPaths.length === 0) {
+    return;
+  }
+
+  await appendActiveWorkTouch(store, {
+    actorId,
+    paths: specificPaths,
+    now
+  });
+}
+
+async function refreshHookPresence(
+  store: WorkspaceStore,
+  input: {
+    readonly adapter: AgentKind;
+    readonly sessionId: string;
+    readonly cwd: string;
+    readonly actorId: string;
+    readonly hookPaths: readonly string[];
+    readonly fallbackResponsibilities: readonly string[];
+    readonly fallbackSummary: string;
+    readonly now: string;
+  }
+): Promise<void> {
+  const activeWork = await readActiveWorkState(store, input.actorId);
+  if (activeWork === null && !input.hookPaths.some(isSpecificPath)) {
+    return;
+  }
+
+  const activePaths = effectivePresencePaths(input.hookPaths, activeWork?.touchedPaths ?? []);
+  const summary = activeWork?.title ?? input.fallbackSummary;
+  const responsibilities = activeWork === null ? input.fallbackResponsibilities : [activeWork.title];
+
+  await createOrRefreshSessionBinding(store, {
+    adapter: input.adapter,
+    sessionId: input.sessionId,
+    cwd: input.cwd,
+    activePaths,
+    responsibilities,
+    summary,
+    now: input.now
+  });
+}
+
+function effectivePresencePaths(
+  hookPaths: readonly string[],
+  workPaths: readonly string[]
+): string[] {
+  const specific = [...hookPaths, ...workPaths].filter(isSpecificPath);
+  return uniquePaths(specific.length > 0 ? specific : hookPaths).slice(0, 8);
+}
+
+function uniquePaths(paths: readonly string[]): string[] {
+  const unique = new Set(paths);
+  return unique.size === 0 ? ["."] : [...unique];
+}
+
+function isSpecificPath(pathValue: string): boolean {
+  return normalizePresencePath(pathValue) !== ".";
+}
+
+function normalizePresencePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
 }
 
 async function resolveOrCreateHookActorId(
@@ -160,7 +248,7 @@ async function openHookStore(cwd: string, env: NodeJS.ProcessEnv | undefined): P
 }
 
 function sessionStartOutput(adapter: HookAdapter, actorId: string): object {
-  const context = `AgentQ actor id: ${actorId}. Use agentq inbox --actor ${actorId} for required replies, agentq work status --actor ${actorId} for active work, and agentq done-check --actor ${actorId} before claiming done.`;
+  const context = `AgentQ actor id: ${actorId}. Use this exact id in every AgentQ command: agentq inbox --actor ${actorId}, agentq work status --actor ${actorId}, and agentq done-check --actor ${actorId}.`;
 
   if (adapter === "copilot-cli") {
     return { additionalContext: context };

@@ -7,12 +7,11 @@ import {
   ensureWorkspaceStore,
   resolveHookActorId,
   resolveWorkspaceStore,
-  resolveWrapperActorId,
   type WorkspaceStore
 } from "../src/index.js";
 
 describe("session-to-actor binding", () => {
-  it("creates a session binding and resolves actor id without AGENTQ_ACTOR", async () => {
+  it("creates a session binding and resolves actor id explicitly", async () => {
     const store = await createStore("workspace");
     const binding = await createOrRefreshSessionBinding(store, {
       adapter: "codex",
@@ -31,6 +30,8 @@ describe("session-to-actor binding", () => {
         cwd: store.workspaceRoot
       })
     ).resolves.toBe(binding.actorId);
+    expect(binding.actorId).toContain("@session-1@");
+    expect(binding.actorId).not.toContain("protocol-schema");
   });
 
   it("refreshes an existing session without changing actor id", async () => {
@@ -58,13 +59,6 @@ describe("session-to-actor binding", () => {
     await expect(readFile(store.layout.actorPresencePath(first.actorId), "utf8")).resolves.toContain(
       "docs work updated"
     );
-  });
-
-  it("keeps wrapper env actor id as a fast path only", () => {
-    expect(resolveWrapperActorId({ AGENTQ_ACTOR: "codex@workspace@schema@123456" })).toBe(
-      "codex@workspace@schema@123456"
-    );
-    expect(resolveWrapperActorId({})).toBeNull();
   });
 
   it("rejects a hook cwd from another workspace", async () => {

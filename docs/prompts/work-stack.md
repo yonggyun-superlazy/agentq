@@ -13,6 +13,11 @@ At the start of non-trivial work, identify your actor id from the session contex
 agentq work start --actor <agentq-actor-id> --title "<current frame>" --path <main-path>
 ```
 
+For manual shell checks, prefer the hook-provided actor id. If it is not visible,
+run `agentq actors` and choose the matching actor explicitly. Do not infer
+identity from active actors; every AgentQ command must pass `--actor
+<agentq-actor-id>`.
+
 Keep your visible actor scope specific. If `agentq actors` shows your current
 actor as `.` or with a generic responsibility, refresh presence with the current
 paths and responsibility before relying on routing:
@@ -36,14 +41,27 @@ agentq done-check --actor <agentq-actor-id>
 
 If `done-check` fails, resolve the required inbox item or active work item first. Do not create repo `.agentq/` or `agentq.config.yaml`; AgentQ runtime state is OS-local.
 
-When you hit a blocker caused by another active actor's declared paths or
-responsibility, do not leave it in chat or a wiki queue. Run `agentq actors`,
-choose the relevant active actor, then create a required blocker with observable
+When a design or ownership answer is needed from another active actor, ask a
+required question. The sender stays blocked until the receiver answers with
 evidence:
 
 ```bash
-agentq block --actor <your-actor-id> --to <target-actor-id> --path <path> --contract "<broken contract>" --title "<short blocker>" --observed "<what failed>" --pass "<how the target can close it>"
+agentq question --actor <your-actor-id> --to <target-actor-id> --path <path> --question "<decision needed>" --expect "<what answer must cover>"
+agentq question --actor <your-actor-id> --path <path> --contract "<owned area>" --question "<decision needed>" --expect "<what routed actors must answer>"
 ```
 
-If the target actor is stale, do not wait on it as live work. Record evidence and
-supersede or re-route to an active owner.
+When a build, test, generated artifact, or broken contract is outside your
+active work, do not leave it only in chat or a wiki queue. Run `agentq actors`,
+then create a required blocker with observable evidence. If there is an obvious
+owner, pass `--to`; otherwise omit `--to` and let AgentQ route by active
+path/contract:
+
+```bash
+agentq block --actor <your-actor-id> --to <target-actor-id> --path <path> --contract "<broken contract>" --summary "<short blocker>" --observed "<what failed>" --pass "<how the target can close it>"
+agentq block --actor <your-actor-id> --path <path> --contract "<broken contract>" --summary "<short blocker>" --observed "<what failed>" --pass "<how routed actors can close it>"
+```
+
+If no active owner matches, record that `agentq actors` had no routeable owner in
+your work evidence before reporting the blocker. If the target actor is stale, do
+not wait on it as live work. Record evidence and supersede or re-route to an
+active owner.

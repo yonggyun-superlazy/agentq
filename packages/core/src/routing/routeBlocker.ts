@@ -32,32 +32,39 @@ export interface BlockerRoutePlan {
   readonly recipients: readonly RecipientRoute[];
 }
 
+export type RequiredRequestRouteInput = BlockerRouteInput;
+export type RequiredRequestRoutePlan = BlockerRoutePlan;
+
 export class NoRecipientError extends Error {
   public constructor(messageId: string) {
-    super(`AgentQ cannot route blocker ${messageId}: no active responsible actor matched.`);
+    super(`AgentQ cannot route required request ${messageId}: no active responsible actor matched.`);
   }
 }
 
 export class UnknownRecipientError extends Error {
   public constructor(actorId: string) {
-    super(`AgentQ cannot route blocker: explicit recipient is not active: ${actorId}`);
+    super(`AgentQ cannot route required request: explicit recipient is not active: ${actorId}`);
   }
 }
 
-export async function planBlockerRoutes(
+export async function planRequiredRequestRoutes(
   store: WorkspaceStore,
-  input: BlockerRouteInput
-): Promise<BlockerRoutePlan> {
+  input: RequiredRequestRouteInput
+): Promise<RequiredRequestRoutePlan> {
   MessageSchema.parse(input.message);
   const activePresences = await readActivePresences(store, input.now, input.staleAfterMs);
   const routeMap = new Map<string, RoutingEvidence[]>();
+  const explicitTo = input.explicitTo ?? [];
 
-  validateExplicitRecipients(activePresences, input.explicitTo ?? []);
-  addExplicitRoutes(routeMap, activePresences, input.explicitTo ?? []);
-  addContractRoutes(routeMap, activePresences, input.message.contracts);
-  addPathRoutes(routeMap, activePresences, input.message.paths);
-  addKnownActorRoutes(routeMap, activePresences, input.threadActorIds ?? [], "thread");
-  addKnownActorRoutes(routeMap, activePresences, input.recentActorIds ?? [], "recent");
+  validateExplicitRecipients(activePresences, explicitTo);
+  addExplicitRoutes(routeMap, activePresences, explicitTo);
+  if (explicitTo.length === 0) {
+    addContractRoutes(routeMap, activePresences, input.message.contracts);
+    addPathRoutes(routeMap, activePresences, input.message.paths);
+    addKnownActorRoutes(routeMap, activePresences, input.threadActorIds ?? [], "thread");
+    addKnownActorRoutes(routeMap, activePresences, input.recentActorIds ?? [], "recent");
+    removeImplicitSelfRoute(routeMap, input.message.createdBy);
+  }
 
   const recipients = [...routeMap.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
@@ -88,7 +95,21 @@ export async function createRoutedBlocker(
   store: WorkspaceStore,
   input: BlockerRouteInput
 ): Promise<BlockerRoutePlan> {
-  const plan = await planBlockerRoutes(store, input);
+  return await createRoutedRequest(store, input);
+}
+
+export async function planBlockerRoutes(
+  store: WorkspaceStore,
+  input: BlockerRouteInput
+): Promise<BlockerRoutePlan> {
+  return await planRequiredRequestRoutes(store, input);
+}
+
+export async function createRoutedRequest(
+  store: WorkspaceStore,
+  input: RequiredRequestRouteInput
+): Promise<RequiredRequestRoutePlan> {
+  const plan = await planRequiredRequestRoutes(store, input);
   const messageDir = store.layout.messageDir(input.message.id);
   await mkdir(path.join(messageDir, "requests"), { recursive: true });
   await mkdir(path.join(messageDir, "events"), { recursive: true });
@@ -231,6 +252,13 @@ function addEvidence(
   }
 }
 
+function removeImplicitSelfRoute(
+  routeMap: Map<string, RoutingEvidence[]>,
+  senderActorId: string
+): void {
+  routeMap.delete(senderActorId);
+}
+
 function normalize(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -240,6 +268,10 @@ function pathPatternOverlaps(activePattern: string, messagePath: string): boolea
   const message = normalizePath(messagePath);
 
   if (active === message) {
+    return true;
+  }
+
+  if (active === ".") {
     return true;
   }
 

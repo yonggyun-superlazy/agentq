@@ -137,6 +137,8 @@ describe("AgentQ hook handler", () => {
       "utf8"
     );
     const actorId = actorIdFromSession(session);
+    expect(actorId).toContain("@s3@");
+    expect(actorId).not.toContain("stop-gate");
     const presence = await readFile(store.layout.actorPresencePath(actorId), "utf8");
     expect(presence).toContain("src/late-session.ts");
   });
@@ -258,6 +260,61 @@ describe("AgentQ hook handler", () => {
 
     const active = await readActiveWorkState(store, actorId);
     expect(active?.touchedPaths.join("\n")).not.toContain("rtk pwsh");
+    const session = await readFile(
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S5")),
+      "utf8"
+    );
+    const presence = await readFile(store.layout.actorPresencePath(actorIdFromSession(session)), "utf8");
+    expect(presence).toContain("src/protocol.ts");
+    expect(presence).toContain("Path extraction");
+    expect(presence).not.toContain("activePaths:\n  - .");
+  });
+
+  it("does not refresh a specific idle presence back to broad scope on pathless tools", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-idle-paths-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S6",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: {
+          file_path: "src/specific.ts"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S6",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "shell_command",
+        tool_input: {
+          command: "rtk pwsh -NoProfile -Command 'agentq actors'"
+        }
+      },
+      env,
+      now: "2026-05-18T00:01:00.000Z"
+    });
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const session = await readFile(
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S6")),
+      "utf8"
+    );
+    const presence = await readFile(store.layout.actorPresencePath(actorIdFromSession(session)), "utf8");
+    expect(presence).toContain("src/specific.ts");
+    expect(presence).not.toContain("activePaths:\n  - .");
   });
 });
 

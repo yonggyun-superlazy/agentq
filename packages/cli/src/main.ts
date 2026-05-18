@@ -10,6 +10,7 @@ import {
   appendWorkEvidence,
   createOrRefreshSessionBinding,
   createRoutedBlocker,
+  createRoutedRequest,
   ensureWorkspaceStore,
   EventSchema,
   foldMessageState,
@@ -70,9 +71,10 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "uninstall", summary: "Remove AgentQ-owned integration markers and hook gates" },
   { name: "actors", summary: "List workspace actors by recent presence" },
   { name: "enter", summary: "Register actor presence and responsibilities" },
-  { name: "work", summary: "Manage the current actor's internal work stack" },
+  { name: "work", summary: "Manage one explicit actor's internal work stack" },
   { name: "block", summary: "Create a required-response blocker" },
-  { name: "inbox", summary: "Show required requests for the current actor" },
+  { name: "question", summary: "Ask an actor a required-response question" },
+  { name: "inbox", summary: "Show required requests for an explicit actor" },
   { name: "respond", summary: "Resolve or answer a required request" },
   { name: "supersede", summary: "Cancel an outbound required request with evidence" },
   { name: "follow-up", summary: "Continue after a blocked response" },
@@ -155,7 +157,22 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq block --actor <id> --to <id> --summary \"...\" [--id <id>] [--path <path>...] [--contract <name>...] [--pass \"...\"]"
+      "  agentq block --actor <id> --summary \"...\" [--to <id>...] [--id <id>] [--path <path>...] [--contract <name>...] [--pass \"...\"]",
+      "",
+      "If --to is omitted, AgentQ routes to active actors matched by path or contract."
+    ].join("\n");
+  }
+
+  if (command.name === "question") {
+    return [
+      "agentq question",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --path <path>... [--contract <name>...] [--expect \"...\"] [--pass \"...\"]",
+      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --contract <name>... [--expect \"...\"] [--pass \"...\"]",
+      "",
+      "Questions are required requests. The sender remains blocked until routed actors answer."
     ].join("\n");
   }
 
@@ -306,6 +323,10 @@ export async function runCommand(
     return await blockCommand(argv.slice(1), runtime);
   }
 
+  if (command === "question") {
+    return await questionCommand(argv.slice(1), runtime);
+  }
+
   if (command === "actors") {
     return await actorsCommand(argv.slice(1), runtime);
   }
@@ -384,7 +405,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       code: 0,
       stdout: [
         "agentq work",
-        "Manage the current actor's internal work stack",
+        "Manage one explicit actor's internal work stack",
         "",
         "Usage:",
         "  agentq work start --actor <id> --title <title> [--path <path>...]",
@@ -587,7 +608,7 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
   const args = parseArgs(argv);
   const store = await openStore(runtime);
   const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
-  const to = requiredOption(args, "to");
+  const to = optionValues(args, "to");
   const summary = requiredOption(args, "summary");
   const paths = optionValues(args, "path");
   const contracts = optionValues(args, "contract");
@@ -602,12 +623,58 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
     observed: optionValue(args, "observed") ?? summary,
     brokenContract: optionValue(args, "contract-broken") ?? "required handoff must be answered"
   };
-  const plan = await createRoutedBlocker(store, {
+  const routeInput = {
     message,
-    explicitTo: [to],
     now: runtime.now(),
     staleAfterMs: Number(optionValue(args, "stale-ms") ?? "300000")
-  });
+  };
+  const plan = await createRoutedBlocker(
+    store,
+    to.length === 0 ? routeInput : { ...routeInput, explicitTo: to }
+  );
+
+  return {
+    code: 0,
+    stdout: `${id} routed to ${plan.recipients.map((recipient) => recipient.actorId).join(", ")}\n`,
+    stderr: ""
+  };
+}
+
+async function questionCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const store = await openStore(runtime);
+  const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
+  const to = optionValues(args, "to");
+  const question = requiredOption(args, "question");
+  const paths = optionValues(args, "path");
+  const contracts = optionValues(args, "contract");
+  if (paths.length === 0 && contracts.length === 0) {
+    throw new Error("question requires --path or --contract so recipients can judge relevance.");
+  }
+  const expectedAnswer = optionValue(args, "expect");
+  const passCriteria = optionValues(args, "pass");
+  const message: Message = {
+    id,
+    kind: "question",
+    createdBy: requiredOption(args, "actor"),
+    summary: optionValue(args, "summary") ?? question,
+    paths,
+    contracts,
+    passCriteria: passCriteria.length > 0
+      ? passCriteria
+      : [expectedAnswer ?? "recipient answers with evidence"],
+    question,
+    ...(expectedAnswer === undefined ? {} : { expectedAnswer })
+  };
+  const routeInput = {
+    message,
+    now: runtime.now(),
+    staleAfterMs: Number(optionValue(args, "stale-ms") ?? "300000")
+  };
+  const plan = await createRoutedRequest(
+    store,
+    to.length === 0 ? routeInput : { ...routeInput, explicitTo: to }
+  );
 
   return {
     code: 0,
@@ -985,7 +1052,7 @@ function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): Acto
 
 function renderActorPresence(summary: ActorStatusSummary): string {
   const actor = summary.actor;
-  return [
+  const lines = [
     actor.actorId,
     `  kind: ${actor.kind}`,
     `  status: ${summary.status}`,
@@ -993,7 +1060,29 @@ function renderActorPresence(summary: ActorStatusSummary): string {
     `  lastSeen: ${actor.lastSeen}`,
     `  paths: ${actor.activePaths.join(", ")}`,
     `  responsibilities: ${actor.responsibilities.join(", ")}`
-  ].join("\n");
+  ];
+  const warning = routingScopeWarning(actor);
+  if (warning !== null) {
+    lines.push(`  routing: ${warning}`);
+  }
+
+  return lines.join("\n");
+}
+
+function routingScopeWarning(actor: Presence): string | null {
+  const hasBroadPath = actor.activePaths.some((activePath) => normalizeActorPath(activePath) === ".");
+  const hasGenericResponsibility = actor.responsibilities.some((responsibility) =>
+    /(^| )(active tool scope|pre-tool scope|stop gate|session)( |$)/i.test(responsibility)
+  );
+  if (!hasBroadPath && !hasGenericResponsibility) {
+    return null;
+  }
+
+  return "broad; refresh with agentq enter --paths <path> --responsibility \"<owned area>\"";
+}
+
+function normalizeActorPath(activePath: string): string {
+  return activePath.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
 }
 
 function formatDuration(ms: number): string {

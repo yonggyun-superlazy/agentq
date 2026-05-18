@@ -146,6 +146,133 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("auto-routes blockers by active path when --to is omitted", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-auto-route-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "AgentQ",
+      "--responsibility",
+      "agentq maintainer"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "ProjectDD/**",
+      "--responsibility",
+      "ProjectDD build owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "block",
+      "--id",
+      "AQ-auto-route",
+      "--actor",
+      sender,
+      "--path",
+      "ProjectDD/DDUnity/DD.Game.csproj",
+      "--summary",
+      "Stale project reference blocks build"
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: `AQ-auto-route routed to ${receiver}\n`
+    });
+    await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining("outbound_pending")
+    });
+  });
+
+  it("routes required questions and gates the sender until the receiver answers", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-question-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDUnitView.cs",
+      "--responsibility",
+      "damage floater view"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs",
+      "--responsibility",
+      "projectile impact owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "question",
+      "--id",
+      "AQ-question",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs",
+      "--question",
+      "Should damage floater hit anchors use projectile position or target height?",
+      "--expect",
+      "Answer owner and coordinate source"
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: `AQ-question routed to ${receiver}\n`,
+      stderr: ""
+    });
+    await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining("outbound_pending")
+    });
+    await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "AQ-question\n",
+      stderr: ""
+    });
+    await expect(runCommand([
+      "respond",
+      "AQ-question",
+      "--actor",
+      receiver,
+      "--status",
+      "answered",
+      "--evidence",
+      "Projectile impacts should anchor at projectile.BodyState.Position."
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "AQ-question answered\n",
+      stderr: ""
+    });
+    await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
+      code: 0
+    });
+  });
+
   it("labels recent and stale actors in the actors view", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-actors-"));
     const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };
@@ -187,4 +314,23 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("age: 6m");
     expect(result.stdout).toContain("age: 2m");
   });
+
+  it("marks broad actor scopes as weak routing evidence", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-broad-scope-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+
+    await runCommand(["enter", "--as", "codex", "--session", "broad"], runtime);
+    const result = await runCommand(["actors"], runtime);
+
+    expect(result).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(result.stdout).toContain("routing: broad; refresh with agentq enter");
+  });
+
 });

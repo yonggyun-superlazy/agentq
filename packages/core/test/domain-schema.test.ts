@@ -40,6 +40,37 @@ describe("AgentQ domain schema", () => {
     ).toThrow(/path or contract/);
   });
 
+  it("accepts a required question with expected-answer criteria", () => {
+    const parsed = MessageSchema.parse({
+      id: "AQ-question",
+      kind: "question",
+      createdBy: "codex@workspace",
+      summary: "Damage floater anchor ownership",
+      paths: ["ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs"],
+      contracts: [],
+      passCriteria: [],
+      question: "Should impact anchors use projectile position or target hit height?",
+      expectedAnswer: "Answer the coordinate source and owning system."
+    });
+
+    expect(parsed.kind).toBe("question");
+  });
+
+  it("rejects weak questions without routing context or answer criteria", () => {
+    expect(() =>
+      MessageSchema.parse({
+        id: "AQ-question",
+        kind: "question",
+        createdBy: "codex@workspace",
+        summary: "Unscoped question",
+        paths: [],
+        contracts: [],
+        passCriteria: [],
+        question: "Who should answer this?"
+      })
+    ).toThrow();
+  });
+
   it("rejects terminal responses without evidence", () => {
     expect(() =>
       EventSchema.parse({

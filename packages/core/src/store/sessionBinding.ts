@@ -99,11 +99,6 @@ export async function resolveHookActorId(
   return binding.actorId;
 }
 
-export function resolveWrapperActorId(env: Pick<NodeJS.ProcessEnv, "AGENTQ_ACTOR">): string | null {
-  const actorId = env.AGENTQ_ACTOR;
-  return actorId === undefined || actorId.length === 0 ? null : actorId;
-}
-
 export function createAdapterSessionKey(adapter: AgentKind, sessionId: string): string {
   return `${adapter}-${slugify(sessionId)}`;
 }
@@ -126,21 +121,19 @@ export async function listActorPresences(store: WorkspaceStore): Promise<Presenc
 
 function deriveActorId(store: WorkspaceStore, input: SessionBindingInput): string {
   const workspaceName = slugify(path.basename(store.workspaceRoot) || "workspace");
-  const responsibility = slugify(input.responsibilities[0] ?? input.summary);
+  const session = slugify(input.sessionId);
   const hash = createHash("sha256")
     .update(
       JSON.stringify({
         adapter: input.adapter,
         workspaceRoot: store.workspaceRoot,
-        sessionId: input.sessionId,
-        activePaths: input.activePaths,
-        responsibilities: input.responsibilities
+        sessionId: input.sessionId
       })
     )
     .digest("hex")
     .slice(0, 6);
 
-  return `${input.adapter}@${workspaceName}@${responsibility}@${hash}`;
+  return `${input.adapter}@${workspaceName}@${session}@${hash}`;
 }
 
 async function readExistingSessionBinding(sessionPath: string): Promise<SessionBinding | null> {
