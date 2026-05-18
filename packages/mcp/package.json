@@ -1,0 +1,21 @@
+{
+  "name": "@agentq/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MCP surface for AgentQ.",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentq/core": "workspace:*"
+  }
+}

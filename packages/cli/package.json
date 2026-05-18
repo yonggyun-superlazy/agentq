@@ -1,0 +1,26 @@
+{
+  "name": "agentq",
+  "version": "0.0.0",
+  "description": "The handshake between coding agents.",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "agentq": "./dist/main.js"
+  },
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentq/core": "workspace:*"
+  }
+}

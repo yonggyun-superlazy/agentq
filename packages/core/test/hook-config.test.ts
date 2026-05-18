@@ -1,0 +1,91 @@
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+  applyHookConfigInstall,
+  applyHookConfigUninstall,
+  planHookConfigInstall
+} from "../src/index.js";
+
+describe("AgentQ hook config installer", () => {
+  it("merges AgentQ hooks without removing existing Codex and Claude hooks", async () => {
+    const workspace = await createWorkspace();
+    await writeJson(path.join(workspace, ".codex", "hooks.json"), {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [{ type: "command", command: "python enforce-rtk.py" }]
+          }
+        ]
+      }
+    });
+    await writeJson(path.join(workspace, ".claude", "settings.json"), {
+      enabledPlugins: {},
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [{ type: "command", command: "python enforce-rtk.py" }]
+          }
+        ]
+      }
+    });
+
+    const plan = await applyHookConfigInstall(workspace);
+
+    expect(plan.entries).toContainEqual(
+      expect.objectContaining({ relativePath: ".codex/hooks.json", action: "update" })
+    );
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
+      "python enforce-rtk.py"
+    );
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
+      "agentq hook codex stop"
+    );
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
+      "agentq hook codex pre-tool"
+    );
+    await expect(readFile(path.join(workspace, ".claude", "settings.json"), "utf8")).resolves.toContain(
+      "agentq hook claude-code stop"
+    );
+    await expect(readFile(path.join(workspace, ".github", "hooks", "agentq.json"), "utf8")).resolves.toContain(
+      "agentq hook copilot-cli pre-tool"
+    );
+  });
+
+  it("dry-runs and uninstalls only AgentQ-owned hook entries", async () => {
+    const workspace = await createWorkspace();
+
+    await expect(planHookConfigInstall(workspace)).resolves.toMatchObject({
+      entries: [
+        expect.objectContaining({ action: "create" }),
+        expect.objectContaining({ action: "create" }),
+        expect.objectContaining({ action: "create" })
+      ]
+    });
+    await expect(readFile(path.join(workspace, ".github", "hooks", "agentq.json"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+
+    await applyHookConfigInstall(workspace);
+    await applyHookConfigUninstall(workspace);
+
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(readFile(path.join(workspace, ".github", "hooks", "agentq.json"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+});
+
+async function createWorkspace(): Promise<string> {
+  return await mkdtemp(path.join(os.tmpdir(), "agentq-hooks-"));
+}
+
+async function writeJson(filePath: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}

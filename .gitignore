@@ -1,0 +1,13 @@
+node_modules/
+packages/*/node_modules/
+packages/*/dist/
+coverage/
+.vitest/
+*.tsbuildinfo
+*.log
+.DS_Store
+Thumbs.db
+
+# AgentQ runtime state must stay outside repositories.
+.agentq/
+agentq.config.yaml

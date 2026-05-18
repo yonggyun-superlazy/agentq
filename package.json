@@ -1,0 +1,22 @@
+{
+  "name": "agentq-workspace",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The handshake between coding agents.",
+  "type": "module",
+  "packageManager": "pnpm@11.1.2",
+  "scripts": {
+    "build": "corepack pnpm -r --sort build",
+    "test": "vitest run",
+    "typecheck": "tsc -b packages/core packages/cli packages/mcp",
+    "lint:md-snippets": "tsx scripts/lint-md-snippets.ts",
+    "demo:test": "tsx scripts/demo-two-actors.ts",
+    "package:smoke": "tsx scripts/package-smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "tsx": "^4.22.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}
