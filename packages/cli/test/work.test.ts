@@ -196,6 +196,47 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("refreshes the hook-provided actor id instead of creating a second actor", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-enter-actor-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "claude-code-session",
+      "--paths",
+      ".",
+      "--responsibility",
+      "claude-code session"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "enter",
+      "--actor",
+      actorId,
+      "--paths",
+      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs",
+      "--responsibility",
+      "projectile impact owner",
+      "--summary",
+      "projectile impact scope"
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: `${actorId} refreshed\n`,
+      stderr: ""
+    });
+    const actors = await runCommand(["actors"], runtime);
+    expect(actors.stdout).toContain("actors: 1");
+    expect(actors.stdout).toContain(actorId);
+    expect(actors.stdout).toContain("ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs");
+    expect(actors.stdout).not.toContain("routing: broad");
+  });
+
   it("routes required questions and gates the sender until the receiver answers", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-question-"));
     const runtime = {
@@ -249,9 +290,9 @@ describe("CLI work stack", () => {
       code: 2,
       stderr: expect.stringContaining("outbound_pending")
     });
-    await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toEqual({
+    await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toMatchObject({
       code: 0,
-      stdout: "AQ-question\n",
+      stdout: expect.stringContaining("respond: agentq respond AQ-question"),
       stderr: ""
     });
     await expect(runCommand([
@@ -330,7 +371,7 @@ describe("CLI work stack", () => {
       code: 0,
       stderr: ""
     });
-    expect(result.stdout).toContain("routing: broad; refresh with agentq enter");
+    expect(result.stdout).toContain("routing: broad; refresh this actor with agentq enter --actor");
   });
 
 });

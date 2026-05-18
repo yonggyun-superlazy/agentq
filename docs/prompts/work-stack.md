@@ -23,8 +23,12 @@ actor as `.` or with a generic responsibility, refresh presence with the current
 paths and responsibility before relying on routing:
 
 ```bash
-agentq enter --as <codex|claude-code|copilot-cli|custom> --paths <path> --responsibility "<owned area>" --summary "<current work>"
+agentq enter --actor <agentq-actor-id> --paths <path> --responsibility "<owned area>" --summary "<current work>"
 ```
+
+Use `--actor` with the hook-provided actor id when refreshing scope. `agentq
+enter --as ... --session ...` creates or refreshes a manual session binding and
+can produce a different actor id.
 
 During tool use, AgentQ hooks attach touched paths to the active work item. Add evidence when a test, build, static check, runtime trace, or reviewable artifact proves progress:
 

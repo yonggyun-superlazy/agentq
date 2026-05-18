@@ -60,6 +60,10 @@ node packages/cli/dist/main.js doctor
 
 `agentq install --dry-run` is the default inspection mode. Hook files contain `agentq hook ...` commands, so run `install --yes` for real hook gates only from an installed `agentq` binary that is on `PATH`.
 
+## Agent prompt
+
+Use [`docs/prompts/work-stack.md`](docs/prompts/work-stack.md) as the handoff prompt for agents that need explicit work-stack discipline. It keeps the actor id, required replies, active work frames, evidence, and done-check in one copyable instruction surface.
+
 ## Install trust
 
 `agentq install` is designed to be boring and inspectable. It installs AgentQ-owned instruction markers and hook entries for Codex, Claude Code, and Copilot without removing existing hook entries.

@@ -24,6 +24,7 @@ import {
   planMarkerUninstall,
   planStopContinuation,
   planWorkStopContinuation,
+  refreshActorPresence,
   readActiveWorkState,
   resolveWorkspaceStore,
   runHookHandler,
@@ -147,7 +148,10 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq enter --as <codex|claude-code|copilot-cli|custom> [--session <id>] [--paths <path>...] [--responsibility <text>...]"
+      "  agentq enter --actor <id> [--paths <path>...] [--responsibility <text>...] [--summary <text>]",
+      "  agentq enter --as <codex|claude-code|copilot-cli|custom> [--session <id>] [--paths <path>...] [--responsibility <text>...]",
+      "",
+      "Use --actor with the hook-provided actor id to refresh that exact actor. Use --as only to create or refresh a manual session binding."
     ].join("\n");
   }
 
@@ -182,7 +186,9 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq inbox --actor <id>"
+      "  agentq inbox --actor <id>",
+      "",
+      "Shows each pending request with sender, summary, path/contract context, pass criteria, and a response command."
     ].join("\n");
   }
 
@@ -264,7 +270,10 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq hook <codex|claude-code|copilot-cli> <session-start|pre-tool|stop>"
+      "  agentq hook <codex|claude-code|copilot-cli> <session-start|pre-tool|stop>",
+      "",
+      "Hooks read a JSON payload from stdin. Manual smoke example:",
+      "  echo {\"session_id\":\"smoke\",\"cwd\":\"<workspace>\"} | agentq hook codex session-start"
     ].join("\n");
   }
 
@@ -564,7 +573,14 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   }
 
   const stdin = await readStdin();
-  const payload = stdin.trim().length === 0 ? {} : JSON.parse(stdin);
+  if (stdin.trim().length === 0) {
+    return {
+      code: 2,
+      stdout: "",
+      stderr: "agentq: hook requires JSON payload on stdin with cwd and session_id/sessionId. Example: echo {\"session_id\":\"smoke\",\"cwd\":\"<workspace>\"} | agentq hook codex session-start\n"
+    };
+  }
+  const payload = JSON.parse(stdin);
   return await runHookHandler({
     adapter,
     event,
@@ -576,12 +592,31 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 
 async function enterCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
-  const adapter = requiredOption(args, "as") as AgentKind;
   const paths = optionValues(args, "paths");
   const responsibilities = optionValues(args, "responsibility");
+  const store = await openStore(runtime);
+  const actorId = optionValue(args, "actor");
+  if (actorId !== undefined) {
+    const summary = optionValue(args, "summary");
+    const presence = await refreshActorPresence(store, {
+      actorId,
+      cwd: runtime.cwd,
+      activePaths: paths,
+      responsibilities,
+      now: runtime.now(),
+      ...(summary === undefined ? {} : { summary })
+    });
+
+    return {
+      code: 0,
+      stdout: `${presence.actorId} refreshed\n`,
+      stderr: ""
+    };
+  }
+
+  const adapter = requiredOption(args, "as") as AgentKind;
   const sessionId = optionValue(args, "session") ?? `${adapter}-manual`;
   const summary = optionValue(args, "summary") ?? responsibilities[0] ?? `${adapter} actor`;
-  const store = await openStore(runtime);
   const handle = optionValue(args, "handle");
   const bindingInput = {
     adapter,
@@ -702,19 +737,61 @@ async function inboxCommand(argv: readonly string[], runtime: CommandRuntime): P
     throw error;
   });
   const messageIds = entries.map((entry) => entry.replace(/\.yaml$/, "")).sort();
-  const openMessageIds = [];
+  const openRequests: Array<{ readonly state: FoldedMessageState; readonly request: FoldedRequest }> = [];
   for (const messageId of messageIds) {
     const state = await foldMessageState(store, messageId);
-    if (state.requests.some((request) => request.request.to === actorId && request.blocksReceiverDone)) {
-      openMessageIds.push(messageId);
+    const request = state.requests.find((candidate) =>
+      candidate.request.to === actorId && candidate.blocksReceiverDone
+    );
+    if (request !== undefined) {
+      openRequests.push({ state, request });
     }
   }
 
   return {
     code: 0,
-    stdout: openMessageIds.length === 0 ? "inbox empty\n" : `${openMessageIds.join("\n")}\n`,
+    stdout: openRequests.length === 0
+      ? "inbox empty\n"
+      : `${openRequests.map((item) => renderInboxRequest(actorId, item.state, item.request)).join("\n\n")}\n`,
     stderr: ""
   };
+}
+
+function renderInboxRequest(
+  actorId: string,
+  state: FoldedMessageState,
+  request: FoldedRequest
+): string {
+  const message = state.message;
+  const responseStatus = message.kind === "question" ? "answered" : "resolved";
+  const lines = [
+    message.id,
+    `  kind: ${message.kind}`,
+    `  from: ${message.createdBy}`,
+    `  summary: ${message.summary}`,
+    `  paths: ${joinList(message.paths)}`,
+    `  contracts: ${joinList(message.contracts)}`
+  ];
+
+  if (message.kind === "question") {
+    lines.push(`  question: ${message.question}`);
+    if (message.expectedAnswer !== undefined) {
+      lines.push(`  expected: ${message.expectedAnswer}`);
+    }
+  } else {
+    lines.push(`  observed: ${message.observed}`);
+    lines.push(`  broken: ${message.brokenContract}`);
+  }
+
+  lines.push(`  pass: ${joinList(message.passCriteria)}`);
+  lines.push(`  routing: ${request.request.routingEvidence.map((evidence) => `${evidence.kind}:${evidence.detail}`).join("; ")}`);
+  lines.push(`  respond: agentq respond ${message.id} --actor ${actorId} --status ${responseStatus} --evidence "..."`);
+
+  return lines.join("\n");
+}
+
+function joinList(values: readonly string[]): string {
+  return values.length === 0 ? "(none)" : values.join(", ");
 }
 
 async function respondCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
@@ -1078,7 +1155,7 @@ function routingScopeWarning(actor: Presence): string | null {
     return null;
   }
 
-  return "broad; refresh with agentq enter --paths <path> --responsibility \"<owned area>\"";
+  return `broad; refresh this actor with agentq enter --actor ${actor.actorId} --paths <path> --responsibility "<owned area>"`;
 }
 
 function normalizeActorPath(activePath: string): string {

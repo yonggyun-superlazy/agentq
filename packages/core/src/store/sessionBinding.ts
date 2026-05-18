@@ -41,6 +41,15 @@ export interface HookActorLookup {
   readonly cwd: string;
 }
 
+export interface ActorPresenceRefreshInput {
+  readonly actorId: string;
+  readonly cwd: string;
+  readonly activePaths: readonly string[];
+  readonly responsibilities: readonly string[];
+  readonly summary?: string;
+  readonly now: string;
+}
+
 export async function createOrRefreshSessionBinding(
   store: WorkspaceStore,
   input: SessionBindingInput
@@ -97,6 +106,39 @@ export async function resolveHookActorId(
   }
 
   return binding.actorId;
+}
+
+export async function refreshActorPresence(
+  store: WorkspaceStore,
+  input: ActorPresenceRefreshInput
+): Promise<Presence> {
+  SafeIdSchema.parse(input.actorId);
+  const cwd = await canonicalize(input.cwd);
+  if (cwd !== store.workspaceRoot) {
+    throw new Error(`AgentQ actor cwd does not match workspace root: ${cwd}`);
+  }
+
+  const existing = parseYamlWithSchema(
+    PresenceSchema,
+    await readFile(store.layout.actorPresencePath(input.actorId), "utf8")
+  );
+  if (existing.workspaceRoot !== store.workspaceRoot) {
+    throw new Error(`AgentQ actor belongs to another workspace: ${input.actorId}`);
+  }
+
+  const presence: Presence = {
+    ...existing,
+    activePaths: input.activePaths.length > 0 ? [...input.activePaths] : existing.activePaths,
+    responsibilities: input.responsibilities.length > 0
+      ? [...input.responsibilities]
+      : existing.responsibilities,
+    summary: input.summary ?? existing.summary,
+    lastSeen: input.now
+  };
+
+  PresenceSchema.parse(presence);
+  await writeAtomicYaml(store.layout.actorPresencePath(input.actorId), presence);
+  return presence;
 }
 
 export function createAdapterSessionKey(adapter: AgentKind, sessionId: string): string {

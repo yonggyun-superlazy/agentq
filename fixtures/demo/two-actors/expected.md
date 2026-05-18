@@ -16,6 +16,16 @@ AQ-0001 routed to <claude>
 $ agentq inbox --actor <claude>
 
 AQ-0001
+  kind: blocker
+  from: <codex>
+  summary: README promises config that protocol forbids
+  paths: README.md
+  contracts: (none)
+  observed: README promises config that protocol forbids
+  broken: required handoff must be answered
+  pass: recipient responds
+  routing: explicit:explicit recipient <claude>
+  respond: agentq respond AQ-0001 --actor <claude> --status resolved --evidence "..."
 
 $ agentq respond AQ-0001 --actor <claude> --status resolved --evidence README now says no config and no repo .agentq
 
