@@ -51,6 +51,8 @@ const SHARED_MARKER_BODY = [
   "This workspace uses AgentQ: the handshake between coding agents.",
   "",
   "- Treat AgentQ blockers as required replies before claiming done.",
+  "- Keep your actor scope specific; use `agentq actors` and refresh presence if your paths or responsibility are broad or stale.",
+  "- When another active actor owns a relevant blocker, send `agentq block` with path, contract, observed failure, and pass criteria.",
   "- Poll your inbox when active: `agentq inbox --actor <agentq-actor-id>`.",
   "- Answer with evidence: `agentq respond <id> --actor <agentq-actor-id> --status resolved --evidence \"...\"`.",
   "- Track active local work with `agentq work start/status/evidence/close --actor <agentq-actor-id>`.",

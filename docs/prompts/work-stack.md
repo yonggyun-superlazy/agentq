@@ -13,6 +13,14 @@ At the start of non-trivial work, identify your actor id from the session contex
 agentq work start --actor <agentq-actor-id> --title "<current frame>" --path <main-path>
 ```
 
+Keep your visible actor scope specific. If `agentq actors` shows your current
+actor as `.` or with a generic responsibility, refresh presence with the current
+paths and responsibility before relying on routing:
+
+```bash
+agentq enter --as <codex|claude-code|copilot-cli|custom> --paths <path> --responsibility "<owned area>" --summary "<current work>"
+```
+
 During tool use, AgentQ hooks attach touched paths to the active work item. Add evidence when a test, build, static check, runtime trace, or reviewable artifact proves progress:
 
 ```bash
@@ -27,3 +35,15 @@ agentq done-check --actor <agentq-actor-id>
 ```
 
 If `done-check` fails, resolve the required inbox item or active work item first. Do not create repo `.agentq/` or `agentq.config.yaml`; AgentQ runtime state is OS-local.
+
+When you hit a blocker caused by another active actor's declared paths or
+responsibility, do not leave it in chat or a wiki queue. Run `agentq actors`,
+choose the relevant active actor, then create a required blocker with observable
+evidence:
+
+```bash
+agentq block --actor <your-actor-id> --to <target-actor-id> --path <path> --contract "<broken contract>" --title "<short blocker>" --observed "<what failed>" --pass "<how the target can close it>"
+```
+
+If the target actor is stale, do not wait on it as live work. Record evidence and
+supersede or re-route to an active owner.
