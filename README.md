@@ -67,6 +67,7 @@ node packages/cli/dist/main.js doctor
 - Dry-run first: print touched files, marker blocks, hook commands, and uninstall command.
 - Mutate only with `--yes`.
 - Keep runtime queue state outside the repository in an OS-local workspace store.
+- Use `agentq actors` to inspect active/stale actor presence before routing blockers.
 - No `agentq.config.yaml`.
 - No default repo `.agentq/`.
 - No `--store` escape hatch.
@@ -110,6 +111,18 @@ Uninstall removes only AgentQ-owned marker blocks and hook entries. Existing pro
 - AgentQ is local to one workspace path and one machine.
 - Copilot cloud agent support is advisory until AgentQ has a remote/shared transport.
 - Codex project-local hook trust still needs review in Codex with `/hooks` when Codex reports new or changed hooks.
+
+## Release Readiness
+
+The repository is private while the public release surface is being prepared.
+
+- License: MIT.
+- Publishable packages: `agentq` and `@agentq/core`.
+- Release version target: `0.1.0`.
+- CI runs build, typecheck, tests, README lint, demo transcript, and package smoke on Windows, Ubuntu, and macOS.
+- Package smoke packs the tarballs, installs them globally into a temporary prefix, runs installed hook commands through `PATH`, and verifies uninstall cleanup.
+
+Before the first npm publish, confirm npm ownership for the `agentq` package and the `@agentq` scope, then configure npm trusted publishing or an equivalent release credential.
 
 ## Why this exists
 

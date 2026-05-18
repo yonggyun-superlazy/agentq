@@ -1,8 +1,28 @@
 {
   "name": "@agentq/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Core protocol primitives for AgentQ.",
+  "license": "MIT",
   "type": "module",
+  "keywords": [
+    "coding-agent",
+    "agent",
+    "coordination",
+    "hooks",
+    "queue"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yonggyun-superlazy/agentq.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/yonggyun-superlazy/agentq/issues"
+  },
+  "homepage": "https://github.com/yonggyun-superlazy/agentq#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "dist"
   ],
@@ -20,5 +40,9 @@
   "dependencies": {
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

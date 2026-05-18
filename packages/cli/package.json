@@ -1,8 +1,29 @@
 {
   "name": "agentq",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "The handshake between coding agents.",
+  "license": "MIT",
   "type": "module",
+  "keywords": [
+    "coding-agent",
+    "agent",
+    "cli",
+    "coordination",
+    "hooks",
+    "queue"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yonggyun-superlazy/agentq.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/yonggyun-superlazy/agentq/issues"
+  },
+  "homepage": "https://github.com/yonggyun-superlazy/agentq#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "dist"
   ],
@@ -22,5 +43,9 @@
   },
   "dependencies": {
     "@agentq/core": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

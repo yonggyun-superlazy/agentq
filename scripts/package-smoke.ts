@@ -30,6 +30,7 @@ assert(existsSync(agentqBin), `missing installed agentq binary at ${agentqBin}`)
 
 const help = runAgentq(["--help"], workspace);
 assert(help.includes("The handshake between coding agents."), "installed binary help is missing tagline");
+assertPackageMetadata();
 
 const dryRun = runAgentq(["install", "--dry-run"], workspace);
 assert(dryRun.includes("Mode: no files written"), "install dry-run did not stay read-only");
@@ -218,6 +219,52 @@ function findTarball(predicate: (entry: string) => boolean): string {
     .at(-1);
   assert(fileName !== undefined, "missing expected tarball");
   return path.join(packDir, fileName);
+}
+
+function assertPackageMetadata(): void {
+  assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
+    name: "agentq",
+    version: "0.1.0",
+    bin: true
+  });
+  assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
+    name: "@agentq/core",
+    version: "0.1.0",
+    bin: false
+  });
+  assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");
+}
+
+function assertPublishablePackageMetadata(
+  filePath: string,
+  expected: { readonly name: string; readonly version: string; readonly bin: boolean }
+): void {
+  const pkg = JSON.parse(readFile(filePath)) as {
+    readonly name?: unknown;
+    readonly version?: unknown;
+    readonly license?: unknown;
+    readonly repository?: { readonly url?: unknown };
+    readonly bugs?: { readonly url?: unknown };
+    readonly homepage?: unknown;
+    readonly engines?: { readonly node?: unknown };
+    readonly publishConfig?: { readonly access?: unknown; readonly provenance?: unknown };
+    readonly bin?: unknown;
+  };
+  assert(pkg.name === expected.name, `${filePath} has wrong package name`);
+  assert(pkg.version === expected.version, `${filePath} has wrong version`);
+  assert(pkg.license === "MIT", `${filePath} must declare MIT license`);
+  assert(
+    typeof pkg.repository?.url === "string" && pkg.repository.url.includes("github.com/yonggyun-superlazy/agentq"),
+    `${filePath} is missing repository metadata`
+  );
+  assert(typeof pkg.bugs?.url === "string", `${filePath} is missing bugs metadata`);
+  assert(typeof pkg.homepage === "string", `${filePath} is missing homepage metadata`);
+  assert(pkg.engines?.node === ">=20", `${filePath} must declare supported Node engine`);
+  assert(pkg.publishConfig?.access === "public", `${filePath} must publish as public`);
+  assert(pkg.publishConfig?.provenance === true, `${filePath} must request npm provenance`);
+  if (expected.bin) {
+    assert(pkg.bin !== undefined, `${filePath} is missing CLI bin metadata`);
+  }
 }
 
 function readFile(filePath: string): string {

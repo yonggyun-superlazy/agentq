@@ -145,4 +145,46 @@ describe("CLI work stack", () => {
       stderr: ""
     });
   });
+
+  it("labels recent and stale actors in the actors view", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-actors-"));
+    const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };
+    const oldRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const recentRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T00:04:00.000Z"
+    };
+    const viewRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T00:06:00.000Z"
+    };
+
+    const oldActor = (await runCommand(["enter", "--as", "codex", "--session", "old"], oldRuntime)).stdout
+      .trim()
+      .replace(/ registered$/, "");
+    const recentActor = (await runCommand(["enter", "--as", "claude-code", "--session", "recent"], recentRuntime))
+      .stdout
+      .trim()
+      .replace(/ registered$/, "");
+
+    const result = await runCommand(["actors"], viewRuntime);
+
+    expect(result).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(result.stdout).toContain("actors: 2 (active 1, stale 1, staleAfter 5m)");
+    expect(result.stdout).toContain(oldActor);
+    expect(result.stdout).toContain(recentActor);
+    expect(result.stdout).toContain("status: stale");
+    expect(result.stdout).toContain("status: active");
+    expect(result.stdout).toContain("age: 6m");
+    expect(result.stdout).toContain("age: 2m");
+  });
 });

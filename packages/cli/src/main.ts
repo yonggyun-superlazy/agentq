@@ -62,6 +62,8 @@ export interface CommandRuntime {
   readonly now: () => string;
 }
 
+const DEFAULT_ACTOR_STALE_AFTER_MS = 300_000;
+
 export const COMMANDS: readonly CommandSpec[] = [
   { name: "install", summary: "Install agent instructions and hook gates" },
   { name: "doctor", summary: "Explain AgentQ workspace and hook state" },
@@ -223,7 +225,9 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq actors"
+      "  agentq actors [--stale-ms <milliseconds>]",
+      "",
+      "Actors are marked stale when lastSeen is older than 5 minutes by default."
     ].join("\n");
   }
 
@@ -303,7 +307,7 @@ export async function runCommand(
   }
 
   if (command === "actors") {
-    return await actorsCommand(runtime);
+    return await actorsCommand(argv.slice(1), runtime);
   }
 
   if (command === "work") {
@@ -341,7 +345,12 @@ export async function runCommand(
   };
 }
 
-async function actorsCommand(runtime: CommandRuntime): Promise<CommandResult> {
+async function actorsCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const staleAfterMs = Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS));
+  if (!Number.isFinite(staleAfterMs) || staleAfterMs < 0) {
+    throw new Error("actors --stale-ms must be a non-negative number.");
+  }
   const store = await openStore(runtime);
   const actors = await listActorPresences(store);
   if (actors.length === 0) {
@@ -352,9 +361,18 @@ async function actorsCommand(runtime: CommandRuntime): Promise<CommandResult> {
     };
   }
 
+  const nowMs = Date.parse(runtime.now());
+  const summaries = actors.map((actor) => actorStatus(actor, nowMs, staleAfterMs));
+  const activeCount = summaries.filter((summary) => summary.status === "active").length;
+  const staleCount = summaries.length - activeCount;
+
   return {
     code: 0,
-    stdout: `${actors.map(renderActorPresence).join("\n\n")}\n`,
+    stdout: [
+      `actors: ${actors.length} (active ${activeCount}, stale ${staleCount}, staleAfter ${formatDuration(staleAfterMs)})`,
+      "",
+      summaries.map(renderActorPresence).join("\n\n")
+    ].join("\n") + "\n",
     stderr: ""
   };
 }
@@ -947,14 +965,52 @@ function displayMarkerAction(entry: MarkerPlan["entries"][number]): string {
   return entry.action;
 }
 
-function renderActorPresence(actor: Presence): string {
+interface ActorStatusSummary {
+  readonly actor: Presence;
+  readonly status: "active" | "stale";
+  readonly ageMs: number | null;
+}
+
+function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
+  const lastSeenMs = Date.parse(actor.lastSeen);
+  const ageMs = Number.isFinite(nowMs) && Number.isFinite(lastSeenMs)
+    ? Math.max(0, nowMs - lastSeenMs)
+    : null;
+  return {
+    actor,
+    status: ageMs !== null && ageMs <= staleAfterMs ? "active" : "stale",
+    ageMs
+  };
+}
+
+function renderActorPresence(summary: ActorStatusSummary): string {
+  const actor = summary.actor;
   return [
     actor.actorId,
     `  kind: ${actor.kind}`,
+    `  status: ${summary.status}`,
+    `  age: ${summary.ageMs === null ? "unknown" : formatDuration(summary.ageMs)}`,
     `  lastSeen: ${actor.lastSeen}`,
     `  paths: ${actor.activePaths.join(", ")}`,
     `  responsibilities: ${actor.responsibilities.join(", ")}`
   ].join("\n");
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) {
+    return `${hours}h`;
+  }
+
+  return `${Math.floor(hours / 24)}d`;
 }
 
 function renderWorkState(label: string, work: WorkState): string {
