@@ -22,13 +22,13 @@ describe("AgentQ work stack", () => {
       actorId,
       workId: "AW-1",
       title: "Move problem stack into AgentQ",
-      paths: ["wiki/problem-stacks/agentq.md"],
+      paths: ["docs/work-notes/agentq.md"],
       now: "2026-05-18T00:00:00.000Z"
     });
     expect(started).toMatchObject({
       workId: "AW-1",
       status: "open",
-      touchedPaths: ["wiki/problem-stacks/agentq.md"]
+      touchedPaths: ["docs/work-notes/agentq.md"]
     });
     await expect(readFile(path.join(store.workspaceRoot, ".agentq"), "utf8")).rejects.toMatchObject({
       code: "ENOENT"
@@ -58,7 +58,7 @@ describe("AgentQ work stack", () => {
     });
     expect(closed.touchedPaths).toEqual([
       "AgentQ/packages/core/src/work/workStack.ts",
-      "wiki/problem-stacks/agentq.md"
+      "docs/work-notes/agentq.md"
     ]);
     await expect(runWorkDoneCheck(store, actorId)).resolves.toEqual({ ok: true, actorId });
   });

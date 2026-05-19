@@ -7,7 +7,14 @@ You are an independent coding agent, not an orchestrated worker. AgentQ gives yo
 - Required replies from other actors: `agentq inbox`, `agentq respond`, `agentq done-check`.
 - Your own active work frame: `agentq work start/status/touch/evidence/close`.
 
-At the start of non-trivial work, identify your actor id from the session context or `agentq actors`, then run:
+At the start of non-trivial work, identify your actor id from the session context or `agentq actors`, then check both gates before opening new work:
+
+```bash
+agentq inbox --actor <agentq-actor-id>
+agentq work status --actor <agentq-actor-id>
+```
+
+If there is no active work frame for the current task, run:
 
 ```bash
 agentq work start --actor <agentq-actor-id> --title "<current frame>" --path <main-path>
@@ -65,7 +72,8 @@ agentq block --actor <your-actor-id> --to <target-actor-id> --path <path> --cont
 agentq block --actor <your-actor-id> --path <path> --contract "<broken contract>" --summary "<short blocker>" --observed "<what failed>" --pass "<how routed actors can close it>"
 ```
 
-If no active owner matches, record that `agentq actors` had no routeable owner in
-your work evidence before reporting the blocker. If the target actor is stale, do
-not wait on it as live work. Record evidence and supersede or re-route to an
-active owner.
+Implicit routing ignores broad `.` actor paths. If no active path or contract
+owner matches, record that `agentq actors` had no routeable owner in your work
+evidence before reporting the blocker. If the target actor is stale, do not wait
+on it as live work. Record evidence and supersede or re-route to an active
+owner.

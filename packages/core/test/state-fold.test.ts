@@ -125,12 +125,12 @@ async function writeMessageWithRequest(
     id: messageId,
     kind: "blocker",
     createdBy: "codex@workspace",
-    summary: "Generated dispatch is stale",
-    paths: ["ProjectDD/DD.Shared/Generated/DDUnit.Dispatch.g.cs"],
+    summary: "Generated API client is stale",
+    paths: ["packages/generated/api-client.ts"],
     contracts: [],
-    passCriteria: ["generated dispatch includes DDUnit"],
-    observed: "DDUnit.Dispatch.g.cs was not regenerated",
-    brokenContract: "generated dispatch must reflect unit schema"
+    passCriteria: ["generated client includes UserRecord"],
+    observed: "api-client.ts was not regenerated",
+    brokenContract: "generated client must reflect API schema"
   });
   await writeOnceYaml(store.layout.requestPath(messageId, actorId), {
     messageId,

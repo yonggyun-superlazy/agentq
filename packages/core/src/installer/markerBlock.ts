@@ -52,6 +52,7 @@ const SHARED_MARKER_BODY = [
   "",
   "- Treat AgentQ requests as required replies before claiming done.",
   "- Use the hook-provided actor id. If absent, inspect `agentq actors`; every command must pass `--actor <agentq-actor-id>`.",
+  "- Before opening new work, check `agentq inbox --actor <agentq-actor-id>` and `agentq work status --actor <agentq-actor-id>`.",
   "- Keep actor scope specific; refresh broad or stale paths/responsibility with `agentq enter --actor <agentq-actor-id>`.",
   "- Use `agentq question` for design/ownership answers and `agentq block` for failing contracts; include path/contract context.",
   "- Poll your inbox when active: `agentq inbox --actor <agentq-actor-id>`.",

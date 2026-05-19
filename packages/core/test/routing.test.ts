@@ -71,24 +71,55 @@ describe("blocker routing", () => {
     ).rejects.toBeInstanceOf(NoRecipientError);
   });
 
-  it("routes implicit blockers to broad actors but excludes the sender unless explicit", async () => {
+  it("does not route implicit blockers to broad path actors", async () => {
     const store = await createStore();
     const sender = await enterActor(store, "codex", "session-1", ["."], ["sender broad scope"]);
+
+    await enterActor(store, "claude-code", "session-2", ["."], ["receiver broad scope"]);
+
+    await expect(
+      createRoutedBlocker(store, {
+        message: {
+          ...blocker("AQ-1", ["packages/service/package.json"], []),
+          createdBy: sender.actorId
+        },
+        now: "2026-05-18T00:00:10.000Z",
+        staleAfterMs: 60_000
+      })
+    ).rejects.toBeInstanceOf(NoRecipientError);
+  });
+
+  it("does not route implicit questions to broad path actors", async () => {
+    const store = await createStore();
+    await enterActor(store, "claude-code", "session-2", ["."], ["receiver broad scope"]);
+
+    await expect(
+      createRoutedBlocker(store, {
+        message: question("AQ-1", ["AGENTS.md"], ["agent-instructions-sync"]),
+        now: "2026-05-18T00:00:10.000Z",
+        staleAfterMs: 60_000
+      })
+    ).rejects.toBeInstanceOf(NoRecipientError);
+  });
+
+  it("still routes explicit requests to broad actors", async () => {
+    const store = await createStore();
     const receiver = await enterActor(store, "claude-code", "session-2", ["."], ["receiver broad scope"]);
 
     const plan = await createRoutedBlocker(store, {
       message: {
-        ...blocker("AQ-1", ["ProjectDD/DDUnity/DD.Game.csproj"], []),
-        createdBy: sender.actorId
+        ...blocker("AQ-1", ["packages/service/package.json"], []),
+        createdBy: "codex@sender"
       },
+      explicitTo: [receiver.actorId],
       now: "2026-05-18T00:00:10.000Z",
       staleAfterMs: 60_000
     });
 
     expect(plan.recipients.map((recipient) => recipient.actorId)).toEqual([receiver.actorId]);
     expect(plan.recipients[0]?.evidence).toContainEqual({
-      kind: "path",
-      detail: "."
+      kind: "explicit",
+      detail: `explicit recipient ${receiver.actorId}`
     });
   });
 
@@ -206,6 +237,20 @@ function blocker(id: string, paths: readonly string[], contracts: readonly strin
     passCriteria: ["responsible actor responds"],
     observed: "blocker observed",
     brokenContract: "required handoff must be answered"
+  };
+}
+
+function question(id: string, paths: readonly string[], contracts: readonly string[]): Message {
+  return {
+    id,
+    kind: "question",
+    createdBy: "codex@workspace",
+    summary: "A question needs a responsible actor",
+    paths: [...paths],
+    contracts: [...contracts],
+    passCriteria: ["responsible actor answers"],
+    question: "Who owns this instruction update?",
+    expectedAnswer: "Owner and target instruction surface"
   };
 }
 

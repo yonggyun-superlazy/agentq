@@ -16,7 +16,7 @@ describe("AgentQ hook config installer", () => {
         PreToolUse: [
           {
             matcher: "Bash",
-            hooks: [{ type: "command", command: "python enforce-rtk.py" }]
+            hooks: [{ type: "command", command: "python existing-hook.py" }]
           }
         ]
       }
@@ -27,7 +27,7 @@ describe("AgentQ hook config installer", () => {
         PreToolUse: [
           {
             matcher: "Bash",
-            hooks: [{ type: "command", command: "python enforce-rtk.py" }]
+            hooks: [{ type: "command", command: "python existing-hook.py" }]
           }
         ]
       }
@@ -39,7 +39,7 @@ describe("AgentQ hook config installer", () => {
       expect.objectContaining({ relativePath: ".codex/hooks.json", action: "update" })
     );
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
-      "python enforce-rtk.py"
+      "python existing-hook.py"
     );
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
       "agentq hook codex stop"

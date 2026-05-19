@@ -13,12 +13,12 @@ describe("AgentQ domain schema", () => {
       id: "AQ-1",
       kind: "blocker",
       createdBy: "codex@workspace",
-      summary: "Generated dispatch is stale",
-      paths: ["ProjectDD/DD.Shared/Generated/DDUnit.Dispatch.g.cs"],
+      summary: "Generated API client is stale",
+      paths: ["packages/generated/api-client.ts"],
       contracts: [],
-      passCriteria: ["generated dispatch includes DDUnit"],
-      observed: "DDUnit.Dispatch.g.cs was not regenerated",
-      brokenContract: "generated dispatch must reflect unit schema"
+      passCriteria: ["generated client includes UserRecord"],
+      observed: "api-client.ts was not regenerated",
+      brokenContract: "generated client must reflect API schema"
     });
 
     expect(parsed.kind).toBe("blocker");
@@ -45,12 +45,12 @@ describe("AgentQ domain schema", () => {
       id: "AQ-question",
       kind: "question",
       createdBy: "codex@workspace",
-      summary: "Damage floater anchor ownership",
-      paths: ["ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs"],
+      summary: "Status badge ownership",
+      paths: ["packages/runtime/src/eventBus.ts"],
       contracts: [],
       passCriteria: [],
-      question: "Should impact anchors use projectile position or target hit height?",
-      expectedAnswer: "Answer the coordinate source and owning system."
+      question: "Should status badges read from event payload or derived view state?",
+      expectedAnswer: "Answer the state source and owning system."
     });
 
     expect(parsed.kind).toBe("question");

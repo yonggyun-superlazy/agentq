@@ -251,7 +251,7 @@ describe("AgentQ hook handler", () => {
         hook_event_name: "PreToolUse",
         tool_name: "shell_command",
         tool_input: {
-          command: "rtk pwsh -NoProfile -Command 'Get-Content AgentQ/README.md'"
+          command: "pwsh -NoProfile -Command 'Get-Content AgentQ/README.md'"
         }
       },
       env,
@@ -259,7 +259,7 @@ describe("AgentQ hook handler", () => {
     });
 
     const active = await readActiveWorkState(store, actorId);
-    expect(active?.touchedPaths.join("\n")).not.toContain("rtk pwsh");
+    expect(active?.touchedPaths.join("\n")).not.toContain("pwsh -NoProfile");
     const session = await readFile(
       store.layout.sessionPath(createAdapterSessionKey("codex", "S5")),
       "utf8"
@@ -300,7 +300,7 @@ describe("AgentQ hook handler", () => {
         hook_event_name: "PreToolUse",
         tool_name: "shell_command",
         tool_input: {
-          command: "rtk pwsh -NoProfile -Command 'agentq actors'"
+          command: "pwsh -NoProfile -Command 'agentq actors'"
         }
       },
       env,

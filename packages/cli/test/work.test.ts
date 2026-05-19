@@ -171,9 +171,9 @@ describe("CLI work stack", () => {
       "--session",
       "receiver",
       "--paths",
-      "ProjectDD/**",
+      "packages/service/**",
       "--responsibility",
-      "ProjectDD build owner"
+      "service build owner"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
 
     await expect(runCommand([
@@ -183,7 +183,7 @@ describe("CLI work stack", () => {
       "--actor",
       sender,
       "--path",
-      "ProjectDD/DDUnity/DD.Game.csproj",
+      "packages/service/package.json",
       "--summary",
       "Stale project reference blocks build"
     ], runtime)).resolves.toMatchObject({
@@ -220,11 +220,11 @@ describe("CLI work stack", () => {
       "--actor",
       actorId,
       "--paths",
-      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs",
+      "packages/runtime/src/eventBus.ts",
       "--responsibility",
-      "projectile impact owner",
+      "event bus owner",
       "--summary",
-      "projectile impact scope"
+      "event bus scope"
     ], runtime)).resolves.toEqual({
       code: 0,
       stdout: `${actorId} refreshed\n`,
@@ -233,7 +233,7 @@ describe("CLI work stack", () => {
     const actors = await runCommand(["actors"], runtime);
     expect(actors.stdout).toContain("actors: 1");
     expect(actors.stdout).toContain(actorId);
-    expect(actors.stdout).toContain("ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs");
+    expect(actors.stdout).toContain("packages/runtime/src/eventBus.ts");
     expect(actors.stdout).not.toContain("routing: broad");
   });
 
@@ -251,9 +251,9 @@ describe("CLI work stack", () => {
       "--session",
       "sender",
       "--paths",
-      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDUnitView.cs",
+      "packages/ui/src/statusPanel.ts",
       "--responsibility",
-      "damage floater view"
+      "status panel view"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
     const receiver = (await runCommand([
       "enter",
@@ -262,9 +262,9 @@ describe("CLI work stack", () => {
       "--session",
       "receiver",
       "--paths",
-      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs",
+      "packages/runtime/src/eventBus.ts",
       "--responsibility",
-      "projectile impact owner"
+      "event bus owner"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
 
     await expect(runCommand([
@@ -276,11 +276,11 @@ describe("CLI work stack", () => {
       "--to",
       receiver,
       "--path",
-      "ProjectDD/DDUnity/Assets/Scripts/Battle/DDProjectileSystem.cs",
+      "packages/runtime/src/eventBus.ts",
       "--question",
-      "Should damage floater hit anchors use projectile position or target height?",
+      "Should status panel badges read from event payload or derived view state?",
       "--expect",
-      "Answer owner and coordinate source"
+      "Answer owner and state source"
     ], runtime)).resolves.toEqual({
       code: 0,
       stdout: `AQ-question routed to ${receiver}\n`,
@@ -303,7 +303,7 @@ describe("CLI work stack", () => {
       "--status",
       "answered",
       "--evidence",
-      "Projectile impacts should anchor at projectile.BodyState.Position."
+      "Status panel badges should use event.payload.status."
     ], runtime)).resolves.toEqual({
       code: 0,
       stdout: "AQ-question answered\n",

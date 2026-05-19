@@ -267,11 +267,11 @@ function pathPatternOverlaps(activePattern: string, messagePath: string): boolea
   const active = normalizePath(activePattern);
   const message = normalizePath(messagePath);
 
-  if (active === message) {
-    return true;
+  if (active === ".") {
+    return false;
   }
 
-  if (active === ".") {
+  if (active === message) {
     return true;
   }
 
