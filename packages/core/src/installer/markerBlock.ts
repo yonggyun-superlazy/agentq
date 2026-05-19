@@ -50,15 +50,13 @@ const SHARED_MARKER_BODY = [
   "",
   "This workspace uses AgentQ: the handshake between coding agents.",
   "",
-  "- Treat AgentQ requests as required replies before claiming done.",
-  "- Use the hook-provided actor id. If absent, inspect `agentq actors`; every command must pass `--actor <agentq-actor-id>`.",
-  "- Before opening new work, check `agentq inbox --actor <agentq-actor-id>` and `agentq work status --actor <agentq-actor-id>`.",
-  "- Keep actor scope specific; refresh broad or stale paths/responsibility with `agentq enter --actor <agentq-actor-id>`.",
-  "- Use `agentq question` for design/ownership answers and `agentq block` for failing contracts; include path/contract context.",
-  "- Poll your inbox when active: `agentq inbox --actor <agentq-actor-id>`.",
-  "- Answer with evidence: `agentq respond <id> --actor <agentq-actor-id> --status resolved --evidence \"...\"`.",
-  "- Track active local work with `agentq work start/status/evidence/close --actor <agentq-actor-id>`.",
-  "- Run `agentq done-check --actor <agentq-actor-id>` before finishing; it checks replies and active work.",
+  "- Use the hook-provided actor id; every command must pass `--actor <id>`.",
+  "- Start/resume/scope change: `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
+  "- Active = recent AgentQ presence, not OS process state; default stale window is 1 hour.",
+  "- Before work: `agentq inbox --actor <id>` and `agentq work status --actor <id>`.",
+  "- Track work with `agentq work start/status/evidence/close --actor <id>`; run `agentq done-check --actor <id>` before done.",
+  "- Required replies block done-check; poll inbox and answer with `agentq respond <msg> --actor <id> --status resolved --evidence \"...\"`.",
+  "- Use `agentq question`/`agentq block` with path or contract context. Broad `.` paths are ignored by implicit routing; use `--to` or precise `--contract` when ownership is known.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 

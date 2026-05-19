@@ -64,7 +64,7 @@ export interface CommandRuntime {
   readonly now: () => string;
 }
 
-const DEFAULT_ACTOR_STALE_AFTER_MS = 300_000;
+const DEFAULT_ACTOR_STALE_AFTER_MS = 3_600_000;
 
 export const COMMANDS: readonly CommandSpec[] = [
   { name: "install", summary: "Install agent instructions and hook gates" },
@@ -250,7 +250,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       "Usage:",
       "  agentq actors [--stale-ms <milliseconds>]",
       "",
-      "Actors are marked stale when lastSeen is older than 5 minutes by default."
+      "Actors are marked stale when lastSeen is older than 1 hour by default.",
+      "Active means recent AgentQ presence, not a guaranteed live OS process."
     ].join("\n");
   }
 
@@ -661,7 +662,7 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
   const routeInput = {
     message,
     now: runtime.now(),
-    staleAfterMs: Number(optionValue(args, "stale-ms") ?? "300000")
+    staleAfterMs: Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS))
   };
   const plan = await createRoutedBlocker(
     store,
@@ -704,7 +705,7 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
   const routeInput = {
     message,
     now: runtime.now(),
-    staleAfterMs: Number(optionValue(args, "stale-ms") ?? "300000")
+    staleAfterMs: Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS))
   };
   const plan = await createRoutedRequest(
     store,

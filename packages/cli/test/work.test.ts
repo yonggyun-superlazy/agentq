@@ -325,12 +325,12 @@ describe("CLI work stack", () => {
     const recentRuntime = {
       cwd: workspace,
       env,
-      now: () => "2026-05-18T00:04:00.000Z"
+      now: () => "2026-05-18T00:40:00.000Z"
     };
     const viewRuntime = {
       cwd: workspace,
       env,
-      now: () => "2026-05-18T00:06:00.000Z"
+      now: () => "2026-05-18T01:01:00.000Z"
     };
 
     const oldActor = (await runCommand(["enter", "--as", "codex", "--session", "old"], oldRuntime)).stdout
@@ -347,13 +347,13 @@ describe("CLI work stack", () => {
       code: 0,
       stderr: ""
     });
-    expect(result.stdout).toContain("actors: 2 (active 1, stale 1, staleAfter 5m)");
+    expect(result.stdout).toContain("actors: 2 (active 1, stale 1, staleAfter 1h)");
     expect(result.stdout).toContain(oldActor);
     expect(result.stdout).toContain(recentActor);
     expect(result.stdout).toContain("status: stale");
     expect(result.stdout).toContain("status: active");
-    expect(result.stdout).toContain("age: 6m");
-    expect(result.stdout).toContain("age: 2m");
+    expect(result.stdout).toContain("age: 1h");
+    expect(result.stdout).toContain("age: 21m");
   });
 
   it("marks broad actor scopes as weak routing evidence", async () => {

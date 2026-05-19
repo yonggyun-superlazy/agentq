@@ -37,6 +37,11 @@ Use `--actor` with the hook-provided actor id when refreshing scope. `agentq
 enter --as ... --session ...` creates or refreshes a manual session binding and
 can produce a different actor id.
 
+`agentq actors` marks actors stale from recent AgentQ presence, not from OS
+process state. The default stale window is 1 hour so long-running CLI reasoning
+or user-input waits do not disappear after a short pause. A stale actor may still
+resume later, but it is not routeable as live work until it refreshes presence.
+
 During tool use, AgentQ hooks attach touched paths to the active work item. Add evidence when a test, build, static check, runtime trace, or reviewable artifact proves progress:
 
 ```bash
@@ -75,5 +80,6 @@ agentq block --actor <your-actor-id> --path <path> --contract "<broken contract>
 Implicit routing ignores broad `.` actor paths. If no active path or contract
 owner matches, record that `agentq actors` had no routeable owner in your work
 evidence before reporting the blocker. If the target actor is stale, do not wait
-on it as live work. Record evidence and supersede or re-route to an active
-owner.
+on it as live work. Record evidence and supersede or re-route to an active owner,
+or send an explicit `--to` request only when you intentionally want that actor to
+answer on its next resume.
