@@ -52,10 +52,14 @@ Before claiming done, close the active work and then run done-check:
 
 ```bash
 agentq work close --actor <agentq-actor-id> --summary "<closed frame>"
+agentq scope-check --actor <agentq-actor-id>
 agentq done-check --actor <agentq-actor-id>
 ```
 
 If `done-check` fails, resolve the required inbox item or active work item first. Do not create repo `.agentq/` or `agentq.config.yaml`; AgentQ runtime state is OS-local.
+If `scope-check` fails, refresh the exact hook actor with a specific owned path
+and responsibility; broad `.` paths and hook-only responsibilities are not
+enough evidence for routing.
 
 When a design or ownership answer is needed from another active actor, ask a
 required question. The sender stays blocked until the receiver answers with

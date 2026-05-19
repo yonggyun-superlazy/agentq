@@ -72,6 +72,7 @@ Use [`docs/prompts/work-stack.md`](docs/prompts/work-stack.md) as the handoff pr
 - Mutate only with `--yes`.
 - Keep runtime queue state outside the repository in an OS-local workspace store.
 - Use `agentq actors` to inspect active/stale actor presence before routing blockers. Active means recent AgentQ presence, not a guaranteed live OS process; the default stale window is 1 hour.
+- Use `agentq scope-check --actor <id>` before finishing. It fails broad `.` paths and generic hook responsibilities so agents refresh concrete ownership.
 - No `agentq.config.yaml`.
 - No default repo `.agentq/`.
 - No `--store` escape hatch.

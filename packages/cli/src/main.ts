@@ -24,13 +24,16 @@ import {
   planMarkerUninstall,
   planStopContinuation,
   planWorkStopContinuation,
+  planScopeContinuation,
   refreshActorPresence,
   readActiveWorkState,
   resolveWorkspaceStore,
   runHookHandler,
+  runScopeCheck,
   runDoctor,
   runWorkDoneCheck,
   startWork,
+  actorScopeWeaknesses,
   type DoctorReport,
   type HookAdapter,
   type HookConfigPlan,
@@ -80,6 +83,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "supersede", summary: "Cancel an outbound required request with evidence" },
   { name: "follow-up", summary: "Continue after a blocked response" },
   { name: "accept-blocked", summary: "Accept blocked evidence and unblock the sender" },
+  { name: "scope-check", summary: "Fail when an actor has broad paths or generic responsibility" },
   { name: "done-check", summary: "Fail when required requests or active work remain unresolved" },
   { name: "hook", summary: "Run an AgentQ lifecycle hook handler" }
 ];
@@ -242,6 +246,18 @@ export function renderCommandHelp(command: CommandSpec): string {
     ].join("\n");
   }
 
+  if (command.name === "scope-check") {
+    return [
+      "agentq scope-check",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq scope-check --actor <id>",
+      "",
+      "Fails when the actor still advertises broad `.` paths or generic hook responsibilities."
+    ].join("\n");
+  }
+
   if (command.name === "actors") {
     return [
       "agentq actors",
@@ -367,6 +383,10 @@ export async function runCommand(
 
   if (command === "done-check") {
     return await doneCheckCommand(argv.slice(1), runtime);
+  }
+
+  if (command === "scope-check") {
+    return await scopeCheckCommand(argv.slice(1), runtime);
   }
 
   return {
@@ -992,9 +1012,38 @@ async function doneCheckCommand(argv: readonly string[], runtime: CommandRuntime
     };
   }
 
+  const scopeResult = await runScopeCheck(store, actorId);
+  if (!scopeResult.ok) {
+    return {
+      code: 2,
+      stdout: "",
+      stderr: `${planScopeContinuation(scopeResult)}\n`
+    };
+  }
+
   return {
     code: 0,
     stdout: "ok: no required replies or active work remain open\n",
+    stderr: ""
+  };
+}
+
+async function scopeCheckCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const actorId = requiredOption(args, "actor");
+  const store = await openStore(runtime);
+  const result = await runScopeCheck(store, actorId);
+  if (!result.ok) {
+    return {
+      code: 2,
+      stdout: "",
+      stderr: `${planScopeContinuation(result)}\n`
+    };
+  }
+
+  return {
+    code: 0,
+    stdout: "ok: actor scope is specific\n",
     stderr: ""
   };
 }
@@ -1148,19 +1197,12 @@ function renderActorPresence(summary: ActorStatusSummary): string {
 }
 
 function routingScopeWarning(actor: Presence): string | null {
-  const hasBroadPath = actor.activePaths.some((activePath) => normalizeActorPath(activePath) === ".");
-  const hasGenericResponsibility = actor.responsibilities.some((responsibility) =>
-    /(^| )(active tool scope|pre-tool scope|stop gate|session)( |$)/i.test(responsibility)
-  );
-  if (!hasBroadPath && !hasGenericResponsibility) {
+  const weaknesses = actorScopeWeaknesses(actor);
+  if (weaknesses.length === 0) {
     return null;
   }
 
   return `broad; refresh this actor with agentq enter --actor ${actor.actorId} --paths <path> --responsibility "<owned area>"`;
-}
-
-function normalizeActorPath(activePath: string): string {
-  return activePath.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
 }
 
 function formatDuration(ms: number): string {

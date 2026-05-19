@@ -125,10 +125,10 @@ describe("AgentQ hook handler", () => {
       now: "2026-05-18T00:00:00.000Z"
     });
 
-    expect(stop).toEqual({
-      code: 0,
-      stdout: "{}\n",
-      stderr: ""
+    expect(stop.code).toBe(0);
+    expect(JSON.parse(stop.stdout)).toMatchObject({
+      decision: "block",
+      reason: expect.stringContaining("scope-check failed")
     });
 
     const store = await resolveWorkspaceStore(workspace, { env });

@@ -256,6 +256,16 @@ async function enter(
   adapter: "codex" | "claude-code" | "copilot-cli",
   session: string
 ): Promise<string> {
-  const result = await runCommand(["enter", "--as", adapter, "--session", session], runtime);
+  const result = await runCommand([
+    "enter",
+    "--as",
+    adapter,
+    "--session",
+    session,
+    "--paths",
+    "README.md",
+    "--responsibility",
+    `${session} owner`
+  ], runtime);
   return result.stdout.trim().replace(/ registered$/, "");
 }

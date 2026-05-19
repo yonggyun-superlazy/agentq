@@ -61,6 +61,31 @@ const sessionStart = runAgentq(
   })
 );
 assert(sessionStart.includes("AgentQ actor id:"), "SessionStart hook did not return actor context");
+const actorId = actorIdFromHookOutput(sessionStart);
+
+const unscopedStop = runAgentq(
+  ["hook", "codex", "stop"],
+  workspace,
+  JSON.stringify({
+    session_id: "package-smoke",
+    cwd: workspace,
+    hook_event_name: "Stop",
+    stop_hook_active: false
+  })
+);
+assert(unscopedStop.includes("scope-check failed"), `Stop hook should require concrete scope before finishing, got ${unscopedStop}`);
+
+runAgentq([
+  "enter",
+  "--actor",
+  actorId,
+  "--paths",
+  "src/package-smoke.ts",
+  "--responsibility",
+  "package smoke verification"
+], workspace);
+const scope = runAgentq(["scope-check", "--actor", actorId], workspace);
+assert(scope.includes("ok: actor scope is specific"), `scope-check did not pass after enter --actor, got ${scope}`);
 
 const stop = runAgentq(
   ["hook", "codex", "stop"],
@@ -265,6 +290,12 @@ function assertPublishablePackageMetadata(
   if (expected.bin) {
     assert(pkg.bin !== undefined, `${filePath} is missing CLI bin metadata`);
   }
+}
+
+function actorIdFromHookOutput(output: string): string {
+  const match = output.match(/AgentQ actor id:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
+  assert(match?.[1] !== undefined, `missing actor id in hook output: ${output}`);
+  return match[1];
 }
 
 function readFile(filePath: string): string {

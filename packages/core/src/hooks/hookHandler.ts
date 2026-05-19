@@ -6,6 +6,7 @@ import {
 } from "../store/sessionBinding.js";
 import { ensureWorkspaceStore, resolveWorkspaceStore, type WorkspaceStore } from "../store/workspaceStore.js";
 import { planStopContinuation, runDoneCheck } from "../state/doneCheck.js";
+import { planScopeContinuation, runScopeCheck } from "../state/scopeCheck.js";
 import type { AgentKind } from "../domain/types.js";
 import {
   appendActiveWorkTouch,
@@ -132,6 +133,15 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     };
   }
 
+  const scope = await runScopeCheck(store, actorId);
+  if (!scope.ok) {
+    return {
+      code: 0,
+      stdout: `${JSON.stringify(blockOutput(options.adapter, planScopeContinuation(scope)))}\n`,
+      stderr: ""
+    };
+  }
+
   return {
     code: 0,
     stdout: "{}\n",
@@ -248,7 +258,7 @@ async function openHookStore(cwd: string, env: NodeJS.ProcessEnv | undefined): P
 }
 
 function sessionStartOutput(adapter: HookAdapter, actorId: string): object {
-  const context = `AgentQ actor id: ${actorId}. Use this exact id in every AgentQ command: agentq inbox --actor ${actorId}, agentq work status --actor ${actorId}, and agentq done-check --actor ${actorId}.`;
+  const context = `AgentQ actor id: ${actorId}. Use this exact id in every AgentQ command. Start by checking agentq inbox --actor ${actorId} and agentq work status --actor ${actorId}; before finishing, refresh concrete scope with agentq enter --actor ${actorId} --paths <owned-path> --responsibility "<owned contract>" and run agentq scope-check --actor ${actorId} plus agentq done-check --actor ${actorId}.`;
 
   if (adapter === "copilot-cli") {
     return { additionalContext: context };

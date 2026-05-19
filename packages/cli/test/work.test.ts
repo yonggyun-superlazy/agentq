@@ -98,12 +98,28 @@ describe("CLI work stack", () => {
       env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
       now: () => "2026-05-18T00:00:00.000Z"
     };
-    const sender = (await runCommand(["enter", "--as", "codex", "--session", "sender"], runtime)).stdout
-      .trim()
-      .replace(/ registered$/, "");
-    const receiver = (await runCommand(["enter", "--as", "claude-code", "--session", "receiver"], runtime)).stdout
-      .trim()
-      .replace(/ registered$/, "");
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "docs/instructions.md",
+      "--responsibility",
+      "instruction sender"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "README.md",
+      "--responsibility",
+      "instruction receiver"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
 
     await runCommand([
       "block",
@@ -235,6 +251,46 @@ describe("CLI work stack", () => {
     expect(actors.stdout).toContain(actorId);
     expect(actors.stdout).toContain("packages/runtime/src/eventBus.ts");
     expect(actors.stdout).not.toContain("routing: broad");
+  });
+
+  it("gates done-check on broad actor scope until the exact actor is refreshed", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-scope-check-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand(["enter", "--as", "codex", "--session", "broad"], runtime)).stdout
+      .trim()
+      .replace(/ registered$/, "");
+
+    await expect(runCommand(["scope-check", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining("scope-check failed")
+    });
+    await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining("scope-check failed")
+    });
+
+    await runCommand([
+      "enter",
+      "--actor",
+      actorId,
+      "--paths",
+      "packages/runtime/src/eventBus.ts",
+      "--responsibility",
+      "event bus owner"
+    ], runtime);
+
+    await expect(runCommand(["scope-check", "--actor", actorId], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "ok: actor scope is specific\n",
+      stderr: ""
+    });
+    await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0
+    });
   });
 
   it("routes required questions and gates the sender until the receiver answers", async () => {

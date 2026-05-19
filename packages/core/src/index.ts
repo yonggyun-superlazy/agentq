@@ -26,6 +26,7 @@ export * from "./store/writeOnce.js";
 export * from "./store/sessionBinding.js";
 export * from "./state/fold.js";
 export * from "./state/doneCheck.js";
+export * from "./state/scopeCheck.js";
 export * from "./routing/routeBlocker.js";
 export * from "./work/schema.js";
 export * from "./work/workStack.js";
