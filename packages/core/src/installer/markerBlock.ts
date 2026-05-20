@@ -48,15 +48,16 @@ interface MarkerEdit {
 const SHARED_MARKER_BODY = [
   "# AgentQ",
   "",
-  "This workspace uses AgentQ: the handshake between coding agents.",
+  "This workspace uses AgentQ: required-response queues for coding agents.",
   "",
-  "- Use the hook-provided actor id; every command must pass `--actor <id>`.",
-  "- Start/resume/scope change: `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
-  "- Active = recent AgentQ presence, not OS process state; default stale window is 1 hour.",
+  "- Use the hook actor id; every command must pass `--actor <id>`.",
+  "- Scope refresh: `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
+  "- Active = recent AgentQ presence, not OS process state; stale after 1 hour.",
   "- Before work: `agentq inbox --actor <id>` and `agentq work status --actor <id>`.",
-  "- Track work with `agentq work start/status/evidence/close --actor <id>`; run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
-  "- Required replies block done-check; poll inbox and answer with `--status answered` for questions, `--status resolved` for resolved blockers, or another explicit status from `agentq respond --help`.",
-  "- Use `agentq question`/`agentq block` with path or contract context. Broad `.` paths are ignored by implicit routing; use `--to` or precise `--contract` when ownership is known.",
+  "- Track work with `agentq work start/status/evidence/close --actor <id>`; run `scope-check` and `done-check` before done.",
+  "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
+  "- Use `agentq question`/`agentq block` with path or contract. Broad `.` is ignored by routing; use `--to` or precise `--contract` when known.",
+  "- Queue creation does not auto-resume; explicit `agentq wake --actor <id> --execute` only when immediate delivery is needed.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 

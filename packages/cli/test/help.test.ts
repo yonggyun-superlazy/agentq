@@ -29,6 +29,15 @@ describe("CLI help", () => {
     }
   });
 
+  it("documents wake as explicit delivery without public adapter flags", async () => {
+    const result = await runCommand(["wake", "--help"]);
+
+    expect(result.stdout).toContain("explicit delivery attempt");
+    expect(result.stdout).toContain("not an automatic side effect");
+    expect(result.stdout).toContain("Adapter limits are handled by AgentQ");
+    expect(result.stdout).not.toContain("experimental-copilot");
+  });
+
   it("fails unknown commands before writing runtime state", async () => {
     await expect(runCommand(["unknown"])).resolves.toEqual({
       code: 2,

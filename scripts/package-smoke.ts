@@ -112,6 +112,48 @@ const preTool = runAgentq(
 );
 assert(preTool.trim() === "{}", `PreTool hook should pass, got ${preTool}`);
 
+const wakeReceiver = runAgentq([
+  "enter",
+  "--as",
+  "claude-code",
+  "--session",
+  "package-smoke-wake-claude",
+  "--paths",
+  "src/package-smoke.ts",
+  "--responsibility",
+  "package smoke wake receiver"
+], workspace).trim().replace(/ registered$/, "");
+runAgentq([
+  "question",
+  "--id",
+  "AQ-package-wake",
+  "--actor",
+  actorId,
+  "--to",
+  wakeReceiver,
+  "--path",
+  "src/package-smoke.ts",
+  "--question",
+  "Package smoke wake dry-run",
+  "--pass",
+  "wake receiver can be resumed"
+], workspace);
+const wakeList = runAgentq(["wake", "list"], workspace);
+assert(wakeList.includes(wakeReceiver), `wake list missed receiver: ${wakeList}`);
+const wakeDryRun = runAgentq(["wake", "--actor", wakeReceiver], workspace);
+assert(wakeDryRun.includes("command: claude"), `wake dry-run missed Claude command: ${wakeDryRun}`);
+assert(wakeDryRun.includes("AQ-package-wake"), `wake dry-run missed pending message: ${wakeDryRun}`);
+runAgentq([
+  "respond",
+  "AQ-package-wake",
+  "--actor",
+  wakeReceiver,
+  "--status",
+  "answered",
+  "--evidence",
+  "package smoke wake dry-run verified"
+], workspace);
+
 runAgentq(["uninstall", "--yes"], workspace);
 assert(!readFile(path.join(workspace, "AGENTS.md")).includes("agentq:begin"), "uninstall left AGENTS marker");
 assert(!existsSync(path.join(workspace, ".codex", "hooks.json")), "uninstall left AgentQ-only Codex hook file");

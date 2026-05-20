@@ -46,6 +46,29 @@ agentq done-check --actor "$CODEX_ACTOR"
 
 Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md).
 
+## Wake Pending Agents
+
+AgentQ does not own terminals, inject keystrokes into running TTYs, or wake agents as a side effect of `question` or `block`. Those commands only create durable required-response queue items.
+
+When a sender or operator needs immediate progress, `agentq wake` can find actors with pending required requests and print or execute the native CLI resume command needed to process that inbox.
+
+```bash
+agentq wake list
+agentq wake --actor "$CLAUDE_ACTOR"
+agentq wake --actor "$CLAUDE_ACTOR" --execute
+agentq wake --all --dry-run
+```
+
+Wake execution is adapter-based:
+
+| Adapter | Resume command | Execute support |
+|---------|----------------|-----------------|
+| Claude Code | `claude -p <prompt> --resume <session>` | Supported |
+| Codex CLI | `codex exec resume <session> --skip-git-repo-check --json <prompt>` | Supported |
+| GitHub Copilot CLI | `copilot --resume=<session> -p <prompt>` | Limited; AgentQ applies adapter timeout and reports failure |
+
+Dry-run is the default. `--execute` is an explicit delivery attempt, not task assignment or orchestration. Copilot CLI resume is handled as adapter policy because local smoke testing showed `--resume` can hang in non-interactive pipes on some versions.
+
 ## Local Install
 
 From a source checkout:

@@ -108,6 +108,47 @@ export async function resolveHookActorId(
   return binding.actorId;
 }
 
+export async function listSessionBindings(store: WorkspaceStore): Promise<SessionBinding[]> {
+  let entries;
+  try {
+    entries = await readdir(store.layout.sessionsDir, { withFileTypes: true });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { readonly code?: unknown }).code === "ENOENT"
+    ) {
+      return [];
+    }
+
+    throw error;
+  }
+
+  const bindings = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".yaml"))
+      .map(async (entry) =>
+        parseYamlWithSchema(
+          SessionBindingSchema,
+          await readFile(path.join(store.layout.sessionsDir, entry.name), "utf8")
+        )
+      )
+  );
+
+  return bindings.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export async function findSessionBindingByActorId(
+  store: WorkspaceStore,
+  actorId: string
+): Promise<SessionBinding | null> {
+  SafeIdSchema.parse(actorId);
+  const bindings = await listSessionBindings(store);
+
+  return bindings.find((binding) => binding.actorId === actorId) ?? null;
+}
+
 export async function refreshActorPresence(
   store: WorkspaceStore,
   input: ActorPresenceRefreshInput

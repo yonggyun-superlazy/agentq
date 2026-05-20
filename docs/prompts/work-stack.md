@@ -70,6 +70,12 @@ agentq question --actor <your-actor-id> --to <target-actor-id> --path <path> --q
 agentq question --actor <your-actor-id> --path <path> --contract "<owned area>" --question "<decision needed>" --expect "<what routed actors must answer>"
 ```
 
+Creating a question only writes a required-response queue item. It does not
+automatically resume another CLI session. If you need immediate delivery, run
+`agentq wake list`, inspect the target, then explicitly run `agentq wake --actor
+<target-actor-id> --execute`. Treat wake as a delivery retry for an existing
+queue item, not as task assignment.
+
 When a build, test, generated artifact, or broken contract is outside your
 active work, do not leave it only in chat or a wiki queue. Run `agentq actors`,
 then create a required blocker with observable evidence. If there is an obvious
@@ -80,6 +86,10 @@ path/contract:
 agentq block --actor <your-actor-id> --to <target-actor-id> --path <path> --contract "<broken contract>" --summary "<short blocker>" --observed "<what failed>" --pass "<how the target can close it>"
 agentq block --actor <your-actor-id> --path <path> --contract "<broken contract>" --summary "<short blocker>" --observed "<what failed>" --pass "<how routed actors can close it>"
 ```
+
+Creating a blocker has the same delivery rule as a question: the queue item is
+durable, and wake is a separate explicit command only when immediate processing
+is needed.
 
 Implicit routing ignores broad `.` actor paths. If no active path or contract
 owner matches, record that `agentq actors` had no routeable owner in your work

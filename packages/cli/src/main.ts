@@ -17,6 +17,7 @@ import {
   closeWork,
   applyMarkerInstall,
   applyMarkerUninstall,
+  listPendingInboxItems,
   listActorPresences,
   planHookConfigInstall,
   planHookConfigUninstall,
@@ -49,6 +50,7 @@ import {
   type ResponseStatus,
   type WorkState
 } from "@agentq/core";
+import { runWakeCommand } from "./wake.js";
 
 export interface CommandSpec {
   readonly name: string;
@@ -79,6 +81,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "block", summary: "Create a required-response blocker" },
   { name: "question", summary: "Ask an actor a required-response question" },
   { name: "inbox", summary: "Show required requests for an explicit actor" },
+  { name: "wake", summary: "Explicitly deliver pending AgentQ requests to resumable CLI sessions" },
   { name: "respond", summary: "Resolve or answer a required request" },
   { name: "supersede", summary: "Cancel an outbound required request with evidence" },
   { name: "follow-up", summary: "Continue after a blocked response" },
@@ -193,6 +196,24 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq inbox --actor <id>",
       "",
       "Shows each pending request with sender, summary, path/contract context, pass criteria, and a response command."
+    ].join("\n");
+  }
+
+  if (command.name === "wake") {
+    return [
+      "agentq wake",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq wake list",
+      "  agentq wake --actor <id> [--dry-run]",
+      "  agentq wake --actor <id> --execute [--timeout-ms <milliseconds>]",
+      "  agentq wake --all [--dry-run]",
+      "  agentq wake --all --execute [--timeout-ms <milliseconds>]",
+      "",
+      "Dry-run is the default. Execute resumes only actors with pending inbox requests.",
+      "Wake is an explicit delivery attempt, not an automatic side effect of question/block.",
+      "Adapter limits are handled by AgentQ and shown in dry-run output."
     ].join("\n");
   }
 
@@ -363,6 +384,10 @@ export async function runCommand(
 
   if (command === "inbox") {
     return await inboxCommand(argv.slice(1), runtime);
+  }
+
+  if (command === "wake") {
+    return await runWakeCommand(argv.slice(1), runtime);
   }
 
   if (command === "respond") {
@@ -743,31 +768,7 @@ async function inboxCommand(argv: readonly string[], runtime: CommandRuntime): P
   const args = parseArgs(argv);
   const actorId = requiredOption(args, "actor");
   const store = await openStore(runtime);
-  const inboxDir = store.layout.inboxPointerPath(actorId, "__probe__").replace(/__probe__\.yaml$/, "");
-  const { readdir } = await import("node:fs/promises");
-  const entries = await readdir(inboxDir).catch((error: unknown) => {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      (error as { readonly code?: unknown }).code === "ENOENT"
-    ) {
-      return [];
-    }
-
-    throw error;
-  });
-  const messageIds = entries.map((entry) => entry.replace(/\.yaml$/, "")).sort();
-  const openRequests: Array<{ readonly state: FoldedMessageState; readonly request: FoldedRequest }> = [];
-  for (const messageId of messageIds) {
-    const state = await foldMessageState(store, messageId);
-    const request = state.requests.find((candidate) =>
-      candidate.request.to === actorId && candidate.blocksReceiverDone
-    );
-    if (request !== undefined) {
-      openRequests.push({ state, request });
-    }
-  }
+  const openRequests = await listPendingInboxItems(store, actorId);
 
   return {
     code: 0,
