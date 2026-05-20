@@ -57,7 +57,7 @@ const SHARED_MARKER_BODY = [
   "- Track work with `agentq work start/status/evidence/close --actor <id>`; run `scope-check` and `done-check` before done.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
   "- Use `agentq question`/`agentq block` with path or contract. Broad `.` is ignored by routing; use `--to` or precise `--contract` when known.",
-  "- `question`/`block` own first delivery; use `agentq wake --actor <id> --execute` only for manual retry/diagnostic.",
+  "- `question`/`block` record pending delivery only; `agentq wake --actor <id>` inspects targets and never starts headless agents.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 

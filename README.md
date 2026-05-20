@@ -46,28 +46,23 @@ agentq done-check --actor "$CODEX_ACTOR"
 
 Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md).
 
-## Delivery and Wake Retry
+## Delivery Inspection
 
-AgentQ does not assign work or create a boss agent. It does own delivery for required-response queue items. When `question` or `block` routes a request, AgentQ writes the durable queue item, checks the recipient session binding, attempts adapter delivery when possible, and records the delivery result.
+AgentQ does not assign work or create a boss agent. When `question` or `block` routes a request, AgentQ writes the durable queue item, checks the recipient session binding, and records pending delivery without starting another agent process.
 
-`agentq wake` is the manual retry and diagnostic surface. It can find actors with pending required requests and print or execute the native CLI resume command needed to process that inbox.
+`agentq wake` is inspection-only. It finds actors with pending required requests and prints the inbox command the visible target agent should run. It does not call `codex exec resume`, `claude -p --resume`, Copilot non-interactive resume, or any other headless resume path.
 
 ```bash
 agentq wake list
 agentq wake --actor "$CLAUDE_ACTOR"
-agentq wake --actor "$CLAUDE_ACTOR" --execute
-agentq wake --all --dry-run
+agentq wake --all
 ```
 
-Wake execution is adapter-based:
+Headless resume is intentionally not part of AgentQ delivery:
 
-| Adapter | Resume command | Execute support |
-|---------|----------------|-----------------|
-| Claude Code | `claude -p <prompt> --resume <session>` | Supported |
-| Codex CLI | `codex exec resume <session> --skip-git-repo-check --json <prompt>` | Supported |
-| GitHub Copilot CLI | `copilot --resume=<session> -p <prompt>` | Limited; AgentQ applies adapter timeout and reports failure |
-
-Dry-run is the default for manual retry. Copilot CLI resume is handled as adapter policy because local smoke testing showed `--resume` can hang in non-interactive pipes on some versions.
+- Hidden resume turns can edit files or answer queues without updating the visible TUI.
+- Existing unmanaged TUI processes do not expose a reliable cross-CLI wake channel.
+- Future managed TUI or remote-control transports must prove visible delivery before they become AgentQ delivery targets.
 
 ## Local Install
 

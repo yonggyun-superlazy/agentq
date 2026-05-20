@@ -70,11 +70,11 @@ agentq question --actor <your-actor-id> --to <target-actor-id> --path <path> --q
 agentq question --actor <your-actor-id> --path <path> --contract "<owned area>" --question "<decision needed>" --expect "<what routed actors must answer>"
 ```
 
-Creating a question writes the required-response queue item and lets AgentQ own
-the first delivery attempt. The sending agent does not decide whether the
-receiver is sleeping or which adapter can resume it. Use `agentq wake list` and
-`agentq wake --actor <target-actor-id> --execute` only as a manual retry or
-diagnostic after AgentQ records delivery failure, timeout, or missing binding.
+Creating a question writes the required-response queue item and records pending
+delivery. AgentQ does not start headless resume turns for another agent. Use
+`agentq wake list` and `agentq wake --actor <target-actor-id>` only to inspect
+which actors have pending inbox work, then continue in the visible target agent
+TUI.
 
 When a build, test, generated artifact, or broken contract is outside your
 active work, do not leave it only in chat or a wiki queue. Run `agentq actors`,
@@ -88,7 +88,7 @@ agentq block --actor <your-actor-id> --path <path> --contract "<broken contract>
 ```
 
 Creating a blocker has the same delivery rule as a question: the queue item is
-durable, AgentQ attempts delivery, and `wake` is only a manual retry/diagnostic
+durable, AgentQ records pending delivery, and `wake` is only an inspection
 surface.
 
 Implicit routing ignores broad `.` actor paths. If no active path or contract

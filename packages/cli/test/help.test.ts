@@ -29,12 +29,13 @@ describe("CLI help", () => {
     }
   });
 
-  it("documents wake as manual retry without public adapter flags", async () => {
+  it("documents wake as inspection-only", async () => {
     const result = await runCommand(["wake", "--help"]);
 
-    expect(result.stdout).toContain("Manually retry");
-    expect(result.stdout).toContain("already own the first delivery attempt");
-    expect(result.stdout).toContain("Adapter limits are handled by AgentQ");
+    expect(result.stdout).toContain("Inspect pending delivery targets");
+    expect(result.stdout).toContain("inspection-only");
+    expect(result.stdout).toContain("never starts headless resume processes");
+    expect(result.stdout).not.toContain("--execute");
     expect(result.stdout).not.toContain("experimental-copilot");
   });
 

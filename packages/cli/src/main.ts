@@ -67,7 +67,6 @@ export interface CommandRuntime {
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
   readonly now: () => string;
-  readonly deliveryMode?: "execute" | "record";
 }
 
 const DEFAULT_ACTOR_STALE_AFTER_MS = 3_600_000;
@@ -82,7 +81,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "block", summary: "Create a required-response blocker" },
   { name: "question", summary: "Ask an actor a required-response question" },
   { name: "inbox", summary: "Show required requests for an explicit actor" },
-  { name: "wake", summary: "Manually retry delivery to resumable CLI sessions" },
+  { name: "wake", summary: "Inspect pending delivery targets" },
   { name: "respond", summary: "Resolve or answer a required request" },
   { name: "supersede", summary: "Cancel an outbound required request with evidence" },
   { name: "follow-up", summary: "Continue after a blocked response" },
@@ -172,7 +171,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq block --actor <id> --summary \"...\" [--to <id>...] [--id <id>] [--path <path>...] [--contract <name>...] [--pass \"...\"]",
       "",
       "If --to is omitted, AgentQ routes to active actors matched by path or contract.",
-      "After routing, AgentQ attempts delivery to resumable sessions and records the result."
+      "After routing, AgentQ records pending delivery without starting headless agent processes."
     ].join("\n");
   }
 
@@ -186,7 +185,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --contract <name>... [--expect \"...\"] [--pass \"...\"]",
       "",
       "Questions are required requests. The sender remains blocked until routed actors answer.",
-      "After routing, AgentQ attempts delivery to resumable sessions and records the result."
+      "After routing, AgentQ records pending delivery without starting headless agent processes."
     ].join("\n");
   }
 
@@ -209,14 +208,11 @@ export function renderCommandHelp(command: CommandSpec): string {
       "",
       "Usage:",
       "  agentq wake list",
-      "  agentq wake --actor <id> [--dry-run]",
-      "  agentq wake --actor <id> --execute [--timeout-ms <milliseconds>]",
-      "  agentq wake --all [--dry-run]",
-      "  agentq wake --all --execute [--timeout-ms <milliseconds>]",
+      "  agentq wake --actor <id>",
+      "  agentq wake --all",
       "",
-      "Dry-run is the default. Execute retries delivery only for actors with pending inbox requests.",
-      "Normal question/block commands already own the first delivery attempt.",
-      "Adapter limits are handled by AgentQ and shown in dry-run output."
+      "Wake is inspection-only. It never starts headless resume processes.",
+      "Use the listed inbox command in the visible target agent TUI."
     ].join("\n");
   }
 
@@ -331,8 +327,7 @@ export async function runCommand(
   runtime: CommandRuntime = {
     cwd: process.cwd(),
     env: process.env,
-    now: () => new Date().toISOString(),
-    deliveryMode: "execute"
+    now: () => new Date().toISOString()
   }
 ): Promise<CommandResult> {
   const command = argv[0];

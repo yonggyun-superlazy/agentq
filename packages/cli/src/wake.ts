@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   EventSchema,
@@ -30,7 +29,6 @@ export interface WakeCommandRuntime {
 
 export interface DeliveryCommandRuntime extends WakeCommandRuntime {
   readonly now: () => string;
-  readonly deliveryMode?: "execute" | "record";
 }
 
 export interface DeliveryAttemptSummary {
@@ -56,23 +54,6 @@ interface WakeTarget {
     readonly state: FoldedMessageState;
     readonly request: FoldedRequest;
   }[];
-  readonly command: WakeCommandPlan;
-}
-
-interface WakeCommandPlan {
-  readonly executable: string;
-  readonly args: readonly string[];
-  readonly prompt: string;
-  readonly policy: "supported" | "limited";
-  readonly timeoutMs?: number;
-}
-
-interface ExecutedWake {
-  readonly target: WakeTarget;
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly timedOut: boolean;
 }
 
 export async function runWakeCommand(
@@ -82,9 +63,12 @@ export async function runWakeCommand(
   const subcommand = argv[0] === "list" ? "list" : null;
   const args = parseArgs(subcommand === null ? argv : argv.slice(1));
   const store = await openStore(runtime);
-  const timeoutMs = Number(optionValue(args, "timeout-ms") ?? "600000");
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("wake --timeout-ms must be a positive number.");
+
+  if (args.flags.has("execute")) {
+    throw new Error("wake --execute was removed because it started headless agent turns. Use wake to inspect pending targets, then continue in the visible agent TUI.");
+  }
+  if (args.options.has("timeout-ms")) {
+    throw new Error("wake --timeout-ms is no longer supported because wake does not execute agent processes.");
   }
 
   if (subcommand === "list") {
@@ -96,7 +80,6 @@ export async function runWakeCommand(
     };
   }
 
-  const dryRun = !args.flags.has("execute") || args.flags.has("dry-run");
   const targets = args.flags.has("all")
     ? await listWakeTargets(store)
     : [await resolveWakeTarget(store, requiredOption(args, "actor"))];
@@ -109,23 +92,9 @@ export async function runWakeCommand(
     };
   }
 
-  if (dryRun) {
-    return {
-      code: 0,
-      stdout: renderWakeDryRun(targets),
-      stderr: ""
-    };
-  }
-
-  const executed: ExecutedWake[] = [];
-  for (const target of targets) {
-    executed.push(await executeWakeTarget(target, runtime, timeoutMs));
-  }
-  const failed = executed.some((result) => result.code !== 0 || result.timedOut);
-
   return {
-    code: failed ? 2 : 0,
-    stdout: renderWakeExecution(executed),
+    code: 0,
+    stdout: renderWakeInspection(targets),
     stderr: ""
   };
 }
@@ -143,7 +112,6 @@ export async function deliverRoutedRequests(
   plan: RequiredRequestRoutePlan,
   runtime: DeliveryCommandRuntime
 ): Promise<DeliveryReport> {
-  const mode = deliveryMode(runtime);
   const actors = await listActorPresences(store);
   const attempts: DeliveryAttemptSummary[] = [];
 
@@ -171,40 +139,14 @@ export async function deliverRoutedRequests(
         evidence: [`AgentQ delivery found no pending inbox request for ${recipient.actorId}.`]
       };
     } else {
-      const target: WakeTarget = {
-        actor,
-        binding,
-        pending,
-        command: buildWakeCommand(actor, binding, pending)
+      summary = {
+        actorId: recipient.actorId,
+        messageIds,
+        status: "record_only",
+        adapter: binding.adapter,
+        sessionId: binding.sessionId,
+        evidence: [`AgentQ recorded pending delivery for ${recipient.actorId}; headless resume execution is disabled.`]
       };
-      if (mode === "record") {
-        summary = {
-          actorId: recipient.actorId,
-          messageIds,
-          status: "record_only",
-          adapter: binding.adapter,
-          sessionId: binding.sessionId,
-          command: target.command.executable,
-          evidence: [`AgentQ recorded delivery plan for ${recipient.actorId}; execution disabled for this runtime.`]
-        };
-      } else {
-        const result = await executeWakeTarget(target, runtime, 600000);
-        summary = {
-          actorId: recipient.actorId,
-          messageIds,
-          status: result.timedOut ? "timed_out" : result.code === 0 ? "executed" : "failed",
-          adapter: binding.adapter,
-          sessionId: binding.sessionId,
-          command: target.command.executable,
-          exitCode: result.code,
-          timedOut: result.timedOut,
-          evidence: [
-            result.timedOut
-              ? `AgentQ delivery timed out for ${recipient.actorId}.`
-              : `AgentQ delivery exited ${result.code} for ${recipient.actorId}.`
-          ]
-        };
-      }
     }
 
     await writeDeliveryAttempt(store, plan.message.id, summary, runtime.now());
@@ -246,8 +188,7 @@ async function listWakeTargets(store: Awaited<ReturnType<typeof openStore>>): Pr
       targets.push({
         actor,
         binding,
-        pending,
-        command: buildWakeCommand(actor, binding, pending)
+        pending
       });
     }
   }
@@ -278,17 +219,8 @@ async function resolveWakeTarget(
   return {
     actor,
     binding,
-    pending,
-    command: buildWakeCommand(actor, binding, pending)
+    pending
   };
-}
-
-function deliveryMode(runtime: DeliveryCommandRuntime): "execute" | "record" {
-  if (runtime.env.AGENTQ_DELIVERY_MODE === "record") {
-    return "record";
-  }
-
-  return runtime.deliveryMode ?? "record";
 }
 
 async function writeDeliveryAttempt(
@@ -315,69 +247,6 @@ async function writeDeliveryAttempt(
   await writeOnceYaml(store.layout.eventPath(messageId, event.id), event);
 }
 
-function buildWakeCommand(
-  actor: Presence,
-  binding: SessionBinding,
-  pending: readonly {
-    readonly state: FoldedMessageState;
-    readonly request: FoldedRequest;
-  }[]
-): WakeCommandPlan {
-  const prompt = buildWakePrompt(actor.actorId, pending);
-  if (binding.adapter === "claude-code") {
-    return {
-      executable: "claude",
-      args: ["-p", prompt, "--resume", binding.sessionId, "--tools", "Bash", "--allowedTools", "Bash(agentq *)"],
-      prompt,
-      policy: "supported"
-    };
-  }
-
-  if (binding.adapter === "codex") {
-    return {
-      executable: "codex",
-      args: ["exec", "resume", binding.sessionId, "--skip-git-repo-check", "--json", prompt],
-      prompt,
-      policy: "supported"
-    };
-  }
-
-  if (binding.adapter === "copilot-cli") {
-    return {
-      executable: "copilot",
-      args: ["-C", binding.workspaceRoot, `--resume=${binding.sessionId}`, "-p", prompt, "--output-format", "json", "--silent"],
-      prompt,
-      policy: "limited",
-      timeoutMs: 120000
-    };
-  }
-
-  throw new Error(`wake does not know how to resume adapter: ${binding.adapter}`);
-}
-
-function buildWakePrompt(
-  actorId: string,
-  pending: readonly {
-    readonly state: FoldedMessageState;
-    readonly request: FoldedRequest;
-  }[]
-): string {
-  const messageIds = pending.map((item) => item.state.message.id);
-
-  return [
-    "AgentQ wake request.",
-    `You are AgentQ actor ${actorId}.`,
-    `Process only these pending AgentQ messages: ${messageIds.join(", ")}.`,
-    "Do not edit files unless a pending request explicitly requires a file edit.",
-    `Run: agentq inbox --actor ${actorId}`,
-    "Answer each relevant pending request with agentq respond and concrete evidence.",
-    "If a request cannot be answered, respond with --status blocked and explain the missing evidence.",
-    "Do not create unrelated work. Do not change actor scope solely because this wake prompt ran.",
-    "If a final gate asks for scope, refresh with your real current owned paths and responsibilities, not with the wake request itself.",
-    "Stop after the pending AgentQ request set is resolved or explicitly blocked."
-  ].join("\n");
-}
-
 function renderWakeTargetList(targets: readonly WakeTarget[]): string {
   return [
     `wake targets: ${targets.length}`,
@@ -387,147 +256,29 @@ function renderWakeTargetList(targets: readonly WakeTarget[]): string {
       `  kind: ${target.actor.kind}`,
       `  session: ${target.binding.sessionId}`,
       `  pending: ${target.pending.map((item) => item.state.message.id).join(", ")}`,
-      `  policy: ${target.command.policy}`
+      `  inbox: agentq inbox --actor ${target.actor.actorId}`
     ].join("\n")).join("\n\n")
   ].join("\n") + "\n";
 }
 
-function renderWakeDryRun(targets: readonly WakeTarget[]): string {
+function renderWakeInspection(targets: readonly WakeTarget[]): string {
   return [
-    "agentq wake dry-run",
+    "agentq wake inspect",
+    "headless resume execution is removed; continue in the visible agent TUI.",
     "",
-    targets.map(renderWakeTargetCommand).join("\n\n")
+    targets.map(renderWakeTarget).join("\n\n")
   ].join("\n") + "\n";
 }
 
-function renderWakeTargetCommand(target: WakeTarget): string {
+function renderWakeTarget(target: WakeTarget): string {
   return [
     target.actor.actorId,
     `  kind: ${target.actor.kind}`,
     `  session: ${target.binding.sessionId}`,
     `  pending: ${target.pending.map((item) => item.state.message.id).join(", ")}`,
-    `  policy: ${target.command.policy}`,
-    `  command: ${target.command.executable}`,
-    "  args:",
-    ...target.command.args.map((arg) => renderWakeArg(arg))
+    `  inbox: agentq inbox --actor ${target.actor.actorId}`,
+    "  delivery: recorded only; no agent process was started"
   ].join("\n");
-}
-
-function renderWakeArg(arg: string): string {
-  if (!arg.includes("\n")) {
-    return `    - ${arg}`;
-  }
-
-  return [
-    "    - |",
-    ...arg.split("\n").map((line) => `      ${line}`)
-  ].join("\n");
-}
-
-async function executeWakeTarget(
-  target: WakeTarget,
-  runtime: WakeCommandRuntime,
-  timeoutMs: number
-): Promise<ExecutedWake> {
-  const result = await spawnCapture(
-    target.command.executable,
-    target.command.args,
-    {
-      cwd: target.binding.workspaceRoot,
-      env: runtime.env,
-      timeoutMs: target.command.timeoutMs ?? timeoutMs
-    }
-  );
-
-  return {
-    target,
-    ...result
-  };
-}
-
-function renderWakeExecution(results: readonly ExecutedWake[]): string {
-  return results.map((result) => [
-    `agentq wake ${result.timedOut ? "timed out" : "executed"}: ${result.target.actor.actorId}`,
-    `  command: ${result.target.command.executable}`,
-    `  exit: ${result.code}`,
-    `  pending: ${result.target.pending.map((item) => item.state.message.id).join(", ")}`,
-    result.stdout.length === 0 ? "  stdout: (empty)" : `  stdout:\n${indent(truncate(result.stdout, 8000), 4)}`,
-    result.stderr.length === 0 ? "  stderr: (empty)" : `  stderr:\n${indent(truncate(result.stderr, 8000), 4)}`
-  ].join("\n")).join("\n\n") + "\n";
-}
-
-async function spawnCapture(
-  command: string,
-  args: readonly string[],
-  options: {
-    readonly cwd: string;
-    readonly env: NodeJS.ProcessEnv;
-    readonly timeoutMs: number;
-  }
-): Promise<{
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly timedOut: boolean;
-}> {
-  return await new Promise((resolve) => {
-    const child = spawn(command, [...args], {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let timedOut = false;
-    let settled = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill();
-    }, options.timeoutMs);
-
-    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        code: 127,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: `${Buffer.concat(stderr).toString("utf8")}${error.message}\n`,
-        timedOut
-      });
-    });
-    child.on("close", (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      resolve({
-        code: timedOut ? 124 : code ?? 0,
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-        timedOut
-      });
-    });
-  });
-}
-
-function indent(value: string, spaces: number): string {
-  const prefix = " ".repeat(spaces);
-  return value.trimEnd().split("\n").map((line) => `${prefix}${line}`).join("\n");
-}
-
-function truncate(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-
-  return `${value.slice(0, maxLength)}\n... truncated ${value.length - maxLength} chars ...`;
 }
 
 interface ParsedArgs {

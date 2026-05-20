@@ -12,6 +12,8 @@ $ agentq enter --as claude-code --session claude-demo --paths README.md --respon
 $ agentq block --id AQ-0001 --actor <codex> --to <claude> --path README.md --summary README promises config that protocol forbids
 
 AQ-0001 routed to <claude>
+delivery:
+  <claude>: record_only
 
 $ agentq inbox --actor <claude>
 

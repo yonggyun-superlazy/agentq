@@ -134,17 +134,18 @@ const wakeQuestion = runAgentq([
   "--path",
   "src/package-smoke.ts",
   "--question",
-  "Package smoke wake dry-run",
+  "Package smoke wake inspection",
   "--pass",
-  "wake receiver can be resumed"
+  "wake receiver can inspect inbox"
 ], workspace);
 assert(wakeQuestion.includes("delivery:"), `question did not report delivery phase: ${wakeQuestion}`);
-assert(wakeQuestion.includes("record_only"), `package smoke delivery should be recorded without executing agents: ${wakeQuestion}`);
+assert(wakeQuestion.includes("record_only"), `package smoke delivery should be record-only: ${wakeQuestion}`);
 const wakeList = runAgentq(["wake", "list"], workspace);
 assert(wakeList.includes(wakeReceiver), `wake list missed receiver: ${wakeList}`);
-const wakeDryRun = runAgentq(["wake", "--actor", wakeReceiver], workspace);
-assert(wakeDryRun.includes("command: claude"), `wake dry-run missed Claude command: ${wakeDryRun}`);
-assert(wakeDryRun.includes("AQ-package-wake"), `wake dry-run missed pending message: ${wakeDryRun}`);
+const wakeInspect = runAgentq(["wake", "--actor", wakeReceiver], workspace);
+assert(wakeInspect.includes("agentq wake inspect"), `wake inspect missed header: ${wakeInspect}`);
+assert(wakeInspect.includes(`agentq inbox --actor ${wakeReceiver}`), `wake inspect missed inbox command: ${wakeInspect}`);
+assert(wakeInspect.includes("AQ-package-wake"), `wake inspect missed pending message: ${wakeInspect}`);
 runAgentq([
   "respond",
   "AQ-package-wake",
@@ -153,7 +154,7 @@ runAgentq([
   "--status",
   "answered",
   "--evidence",
-  "package smoke wake dry-run verified"
+  "package smoke wake inspection verified"
 ], workspace);
 
 runAgentq(["uninstall", "--yes"], workspace);
@@ -205,8 +206,7 @@ function runAgentq(args: readonly string[], cwd: string, input?: string): string
 
 function agentqCommandEnv(): NodeJS.ProcessEnv {
   return {
-    ...process.env,
-    AGENTQ_DELIVERY_MODE: "record"
+    ...process.env
   };
 }
 
