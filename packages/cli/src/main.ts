@@ -74,6 +74,7 @@ const DEFAULT_ACTOR_STALE_AFTER_MS = 3_600_000;
 export const COMMANDS: readonly CommandSpec[] = [
   { name: "install", summary: "Install agent instructions and hook gates" },
   { name: "doctor", summary: "Explain AgentQ workspace and hook state" },
+  { name: "status", summary: "Summarize workspace AgentQ health" },
   { name: "uninstall", summary: "Remove AgentQ-owned integration markers and hook gates" },
   { name: "actors", summary: "List workspace actors by recent presence" },
   { name: "enter", summary: "Register actor presence and responsibilities" },
@@ -291,6 +292,18 @@ export function renderCommandHelp(command: CommandSpec): string {
     ].join("\n");
   }
 
+  if (command.name === "status") {
+    return [
+      "agentq status",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq status [--stale-ms <milliseconds>]",
+      "",
+      "Shows doctor summary, active/stale actors, pending inbox requests, open work, and weak scope counts."
+    ].join("\n");
+  }
+
   if (command.name === "doctor") {
     return [
       "agentq doctor",
@@ -359,6 +372,10 @@ export async function runCommand(
 
   if (command === "doctor") {
     return await doctorCommand(runtime);
+  }
+
+  if (command === "status") {
+    return await statusCommand(argv.slice(1), runtime);
   }
 
   if (command === "hook") {
@@ -488,6 +505,14 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       ...(goal === undefined ? {} : { goal }),
       ...(args.flags.has("root") ? { parentWorkId: null } : {})
     });
+    await refreshActorPresence(store, {
+      actorId,
+      cwd: runtime.cwd,
+      activePaths: state.paths,
+      responsibilities: [state.title],
+      summary: state.title,
+      now: runtime.now()
+    });
     return {
       code: 0,
       stdout: renderWorkState("started", state),
@@ -606,6 +631,40 @@ async function doctorCommand(runtime: CommandRuntime): Promise<CommandResult> {
   return {
     code: report.summary === "fail" ? 2 : 0,
     stdout: renderDoctorReport(report),
+    stderr: ""
+  };
+}
+
+async function statusCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const staleAfterMs = Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS));
+  if (!Number.isFinite(staleAfterMs) || staleAfterMs < 0) {
+    throw new Error("status --stale-ms must be a non-negative number.");
+  }
+
+  const store = await openStore(runtime);
+  const report = await runDoctor(runtime.cwd, { env: runtime.env });
+  const actors = await listActorPresences(store);
+  const nowMs = Date.parse(runtime.now());
+  const details = await Promise.all(
+    actors.map(async (actor) => {
+      const summary = actorStatus(actor, nowMs, staleAfterMs);
+      const [pendingInbox, activeWork] = await Promise.all([
+        listPendingInboxItems(store, actor.actorId),
+        readActiveWorkState(store, actor.actorId)
+      ]);
+      return {
+        summary,
+        pendingInbox,
+        activeWork,
+        weaknesses: actorScopeWeaknesses(actor)
+      };
+    })
+  );
+
+  return {
+    code: report.summary === "fail" ? 2 : 0,
+    stdout: renderWorkspaceStatus(report, details, staleAfterMs),
     stderr: ""
   };
 }
@@ -1178,6 +1237,15 @@ interface ActorStatusSummary {
   readonly ageMs: number | null;
 }
 
+type PendingInboxItems = Awaited<ReturnType<typeof listPendingInboxItems>>;
+
+interface WorkspaceStatusActor {
+  readonly summary: ActorStatusSummary;
+  readonly pendingInbox: PendingInboxItems;
+  readonly activeWork: WorkState | null;
+  readonly weaknesses: ReturnType<typeof actorScopeWeaknesses>;
+}
+
 function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
   const lastSeenMs = Date.parse(actor.lastSeen);
   const ageMs = Number.isFinite(nowMs) && Number.isFinite(lastSeenMs)
@@ -1188,6 +1256,95 @@ function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): Acto
     status: ageMs !== null && ageMs <= staleAfterMs ? "active" : "stale",
     ageMs
   };
+}
+
+function renderWorkspaceStatus(
+  report: DoctorReport,
+  details: readonly WorkspaceStatusActor[],
+  staleAfterMs: number
+): string {
+  const activeCount = details.filter((detail) => detail.summary.status === "active").length;
+  const staleCount = details.length - activeCount;
+  const pendingInboxCount = details.reduce(
+    (count, detail) => count + detail.pendingInbox.length,
+    0
+  );
+  const openWorkCount = details.filter((detail) => detail.activeWork !== null).length;
+  const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
+  const doctorIssues = report.checks.filter((check) => check.level !== "ok");
+  const activeActorLines = details
+    .filter((detail) => detail.summary.status === "active")
+    .map(renderStatusActorLine);
+  const openWorkLines = details.flatMap(renderStatusWorkLines);
+  const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
+
+  const lines = [
+    "AgentQ status",
+    `Workspace: ${report.workspaceRoot}`,
+    `Runtime store: ${report.storePath}`,
+    `doctor: ${report.summary}`,
+    `actors: ${details.length} (active ${activeCount}, stale ${staleCount}, staleAfter ${formatDuration(staleAfterMs)})`,
+    `pending inbox: ${pendingInboxCount}`,
+    `open work: ${openWorkCount}`,
+    `weak-scope actors: ${weakScopeActorCount}`
+  ];
+
+  if (doctorIssues.length > 0) {
+    lines.push(
+      "",
+      "Doctor issues:",
+      ...doctorIssues.map((check) => `  ${check.level} ${check.name}: ${check.detail}`)
+    );
+  }
+
+  lines.push(
+    "",
+    "Active actors:",
+    ...(activeActorLines.length === 0 ? ["  none"] : activeActorLines),
+    "",
+    "Open work:",
+    ...(openWorkLines.length === 0 ? ["  none"] : openWorkLines),
+    "",
+    "Pending inbox:",
+    ...(pendingInboxLines.length === 0 ? ["  none"] : pendingInboxLines)
+  );
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderStatusActorLine(detail: WorkspaceStatusActor): string {
+  const actor = detail.summary.actor;
+  return [
+    `  ${actor.actorId}`,
+    `age ${detail.summary.ageMs === null ? "unknown" : formatDuration(detail.summary.ageMs)}`,
+    `paths: ${formatList(actor.activePaths)}`,
+    `responsibilities: ${formatList(actor.responsibilities)}`
+  ].join(" | ");
+}
+
+function renderStatusWorkLines(detail: WorkspaceStatusActor): string[] {
+  if (detail.activeWork === null) {
+    return [];
+  }
+
+  return [
+    [
+      `  ${detail.activeWork.workId}`,
+      `actor: ${detail.summary.actor.actorId}`,
+      `actorStatus: ${detail.summary.status}`,
+      `title: ${detail.activeWork.title}`,
+      `evidence: ${detail.activeWork.evidence.length}`
+    ].join(" | ")
+  ];
+}
+
+function renderStatusPendingInboxLines(detail: WorkspaceStatusActor): string[] {
+  return detail.pendingInbox.map((item) => [
+    `  ${item.state.message.id}`,
+    `to: ${detail.summary.actor.actorId}`,
+    `from: ${item.state.message.createdBy}`,
+    `summary: ${item.state.message.summary}`
+  ].join(" | "));
 }
 
 function renderActorPresence(summary: ActorStatusSummary): string {
@@ -1216,6 +1373,10 @@ function routingScopeWarning(actor: Presence): string | null {
   }
 
   return `broad; refresh this actor with agentq enter --actor ${actor.actorId} --paths <path> --responsibility "<owned area>"`;
+}
+
+function formatList(values: readonly string[]): string {
+  return values.length === 0 ? "(none)" : values.join(", ");
 }
 
 function formatDuration(ms: number): string {

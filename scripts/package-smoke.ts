@@ -49,6 +49,10 @@ assertInstalledHookCommandsExecute();
 
 const doctor = runAgentq(["doctor"], workspace);
 assert(doctor.includes("AgentQ doctor: ok"), "doctor did not report ok after install");
+const status = runAgentq(["status"], workspace);
+assert(status.includes("AgentQ status"), "status did not render workspace summary");
+assert(status.includes("doctor: ok"), "status did not include doctor summary");
+assert(status.includes("pending inbox: 0"), "status did not include pending inbox count");
 
 const sessionStart = runAgentq(
   ["hook", "codex", "session-start"],

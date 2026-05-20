@@ -10,6 +10,7 @@ You are an independent coding agent, not an orchestrated worker. AgentQ gives yo
 At the start of non-trivial work, identify your actor id from the session context or `agentq actors`, then check both gates before opening new work:
 
 ```bash
+agentq status
 agentq inbox --actor <agentq-actor-id>
 agentq work status --actor <agentq-actor-id>
 ```
@@ -47,6 +48,14 @@ During tool use, AgentQ hooks attach touched paths to the active work item. Add 
 ```bash
 agentq work evidence --actor <agentq-actor-id> --evidence "<observable evidence>"
 ```
+
+Treat the active work frame as a focus/order tool, not a scope boundary. If a
+parent frame already has a proven denominator, required replacement lanes, or
+parent pass criteria, a child frame such as "remove first" must keep that
+evidence as parent evidence or a residual frame. When deletion and replacement
+close one broken contract, keep them in the same closure row and order the
+operations inside that row; `remove-first` does not mean deletion-only scope
+unless the parent denominator is reclassified with source evidence.
 
 Before claiming done, close the active work and then run done-check:
 
