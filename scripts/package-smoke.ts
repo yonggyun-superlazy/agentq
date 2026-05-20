@@ -123,7 +123,7 @@ const wakeReceiver = runAgentq([
   "--responsibility",
   "package smoke wake receiver"
 ], workspace).trim().replace(/ registered$/, "");
-runAgentq([
+const wakeQuestion = runAgentq([
   "question",
   "--id",
   "AQ-package-wake",
@@ -138,6 +138,8 @@ runAgentq([
   "--pass",
   "wake receiver can be resumed"
 ], workspace);
+assert(wakeQuestion.includes("delivery:"), `question did not report delivery phase: ${wakeQuestion}`);
+assert(wakeQuestion.includes("record_only"), `package smoke delivery should be recorded without executing agents: ${wakeQuestion}`);
 const wakeList = runAgentq(["wake", "list"], workspace);
 assert(wakeList.includes(wakeReceiver), `wake list missed receiver: ${wakeList}`);
 const wakeDryRun = runAgentq(["wake", "--actor", wakeReceiver], workspace);
@@ -182,16 +184,30 @@ function run(command: string, args: readonly string[], cwd: string, input?: stri
 
 function runAgentq(args: readonly string[], cwd: string, input?: string): string {
   if (process.platform !== "win32") {
-    return run(agentqBin, args, cwd, input);
+    return execFileSync(agentqBin, [...args], {
+      cwd,
+      encoding: "utf8",
+      env: agentqCommandEnv(),
+      input,
+      stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"]
+    });
   }
 
   return execFileSync(agentqBin, [...args], {
     cwd,
     encoding: "utf8",
+    env: agentqCommandEnv(),
     input,
     shell: true,
     stdio: input === undefined ? ["ignore", "pipe", "pipe"] : ["pipe", "pipe", "pipe"]
   });
+}
+
+function agentqCommandEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    AGENTQ_DELIVERY_MODE: "record"
+  };
 }
 
 function assertInstalledHookCommandsExecute(): void {

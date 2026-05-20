@@ -79,6 +79,33 @@ describe("state fold", () => {
     });
   });
 
+  it("keeps delivery attempts as evidence without closing the required request", async () => {
+    const store = await createStore();
+    await writeMessageWithRequest(store, "AQ-1", "claude-code@workspace");
+    await writeOnceYaml(store.layout.eventPath("AQ-1", "EV-delivery"), {
+      kind: "delivery_attempt",
+      id: "EV-delivery",
+      messageId: "AQ-1",
+      actorId: "claude-code@workspace",
+      status: "executed",
+      adapter: "claude-code",
+      sessionId: "claude-session",
+      exitCode: 0,
+      timedOut: false,
+      evidence: ["AgentQ attempted delivery"],
+      at: "2026-05-18T00:00:00.000Z"
+    });
+
+    const state = await foldMessageState(store, "AQ-1");
+
+    expect(state.events).toHaveLength(1);
+    expect(state.requests[0]).toMatchObject({
+      status: "pending",
+      blocksReceiverDone: true,
+      blocksSenderDone: true
+    });
+  });
+
   it("rejects events that are missing terminal evidence", async () => {
     const store = await createStore();
     await writeMessageWithRequest(store, "AQ-1", "claude-code@workspace");

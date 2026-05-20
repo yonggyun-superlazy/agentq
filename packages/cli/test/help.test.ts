@@ -29,11 +29,11 @@ describe("CLI help", () => {
     }
   });
 
-  it("documents wake as explicit delivery without public adapter flags", async () => {
+  it("documents wake as manual retry without public adapter flags", async () => {
     const result = await runCommand(["wake", "--help"]);
 
-    expect(result.stdout).toContain("explicit delivery attempt");
-    expect(result.stdout).toContain("not an automatic side effect");
+    expect(result.stdout).toContain("Manually retry");
+    expect(result.stdout).toContain("already own the first delivery attempt");
     expect(result.stdout).toContain("Adapter limits are handled by AgentQ");
     expect(result.stdout).not.toContain("experimental-copilot");
   });

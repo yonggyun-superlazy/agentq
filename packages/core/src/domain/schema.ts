@@ -149,11 +149,36 @@ export const SupersedeEventSchema = z
   })
   .strict();
 
+export const DeliveryAttemptStatusSchema = z.enum([
+  "executed",
+  "failed",
+  "timed_out",
+  "no_binding",
+  "record_only"
+]);
+
+export const DeliveryAttemptEventSchema = z
+  .object({
+    kind: z.literal("delivery_attempt"),
+    id: SafeIdSchema,
+    messageId: SafeIdSchema,
+    actorId: SafeIdSchema,
+    status: DeliveryAttemptStatusSchema,
+    adapter: AgentKindSchema.optional(),
+    sessionId: NonEmptyStringSchema.optional(),
+    exitCode: z.number().int().optional(),
+    timedOut: z.boolean().optional(),
+    evidence: NonEmptyStringArraySchema.min(1),
+    at: NonEmptyStringSchema
+  })
+  .strict();
+
 export const EventSchema = z.discriminatedUnion("kind", [
   ResponseEventSchema,
   FollowUpEventSchema,
   AcceptBlockedEventSchema,
-  SupersedeEventSchema
+  SupersedeEventSchema,
+  DeliveryAttemptEventSchema
 ]);
 
 export function parseYamlWithSchema<T>(schema: z.ZodType<T>, source: string): T {

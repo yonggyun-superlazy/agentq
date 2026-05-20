@@ -85,6 +85,22 @@ describe("AgentQ domain schema", () => {
     ).toThrow();
   });
 
+  it("accepts delivery attempts without making them terminal responses", () => {
+    const parsed = EventSchema.parse({
+      kind: "delivery_attempt",
+      id: "EV-delivery-1",
+      messageId: "AQ-1",
+      actorId: "claude-code@workspace",
+      status: "record_only",
+      adapter: "claude-code",
+      sessionId: "claude-session",
+      evidence: ["delivery recorded by AgentQ"],
+      at: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(parsed.kind).toBe("delivery_attempt");
+  });
+
   it("rejects ids that cannot be used as store path segments", () => {
     expect(() =>
       MessageSchema.parse({

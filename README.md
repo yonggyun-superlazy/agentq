@@ -46,11 +46,11 @@ agentq done-check --actor "$CODEX_ACTOR"
 
 Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md).
 
-## Wake Pending Agents
+## Delivery and Wake Retry
 
-AgentQ does not own terminals, inject keystrokes into running TTYs, or wake agents as a side effect of `question` or `block`. Those commands only create durable required-response queue items.
+AgentQ does not assign work or create a boss agent. It does own delivery for required-response queue items. When `question` or `block` routes a request, AgentQ writes the durable queue item, checks the recipient session binding, attempts adapter delivery when possible, and records the delivery result.
 
-When a sender or operator needs immediate progress, `agentq wake` can find actors with pending required requests and print or execute the native CLI resume command needed to process that inbox.
+`agentq wake` is the manual retry and diagnostic surface. It can find actors with pending required requests and print or execute the native CLI resume command needed to process that inbox.
 
 ```bash
 agentq wake list
@@ -67,7 +67,7 @@ Wake execution is adapter-based:
 | Codex CLI | `codex exec resume <session> --skip-git-repo-check --json <prompt>` | Supported |
 | GitHub Copilot CLI | `copilot --resume=<session> -p <prompt>` | Limited; AgentQ applies adapter timeout and reports failure |
 
-Dry-run is the default. `--execute` is an explicit delivery attempt, not task assignment or orchestration. Copilot CLI resume is handled as adapter policy because local smoke testing showed `--resume` can hang in non-interactive pipes on some versions.
+Dry-run is the default for manual retry. Copilot CLI resume is handled as adapter policy because local smoke testing showed `--resume` can hang in non-interactive pipes on some versions.
 
 ## Local Install
 

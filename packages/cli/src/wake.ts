@@ -1,14 +1,20 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
+  EventSchema,
   findSessionBindingByActorId,
   listActorPresences,
   listPendingInboxItems,
   resolveWorkspaceStore,
   ensureWorkspaceStore,
+  writeOnceYaml,
+  type DeliveryAttemptStatus,
   type FoldedMessageState,
   type FoldedRequest,
   type Presence,
-  type SessionBinding
+  type RequiredRequestRoutePlan,
+  type SessionBinding,
+  type WorkspaceStore
 } from "@agentq/core";
 
 export interface WakeCommandResult {
@@ -20,6 +26,27 @@ export interface WakeCommandResult {
 export interface WakeCommandRuntime {
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
+}
+
+export interface DeliveryCommandRuntime extends WakeCommandRuntime {
+  readonly now: () => string;
+  readonly deliveryMode?: "execute" | "record";
+}
+
+export interface DeliveryAttemptSummary {
+  readonly actorId: string;
+  readonly messageIds: readonly string[];
+  readonly status: DeliveryAttemptStatus;
+  readonly adapter?: SessionBinding["adapter"];
+  readonly sessionId?: string;
+  readonly command?: string;
+  readonly exitCode?: number;
+  readonly timedOut?: boolean;
+  readonly evidence: readonly string[];
+}
+
+export interface DeliveryReport {
+  readonly attempts: readonly DeliveryAttemptSummary[];
 }
 
 interface WakeTarget {
@@ -111,6 +138,101 @@ async function openStore(runtime: WakeCommandRuntime) {
   return store;
 }
 
+export async function deliverRoutedRequests(
+  store: WorkspaceStore,
+  plan: RequiredRequestRoutePlan,
+  runtime: DeliveryCommandRuntime
+): Promise<DeliveryReport> {
+  const mode = deliveryMode(runtime);
+  const actors = await listActorPresences(store);
+  const attempts: DeliveryAttemptSummary[] = [];
+
+  for (const recipient of plan.recipients) {
+    const actor = actors.find((candidate) => candidate.actorId === recipient.actorId);
+    const pending = await listPendingInboxItems(store, recipient.actorId);
+    const messageIds = pending.map((item) => item.state.message.id);
+    const binding = await findSessionBindingByActorId(store, recipient.actorId);
+
+    let summary: DeliveryAttemptSummary;
+    if (actor === undefined || binding === null) {
+      summary = {
+        actorId: recipient.actorId,
+        messageIds: [plan.message.id],
+        status: "no_binding",
+        evidence: [`AgentQ delivery did not find a session binding for ${recipient.actorId}.`]
+      };
+    } else if (pending.length === 0) {
+      summary = {
+        actorId: recipient.actorId,
+        messageIds: [plan.message.id],
+        status: "failed",
+        adapter: binding.adapter,
+        sessionId: binding.sessionId,
+        evidence: [`AgentQ delivery found no pending inbox request for ${recipient.actorId}.`]
+      };
+    } else {
+      const target: WakeTarget = {
+        actor,
+        binding,
+        pending,
+        command: buildWakeCommand(actor, binding, pending)
+      };
+      if (mode === "record") {
+        summary = {
+          actorId: recipient.actorId,
+          messageIds,
+          status: "record_only",
+          adapter: binding.adapter,
+          sessionId: binding.sessionId,
+          command: target.command.executable,
+          evidence: [`AgentQ recorded delivery plan for ${recipient.actorId}; execution disabled for this runtime.`]
+        };
+      } else {
+        const result = await executeWakeTarget(target, runtime, 600000);
+        summary = {
+          actorId: recipient.actorId,
+          messageIds,
+          status: result.timedOut ? "timed_out" : result.code === 0 ? "executed" : "failed",
+          adapter: binding.adapter,
+          sessionId: binding.sessionId,
+          command: target.command.executable,
+          exitCode: result.code,
+          timedOut: result.timedOut,
+          evidence: [
+            result.timedOut
+              ? `AgentQ delivery timed out for ${recipient.actorId}.`
+              : `AgentQ delivery exited ${result.code} for ${recipient.actorId}.`
+          ]
+        };
+      }
+    }
+
+    await writeDeliveryAttempt(store, plan.message.id, summary, runtime.now());
+    attempts.push(summary);
+  }
+
+  return { attempts };
+}
+
+export function renderDeliveryReport(report: DeliveryReport): string {
+  if (report.attempts.length === 0) {
+    return "delivery: no recipients";
+  }
+
+  return [
+    "delivery:",
+    ...report.attempts.map((attempt) => {
+      const details = [
+        attempt.status,
+        attempt.command === undefined ? null : `command=${attempt.command}`,
+        attempt.exitCode === undefined ? null : `exit=${attempt.exitCode}`,
+        attempt.timedOut === undefined ? null : `timedOut=${attempt.timedOut}`
+      ].filter((value): value is string => value !== null);
+      return `  ${attempt.actorId}: ${details.join(" ")}`;
+    })
+  ].join("\n");
+}
+
 async function listWakeTargets(store: Awaited<ReturnType<typeof openStore>>): Promise<WakeTarget[]> {
   const actors = await listActorPresences(store);
   const targets: WakeTarget[] = [];
@@ -159,6 +281,38 @@ async function resolveWakeTarget(
     pending,
     command: buildWakeCommand(actor, binding, pending)
   };
+}
+
+function deliveryMode(runtime: DeliveryCommandRuntime): "execute" | "record" {
+  if (runtime.env.AGENTQ_DELIVERY_MODE === "record") {
+    return "record";
+  }
+
+  return runtime.deliveryMode ?? "record";
+}
+
+async function writeDeliveryAttempt(
+  store: WorkspaceStore,
+  messageId: string,
+  summary: DeliveryAttemptSummary,
+  at: string
+): Promise<void> {
+  const event = {
+    kind: "delivery_attempt",
+    id: `EV-delivery-${randomUUID()}`,
+    messageId,
+    actorId: summary.actorId,
+    status: summary.status,
+    ...(summary.adapter === undefined ? {} : { adapter: summary.adapter }),
+    ...(summary.sessionId === undefined ? {} : { sessionId: summary.sessionId }),
+    ...(summary.exitCode === undefined ? {} : { exitCode: summary.exitCode }),
+    ...(summary.timedOut === undefined ? {} : { timedOut: summary.timedOut }),
+    evidence: [...summary.evidence],
+    at
+  };
+
+  EventSchema.parse(event);
+  await writeOnceYaml(store.layout.eventPath(messageId, event.id), event);
 }
 
 function buildWakeCommand(

@@ -2,6 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { foldMessageState, resolveWorkspaceStore } from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI work stack", () => {
@@ -204,7 +205,10 @@ describe("CLI work stack", () => {
       "Stale project reference blocks build"
     ], runtime)).resolves.toMatchObject({
       code: 0,
-      stdout: `AQ-auto-route routed to ${receiver}\n`
+      stdout: expect.stringContaining(`AQ-auto-route routed to ${receiver}`)
+    });
+    await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("respond: agentq respond AQ-auto-route")
     });
     await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
       code: 2,
@@ -339,7 +343,7 @@ describe("CLI work stack", () => {
       "Answer owner and state source"
     ], runtime)).resolves.toEqual({
       code: 0,
-      stdout: `AQ-question routed to ${receiver}\n`,
+      stdout: expect.stringContaining(`AQ-question routed to ${receiver}`),
       stderr: ""
     });
     await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
@@ -351,6 +355,15 @@ describe("CLI work stack", () => {
       stdout: expect.stringContaining("respond: agentq respond AQ-question"),
       stderr: ""
     });
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    const state = await foldMessageState(store, "AQ-question");
+    expect(state.events).toEqual([
+      expect.objectContaining({
+        kind: "delivery_attempt",
+        actorId: receiver,
+        status: "record_only"
+      })
+    ]);
     await expect(runCommand([
       "respond",
       "AQ-question",
