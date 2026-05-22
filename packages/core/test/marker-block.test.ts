@@ -86,8 +86,24 @@ describe("AgentQ marker installer", () => {
 
   it("keeps the generated instruction block under the install trust budget", () => {
     for (const target of DEFAULT_MARKER_TARGETS) {
-      expect(Buffer.byteLength(renderMarkerBlock(target), "utf8")).toBeLessThan(1200);
+      const budget = target.relativePath === ".github/instructions/agentq.instructions.md" ? 1200 : 400;
+      expect(Buffer.byteLength(renderMarkerBlock(target), "utf8")).toBeLessThan(budget);
     }
+  });
+
+  it("keeps root markers as pointers to the scoped AgentQ procedure", () => {
+    const [agentsBlock, claudeBlock, scopedBlock] = DEFAULT_MARKER_TARGETS.map((target) =>
+      renderMarkerBlock(target)
+    );
+
+    expect(agentsBlock).toContain(".github/instructions/agentq.instructions.md");
+    expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
+    expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
+    expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
+    expect(scopedBlock).toContain("agentq work start/status/evidence/close");
+    expect(Buffer.byteLength(agentsBlock, "utf8")).toBeLessThan(
+      Buffer.byteLength(scopedBlock, "utf8")
+    );
   });
 });
 

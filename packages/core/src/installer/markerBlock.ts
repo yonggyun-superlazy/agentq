@@ -45,19 +45,25 @@ interface MarkerEdit {
   readonly content: string;
 }
 
-const SHARED_MARKER_BODY = [
+const ROOT_MARKER_BODY = [
+  "# AgentQ",
+  "",
+  "Procedure: `.github/instructions/agentq.instructions.md`.",
+  "Use the hook actor id, keep scope concrete, and run `scope-check`/`done-check` before done."
+].join("\n");
+
+const SCOPED_MARKER_BODY = [
   "# AgentQ",
   "",
   "This workspace uses AgentQ: required-response queues for coding agents.",
   "",
   "- Use the hook actor id; every command must pass `--actor <id>`.",
-  "- Scope refresh: `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
-  "- Active = recent AgentQ presence, not OS process state; stale after 1 hour.",
   "- Before work: `agentq status`, `agentq inbox --actor <id>`, and `agentq work status --actor <id>`.",
-  "- Track work with `agentq work start/status/evidence/close --actor <id>`; run `scope-check` and `done-check` before done.",
+  "- Track complex work with `agentq work start/status/evidence/close --actor <id>`.",
+  "- Refresh concrete scope with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
+  "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
-  "- Use `agentq question`/`agentq block` with path or contract. Broad `.` is ignored by routing; use `--to` or precise `--contract` when known.",
-  "- `question`/`block` record pending delivery only; `agentq wake --actor <id>` inspects targets and never starts headless agents.",
+  "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 
@@ -65,18 +71,18 @@ export const DEFAULT_MARKER_TARGETS: readonly MarkerTarget[] = [
   {
     relativePath: "AGENTS.md",
     label: "shared Codex-compatible instruction marker",
-    markerBody: SHARED_MARKER_BODY
+    markerBody: ROOT_MARKER_BODY
   },
   {
     relativePath: "CLAUDE.md",
     label: "Claude Code instruction marker",
-    markerBody: SHARED_MARKER_BODY
+    markerBody: ROOT_MARKER_BODY
   },
   {
     relativePath: ".github/instructions/agentq.instructions.md",
     label: "GitHub Copilot instruction marker",
     preamble: "---\napplyTo: \"**\"\n---\n\n",
-    markerBody: SHARED_MARKER_BODY,
+    markerBody: SCOPED_MARKER_BODY,
     deleteWhenAgentQOnly: true
   }
 ];
