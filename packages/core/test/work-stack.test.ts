@@ -148,6 +148,14 @@ describe("AgentQ work stack", () => {
       closeSummary: "Superseded by later implementation frame"
     });
     await expect(runWorkDoneCheck(store, actorId)).resolves.toEqual({ ok: true, actorId });
+    await expect(
+      appendWorkEvidence(store, {
+        actorId,
+        workId: "AW-abandoned",
+        evidence: ["late evidence should fail"],
+        now: "2026-05-18T00:02:00.000Z"
+      })
+    ).rejects.toThrow("already terminal");
   });
 });
 

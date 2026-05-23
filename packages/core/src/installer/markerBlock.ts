@@ -49,9 +49,10 @@ const ROOT_MARKER_BODY = [
   "# AgentQ",
   "",
   "Procedure: `.github/instructions/agentq.instructions.md`.",
-  "Use the hook actor id, keep scope concrete, and run `scope-check`/`done-check` before done.",
-  "Before shared edits/tools: `owners` routes, not locks. Ask `question` to classify overlap.",
-  "Out-of-scope build/test failures are AgentQ blockers, not chat-only notes."
+  "Use hook actor id; run `enter --actor <id> --paths <path> --responsibility \"<contract>\"` before work.",
+  "`owners` routes, not locks. Ask `question` to classify overlap.",
+  "Before done: record `work evidence`, then run `scope-check`/`done-check`.",
+  "External failures become `block` with evidence."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
@@ -61,7 +62,7 @@ const SCOPED_MARKER_BODY = [
   "",
   "- Use the hook actor id; every command must pass `--actor <id>`.",
   "- Before work: `agentq status`, `agentq inbox --actor <id>`, and `agentq work status --actor <id>`.",
-  "- Track complex work with `agentq work start/status/evidence/close --actor <id>`.",
+  "- Track work with `agentq work start/status/evidence/close --actor <id>`; record evidence before close/done.",
   "- Refresh scope: `agentq enter --actor <id> --paths <path> [--resource <resource>] --responsibility \"<contract>\"`.",
   "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
   "- Before shared edits/exclusive tools, run `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Ask `question` to classify overlap.",

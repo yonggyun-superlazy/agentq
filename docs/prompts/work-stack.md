@@ -72,6 +72,10 @@ During tool use, AgentQ hooks attach touched paths to the active work item. Add 
 agentq work evidence --actor <agentq-actor-id> --evidence "<observable evidence>"
 ```
 
+Do not leave active work at evidence `0`. If `agentq work status --actor <id>`
+shows zero evidence, record the latest observable proof before the next final
+answer or stop hook.
+
 Treat the active work frame as a focus/order tool, not a scope boundary. If a
 parent frame already has a proven denominator, required replacement lanes, or
 parent pass criteria, a child frame such as "remove first" must keep that

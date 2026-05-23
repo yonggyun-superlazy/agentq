@@ -196,10 +196,14 @@ export function planWorkStopContinuation(result: WorkCheckResult): string {
     return "AgentQ work-check passed.";
   }
 
+  const evidenceInstruction = result.activeWork.evidence.length === 0
+    ? "This work currently has 0 evidence; record at least one observable test/build/diff/review artifact with `agentq work evidence --actor <agentq-actor-id> --evidence \"...\"`."
+    : "Record any missing final evidence with `agentq work evidence --actor <agentq-actor-id> --evidence \"...\"`.";
+
   return [
     `AgentQ work-check failed for ${result.actorId}.`,
     `Active work ${result.activeWork.workId} is still open: ${result.activeWork.title}.`,
-    "Record evidence with `agentq work evidence --actor <agentq-actor-id> --evidence \"...\"`.",
+    evidenceInstruction,
     "Then close it with `agentq work close --actor <agentq-actor-id> --summary \"...\"` before claiming done."
   ].join(" ");
 }
@@ -274,8 +278,8 @@ async function appendWorkEvent(store: WorkspaceStore, event: WorkEvent): Promise
   WorkEventSchema.parse(event);
   const state = await readWorkState(store, event.workId);
   assertActorOwnsWork(state, event.actorId);
-  if (state.status === "closed") {
-    throw new Error(`AgentQ work item is already closed: ${event.workId}`);
+  if (state.status !== "open") {
+    throw new Error(`AgentQ work item is already terminal: ${event.workId}`);
   }
   await writeOnceYaml(store.layout.workEventPath(event.workId, event.id), event);
 }

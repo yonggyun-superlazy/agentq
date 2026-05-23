@@ -98,9 +98,10 @@ describe("AgentQ marker installer", () => {
 
     expect(agentsBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
-    expect(agentsBlock).toContain("Out-of-scope build/test failures are AgentQ blockers");
-    expect(claudeBlock).toContain("Out-of-scope build/test failures are AgentQ blockers");
+    expect(agentsBlock).toContain("Before done: record `work evidence`");
+    expect(claudeBlock).toContain("enter --actor <id> --paths <path>");
     expect(agentsBlock).toContain("routes, not locks");
+    expect(claudeBlock).toContain("routes, not locks");
     expect(scopedBlock).toContain("classify overlap");
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");

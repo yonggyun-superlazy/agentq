@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { appendDiagnosticEvent, ensureWorkspaceStore, resolveWorkspaceStore } from "@agentq/core";
+import { appendDiagnosticEvent, ensureWorkspaceStore, readDiagnosticEvents, resolveWorkspaceStore } from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI required-response protocol", () => {
@@ -185,6 +185,27 @@ describe("CLI required-response protocol", () => {
       stdout: expect.stringContaining("ignored:1")
     });
   });
+
+  it("retains more than the old 200 diagnostic ring entries", async () => {
+    const workspace = await createWorkspace("agentq-cli-diag-retention-");
+    const runtime = createRuntime(workspace);
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await ensureWorkspaceStore(store);
+
+    for (let index = 0; index < 250; index += 1) {
+      await appendDiagnosticEvent(store, {
+        kind: "hook",
+        at: `2026-05-18T00:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+        actorId: "codex@workspace@diag-retention",
+        event: "pre-tool",
+        toolName: "Bash"
+      });
+    }
+
+    const events = await readDiagnosticEvents(store, 300);
+    expect(events).toHaveLength(250);
+    expect(events[0]?.at).toBe("2026-05-18T00:00:00.000Z");
+  }, 10_000);
 
   it("prints actor activity from diagnostic hook gaps", async () => {
     const workspace = await createWorkspace("agentq-cli-diag-activity-");

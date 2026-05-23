@@ -23,6 +23,7 @@ started: AW-instruction-quality
   title: Modify protocol consumer safely
   touched: src/consumer.ts
   evidence: 0
+  next: record observable evidence before close/done-check
 $ agentq owners --actor <target> --path src/protocol.ts
 owners for src/protocol.ts:
   <owner> | owns: src/protocol.ts | matched: src/protocol.ts | responsibilities: protocol schema

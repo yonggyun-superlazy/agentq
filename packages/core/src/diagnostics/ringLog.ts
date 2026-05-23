@@ -22,12 +22,12 @@ export const DiagnosticEventSchema = z
 
 export type DiagnosticEvent = z.infer<typeof DiagnosticEventSchema>;
 
-const DEFAULT_RING_LIMIT = 200;
+export const DEFAULT_DIAGNOSTIC_RING_LIMIT = 10_000;
 
 export async function appendDiagnosticEvent(
   store: WorkspaceStore,
   event: DiagnosticEvent,
-  limit = DEFAULT_RING_LIMIT
+  limit = DEFAULT_DIAGNOSTIC_RING_LIMIT
 ): Promise<void> {
   DiagnosticEventSchema.parse(event);
   const existingLines = await readRingLines(store);
@@ -38,7 +38,7 @@ export async function appendDiagnosticEvent(
 export async function tryAppendDiagnosticEvent(
   store: WorkspaceStore,
   event: DiagnosticEvent,
-  limit = DEFAULT_RING_LIMIT
+  limit = DEFAULT_DIAGNOSTIC_RING_LIMIT
 ): Promise<void> {
   try {
     await appendDiagnosticEvent(store, event, limit);

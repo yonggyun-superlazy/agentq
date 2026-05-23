@@ -1997,6 +1997,9 @@ function renderWorkState(label: string, work: WorkState): string {
     `  touched: ${work.touchedPaths.join(", ")}`,
     `  evidence: ${work.evidence.length}`
   ];
+  if (work.status === "open" && work.evidence.length === 0) {
+    lines.push("  next: record observable evidence before close/done-check");
+  }
   if (work.parentWorkId !== null) {
     lines.push(`  parent: ${work.parentWorkId}`);
   }

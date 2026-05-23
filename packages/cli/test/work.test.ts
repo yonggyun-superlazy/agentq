@@ -47,10 +47,14 @@ describe("CLI work stack", () => {
       code: 0,
       stdout: expect.stringContaining("started: AW-cli")
     });
+    await expect(runCommand(["work", "status", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("next: record observable evidence before close/done-check")
+    });
 
     await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("work-check failed")
+      stderr: expect.stringContaining("0 evidence")
     });
     await expect(runCommand([
       "work",
