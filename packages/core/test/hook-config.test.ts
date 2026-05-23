@@ -61,6 +61,60 @@ describe("AgentQ hook config installer", () => {
     );
   });
 
+  it("upgrades existing AgentQ nested hook groups when matcher policy changes", async () => {
+    const workspace = await createWorkspace();
+    await writeJson(path.join(workspace, ".codex", "hooks.json"), {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "*",
+            hooks: [
+              {
+                type: "command",
+                command: "agentq hook codex pre-tool",
+                statusMessage: "Updating AgentQ active scope",
+                timeout: 10
+              }
+            ]
+          }
+        ]
+      }
+    });
+    await writeJson(path.join(workspace, ".claude", "settings.json"), {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "*",
+            hooks: [
+              {
+                type: "command",
+                command: "agentq hook claude-code pre-tool",
+                statusMessage: "Updating AgentQ active scope",
+                timeout: 10
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    await expect(planHookConfigInstall(workspace)).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ relativePath: ".codex/hooks.json", action: "update" }),
+        expect.objectContaining({ relativePath: ".claude/settings.json", action: "update" })
+      ])
+    });
+
+    await applyHookConfigInstall(workspace);
+
+    const codexHooks = await readFile(path.join(workspace, ".codex", "hooks.json"), "utf8");
+    const claudeHooks = await readFile(path.join(workspace, ".claude", "settings.json"), "utf8");
+    expect(codexHooks).toContain("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\"");
+    expect(codexHooks).not.toContain("\"matcher\": \"*\"");
+    expect(claudeHooks).toContain("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\"");
+    expect(claudeHooks).not.toContain("\"matcher\": \"*\"");
+  });
+
   it("dry-runs and uninstalls only AgentQ-owned hook entries", async () => {
     const workspace = await createWorkspace();
 

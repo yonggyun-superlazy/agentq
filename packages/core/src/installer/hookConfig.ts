@@ -340,12 +340,23 @@ function containsExpectedNestedHookEntries(groups: readonly JsonValue[], expecte
     throw new Error("Expected nested AgentQ hook group hooks to be an array.");
   }
 
-  return expectedGroup.hooks.every((expectedHook) =>
-    groups.some((group) => {
-      const hooks = asObject(group)?.hooks;
-      return Array.isArray(hooks) && hooks.some((hook) => jsonValueEquals(hook, expectedHook));
-    })
-  );
+  const expectedHooks = expectedGroup.hooks;
+  return groups.some((group) => {
+    const groupObject = asObject(group);
+    const hooks = groupObject?.hooks;
+    return (
+      groupObject !== undefined &&
+      Array.isArray(hooks) &&
+      nestedHookGroupMetadataMatches(groupObject, expectedGroup) &&
+      expectedHooks.every((expectedHook) => hooks.some((hook) => jsonValueEquals(hook, expectedHook)))
+    );
+  });
+}
+
+function nestedHookGroupMetadataMatches(group: JsonObject, expectedGroup: JsonObject): boolean {
+  return Object.entries(expectedGroup)
+    .filter(([key]) => key !== "hooks")
+    .every(([key, expectedValue]) => jsonValueEquals(group[key] as JsonValue, expectedValue));
 }
 
 function upsertFlatHookConfig(existing: JsonObject | undefined, addition: JsonObject): JsonObject {
