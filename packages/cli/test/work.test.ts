@@ -791,6 +791,7 @@ describe("CLI work stack", () => {
       "--responsibility",
       "public README"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
+    await runCommand(["enter", "--as", "claude-code", "--session", "idle"], runtime);
 
     await runCommand([
       "work",
@@ -826,16 +827,20 @@ describe("CLI work stack", () => {
     });
     expect(result.stdout).toContain("AgentQ status");
     expect(result.stdout).toContain("doctor: warn");
-    expect(result.stdout).toContain("actors: 2 (active 2, stale 0, staleAfter 1h)");
+    expect(result.stdout).toContain("actors: 3 (active 3, stale 0, staleAfter 1h)");
     expect(result.stdout).toContain("routeable active actors: 2");
-    expect(result.stdout).toContain("broad/generic active actors: 0");
+    expect(result.stdout).toContain("broad/generic active actors: 1");
+    expect(result.stdout).toContain("active work actors: 1");
+    expect(result.stdout).toContain("broad presence-only actors: 1");
+    expect(result.stdout).toContain("codex: total 1, active 1, stale 0, routeable 1, broad/generic 0, active-work 1, broad-presence-only 0");
+    expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, routeable 1, broad/generic 1, active-work 0, broad-presence-only 1");
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
     expect(result.stdout).toContain("zero-evidence open work: 1");
     expect(result.stdout).toContain("Open work without context evidence remains");
     expect(result.stdout).toContain("agentq next --actor <id>");
     expect(result.stdout).toContain("recent messages 24h: 1");
-    expect(result.stdout).toContain("weak-scope actors: 0");
+    expect(result.stdout).toContain("weak-scope actors: 1");
     expect(result.stdout).toContain("AW-status");
     expect(result.stdout).toContain("AQ-status");
   });

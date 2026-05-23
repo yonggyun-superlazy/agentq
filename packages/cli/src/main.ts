@@ -1811,6 +1811,17 @@ interface WorkspaceStatusActor {
   readonly weaknesses: ReturnType<typeof actorScopeWeaknesses>;
 }
 
+interface WorkspaceKindBreakdown {
+  readonly kind: AgentKind;
+  readonly total: number;
+  readonly active: number;
+  readonly stale: number;
+  readonly routeableActive: number;
+  readonly weakActive: number;
+  readonly activeWork: number;
+  readonly broadPresenceOnly: number;
+}
+
 interface RecentMessageSummary {
   readonly id: string;
   readonly kind: Message["kind"];
@@ -1881,6 +1892,9 @@ function renderWorkspaceStatus(
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
   const routeableActiveCount = activeDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = activeCount - routeableActiveCount;
+  const activeWorkActorCount = activeDetails.filter((detail) => detail.activeWork !== null).length;
+  const broadPresenceOnlyCount = activeDetails.filter(isBroadPresenceOnlyActor).length;
+  const kindBreakdown = buildKindBreakdown(details);
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
   const activeActorLines = activeDetails.map(renderStatusActorLine);
   const openWorkLines = details.flatMap(renderStatusWorkLines);
@@ -1902,6 +1916,8 @@ function renderWorkspaceStatus(
     `actors: ${details.length} (active ${activeCount}, stale ${staleCount}, staleAfter ${formatDuration(staleAfterMs)})`,
     `routeable active actors: ${routeableActiveCount}`,
     `broad/generic active actors: ${weakActiveCount}`,
+    `active work actors: ${activeWorkActorCount}`,
+    `broad presence-only actors: ${broadPresenceOnlyCount}`,
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
     `stale open work: ${staleOpenWorkCount}`,
@@ -1915,6 +1931,14 @@ function renderWorkspaceStatus(
       "",
       "Doctor issues:",
       ...doctorIssues.map((check) => `  ${check.level} ${check.name}: ${check.detail}`)
+    );
+  }
+
+  if (kindBreakdown.length > 0) {
+    lines.push(
+      "",
+      "Actor breakdown:",
+      ...kindBreakdown.map(renderKindBreakdownLine)
     );
   }
 
@@ -1949,6 +1973,64 @@ function renderWorkspaceStatus(
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+function buildKindBreakdown(details: readonly WorkspaceStatusActor[]): WorkspaceKindBreakdown[] {
+  const rows = new Map<AgentKind, WorkspaceKindBreakdown>();
+  for (const detail of details) {
+    const kind = detail.summary.actor.kind;
+    const existing = rows.get(kind) ?? emptyKindBreakdown(kind);
+    const active = detail.summary.status === "active";
+    const weakActive = active && detail.weaknesses.length > 0;
+    rows.set(kind, {
+      kind,
+      total: existing.total + 1,
+      active: existing.active + (active ? 1 : 0),
+      stale: existing.stale + (active ? 0 : 1),
+      routeableActive: existing.routeableActive + (active && detail.weaknesses.length === 0 ? 1 : 0),
+      weakActive: existing.weakActive + (weakActive ? 1 : 0),
+      activeWork: existing.activeWork + (active && detail.activeWork !== null ? 1 : 0),
+      broadPresenceOnly: existing.broadPresenceOnly + (isBroadPresenceOnlyActor(detail) ? 1 : 0)
+    });
+  }
+
+  return ["codex", "claude-code", "copilot-cli", "custom"]
+    .map((kind) => rows.get(kind as AgentKind))
+    .filter((row): row is WorkspaceKindBreakdown => row !== undefined);
+}
+
+function emptyKindBreakdown(kind: AgentKind): WorkspaceKindBreakdown {
+  return {
+    kind,
+    total: 0,
+    active: 0,
+    stale: 0,
+    routeableActive: 0,
+    weakActive: 0,
+    activeWork: 0,
+    broadPresenceOnly: 0
+  };
+}
+
+function isBroadPresenceOnlyActor(detail: WorkspaceStatusActor): boolean {
+  return (
+    detail.summary.status === "active" &&
+    detail.weaknesses.length > 0 &&
+    detail.pendingInbox.length === 0 &&
+    detail.activeWork === null
+  );
+}
+
+function renderKindBreakdownLine(row: WorkspaceKindBreakdown): string {
+  return [
+    `  ${row.kind}: total ${row.total}`,
+    `active ${row.active}`,
+    `stale ${row.stale}`,
+    `routeable ${row.routeableActive}`,
+    `broad/generic ${row.weakActive}`,
+    `active-work ${row.activeWork}`,
+    `broad-presence-only ${row.broadPresenceOnly}`
+  ].join(", ");
 }
 
 async function listRecentMessageSummaries(
