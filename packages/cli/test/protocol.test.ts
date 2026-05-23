@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { resolveWorkspaceStore } from "@agentq/core";
+import { appendDiagnosticEvent, ensureWorkspaceStore, resolveWorkspaceStore } from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI required-response protocol", () => {
@@ -160,6 +160,29 @@ describe("CLI required-response protocol", () => {
     ], runtime)).resolves.toMatchObject({
       code: 0,
       stdout: expect.stringContaining(`AQ-resource-question routed to ${receiver}`)
+    });
+  });
+
+  it("prints diagnostic ring log entries", async () => {
+    const workspace = await createWorkspace("agentq-cli-diag-");
+    const runtime = createRuntime(workspace);
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await ensureWorkspaceStore(store);
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:00:00.000Z",
+      actorId: "codex@workspace@diag",
+      event: "pre-tool",
+      toolName: "Bash",
+      paths: ["."],
+      resources: [],
+      ignoredCommands: ["agentq owners --resource unity:ProjectDD/DDUnity"],
+      nudge: false
+    });
+
+    await expect(runCommand(["diag", "--limit", "5"], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("ignored:1")
     });
   });
 

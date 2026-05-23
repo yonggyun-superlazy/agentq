@@ -56,9 +56,10 @@ export function evaluateScopeCheck(
 
 export function actorScopeWeaknesses(presence: Presence): ScopeWeakness[] {
   const weaknesses: ScopeWeakness[] = [];
+  const hasConcreteResource = (presence.activeResources ?? []).length > 0;
 
   for (const activePath of presence.activePaths) {
-    if (isBroadPresencePath(activePath)) {
+    if (isBroadPresencePath(activePath) && !hasConcreteResource) {
       weaknesses.push({ kind: "broad_path", detail: activePath });
     }
   }
@@ -76,7 +77,7 @@ export function planScopeContinuation(result: ScopeCheckResult): string {
   return [
     `AgentQ scope-check failed for ${result.actorId}.`,
     ...result.weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
-    `Refresh this exact actor before claiming done: agentq enter --actor ${result.actorId} --paths <owned-path> --responsibility "<owned contract>"`
+    `Refresh this exact actor before claiming done: agentq enter --actor ${result.actorId} --paths <owned-path> [--resource <resource>] --responsibility "<owned contract>"`
   ].join("\n");
 }
 

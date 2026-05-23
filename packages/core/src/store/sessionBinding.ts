@@ -83,7 +83,9 @@ export async function createOrRefreshSessionBinding(
     workspaceRoot: store.workspaceRoot,
     activePaths: [...input.activePaths],
     ...(input.observedPaths === undefined ? {} : { observedPaths: [...input.observedPaths] }),
-    ...(input.activeResources === undefined ? {} : { activeResources: [...input.activeResources] }),
+    ...(input.activeResources === undefined || input.activeResources.length === 0
+      ? {}
+      : { activeResources: [...input.activeResources] }),
     responsibilities: [...input.responsibilities],
     summary: input.summary,
     lastSeen: input.now
@@ -180,13 +182,16 @@ export async function refreshActorPresence(
     ...existing,
     activePaths: refreshedActivePaths(existing.activePaths, input.activePaths, input.mergeActivePaths === true),
     ...refreshedObservedPaths(existing.observedPaths, input.observedPaths, input.mergeObservedPaths === true),
-    ...refreshedOptionalList(existing.activeResources, input.activeResources, input.mergeActiveResources === true, "activeResources"),
+    ...refreshedOptionalList(existing.activeResources, input.activeResources, input.mergeActiveResources === true, "activeResources", true),
     responsibilities: input.responsibilities.length > 0
       ? [...input.responsibilities]
       : existing.responsibilities,
     summary: input.summary ?? existing.summary,
     lastSeen: input.now
   };
+  if (presence.activeResources !== undefined && presence.activeResources.length === 0) {
+    delete presence.activeResources;
+  }
 
   PresenceSchema.parse(presence);
   await writeAtomicYaml(store.layout.actorPresencePath(input.actorId), presence);
@@ -229,10 +234,17 @@ function refreshedOptionalList<Key extends string>(
   existingValues: readonly string[] | undefined,
   inputValues: readonly string[] | undefined,
   mergeValues: boolean,
-  key: Key
+  key: Key,
+  clearOnEmpty = false
 ): { readonly [K in Key]?: string[] } {
-  if (inputValues === undefined || inputValues.length === 0) {
+  if (inputValues === undefined) {
     return existingValues === undefined ? {} : { [key]: [...existingValues] } as { readonly [K in Key]?: string[] };
+  }
+
+  if (inputValues.length === 0) {
+    return clearOnEmpty
+      ? { [key]: [] } as unknown as { readonly [K in Key]?: string[] }
+      : existingValues === undefined ? {} : { [key]: [...existingValues] } as { readonly [K in Key]?: string[] };
   }
 
   if (!mergeValues) {

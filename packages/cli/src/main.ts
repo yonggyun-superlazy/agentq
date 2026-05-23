@@ -22,6 +22,7 @@ import {
   applyMarkerUninstall,
   listPendingInboxItems,
   listActorPresences,
+  readDiagnosticEvents,
   planHookConfigInstall,
   planHookConfigUninstall,
   planMarkerInstall,
@@ -48,6 +49,7 @@ import {
   type AgentKind,
   type ActivePathOwnerMatch,
   type ActiveResourceOwnerMatch,
+  type DiagnosticEvent,
   type FoldedMessageState,
   type FoldedRequest,
   type Message,
@@ -89,6 +91,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "question", summary: "Ask an actor a required-response question" },
   { name: "inbox", summary: "Show required requests for an explicit actor" },
   { name: "wake", summary: "Inspect pending delivery targets" },
+  { name: "diag", summary: "Show recent AgentQ diagnostic ring log entries" },
   { name: "respond", summary: "Resolve or answer a required request" },
   { name: "supersede", summary: "Cancel an outbound required request with evidence" },
   { name: "follow-up", summary: "Continue after a blocked response" },
@@ -234,6 +237,18 @@ export function renderCommandHelp(command: CommandSpec): string {
       "",
       "Wake is inspection-only. It never starts headless resume processes.",
       "Use the listed inbox command in the visible target agent TUI."
+    ].join("\n");
+  }
+
+  if (command.name === "diag") {
+    return [
+      "agentq diag",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq diag [--limit <count>]",
+      "",
+      "Shows bounded OS-local hook diagnostics such as inferred paths/resources, ignored AgentQ meta commands, and nudge decisions."
     ].join("\n");
   }
 
@@ -442,6 +457,10 @@ export async function runCommand(
     return await runWakeCommand(argv.slice(1), runtime);
   }
 
+  if (command === "diag") {
+    return await diagCommand(argv.slice(1), runtime);
+  }
+
   if (command === "respond") {
     return await respondCommand(argv.slice(1), runtime);
   }
@@ -546,7 +565,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       actorId,
       cwd: runtime.cwd,
       activePaths: state.paths,
-      ...(activeResources.length === 0 ? {} : { activeResources }),
+      activeResources,
       responsibilities: [state.title],
       summary: state.title,
       now: runtime.now()
@@ -769,6 +788,22 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   });
 }
 
+async function diagCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const limit = Number(optionValue(args, "limit") ?? "20");
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error("diag --limit must be a positive integer.");
+  }
+
+  const store = await openStore(runtime);
+  const events = await readDiagnosticEvents(store, limit);
+  return {
+    code: 0,
+    stdout: renderDiagnosticEvents(events),
+    stderr: ""
+  };
+}
+
 async function enterCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
   const paths = optionValues(args, "paths");
@@ -782,7 +817,7 @@ async function enterCommand(argv: readonly string[], runtime: CommandRuntime): P
       actorId,
       cwd: runtime.cwd,
       activePaths: paths,
-      ...(activeResources.length === 0 ? {} : { activeResources, mergeActiveResources: true }),
+      activeResources,
       responsibilities,
       now: runtime.now(),
       ...(summary === undefined ? {} : { summary })
@@ -1541,6 +1576,33 @@ function renderResourceOwnerMatch(match: ActiveResourceOwnerMatch): string {
     `matched: ${match.queriedResource}`,
     `responsibilities: ${formatList(match.actor.responsibilities)}`
   ].join(" | ");
+}
+
+function renderDiagnosticEvents(events: readonly DiagnosticEvent[]): string {
+  const lines = ["AgentQ diagnostics"];
+  if (events.length === 0) {
+    lines.push("  empty");
+    return `${lines.join("\n")}\n`;
+  }
+
+  for (const event of events) {
+    lines.push(
+      [
+        `  ${event.at}`,
+        event.actorId ?? "(no actor)",
+        event.event ?? event.kind,
+        event.toolName === undefined ? undefined : `tool:${event.toolName}`,
+        event.paths === undefined ? undefined : `paths:${formatList(event.paths)}`,
+        event.resources === undefined ? undefined : `resources:${formatList(event.resources)}`,
+        event.ignoredCommands === undefined || event.ignoredCommands.length === 0
+          ? undefined
+          : `ignored:${event.ignoredCommands.length}`,
+        event.nudge === undefined ? undefined : `nudge:${event.nudge ? "yes" : "no"}`
+      ].filter((part): part is string => part !== undefined).join(" | ")
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 function renderStatusActorLine(detail: WorkspaceStatusActor): string {

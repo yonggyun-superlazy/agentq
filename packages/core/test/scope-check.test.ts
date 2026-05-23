@@ -26,9 +26,24 @@ describe("scope-check engine", () => {
       weaknesses: []
     });
   });
+
+  it("allows broad path when a concrete resource is registered", () => {
+    const result = evaluateScopeCheck("codex@workspace@session", presence({
+      activePaths: ["."],
+      activeResources: ["unity:ProjectDD/DDUnity"],
+      responsibilities: ["DD Unity editor owner"]
+    }));
+
+    expect(result).toMatchObject({
+      ok: true,
+      weaknesses: []
+    });
+  });
 });
 
-function presence(overrides: Pick<Presence, "activePaths" | "responsibilities">): Presence {
+function presence(
+  overrides: Pick<Presence, "activePaths" | "responsibilities"> & Partial<Pick<Presence, "activeResources">>
+): Presence {
   return {
     actorId: "codex@workspace@session",
     kind: "codex",

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   createOrRefreshSessionBinding,
   ensureWorkspaceStore,
+  refreshActorPresence,
   resolveHookActorId,
   resolveWorkspaceStore,
   type WorkspaceStore
@@ -76,6 +77,34 @@ describe("session-to-actor binding", () => {
 
     await expect(readFile(store.layout.actorPresencePath(binding.actorId), "utf8")).resolves.toContain(
       "setup-watcher:ProjectDD/DDSetup"
+    );
+  });
+
+  it("clears active resources when an actor refreshes without resources", async () => {
+    const store = await createStore("workspace");
+    const binding = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "session-resource-clear",
+      cwd: store.workspaceRoot,
+      activePaths: ["ProjectDD"],
+      activeResources: ["setup-watcher:ProjectDD/DDSetup"],
+      responsibilities: ["DD setup watcher"],
+      summary: "DD setup watcher",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    await refreshActorPresence(store, {
+      actorId: binding.actorId,
+      cwd: store.workspaceRoot,
+      activePaths: ["AgentQ"],
+      activeResources: [],
+      responsibilities: ["AgentQ owner"],
+      summary: "AgentQ owner",
+      now: "2026-05-18T00:01:00.000Z"
+    });
+
+    await expect(readFile(store.layout.actorPresencePath(binding.actorId), "utf8")).resolves.not.toContain(
+      "activeResources"
     );
   });
 

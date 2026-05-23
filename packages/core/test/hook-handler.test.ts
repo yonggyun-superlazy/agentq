@@ -7,6 +7,7 @@ import {
   createOrRefreshSessionBinding,
   ensureWorkspaceStore,
   listActorPresences,
+  readDiagnosticEvents,
   resolveWorkspaceStore,
   runHookHandler,
   createAdapterSessionKey,
@@ -403,6 +404,43 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain(owner.actorId);
     expect(output.hookSpecificOutput?.additionalContext).toContain("uses setup-watcher:ProjectDD/DDSetup");
     expect(output.hookSpecificOutput?.additionalContext).toContain("--resource setup-watcher:projectdd/ddsetup");
+  });
+
+  it("does not infer resources from AgentQ meta commands and records diagnostics", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-meta-command-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-meta",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "agentq owners --resource unity:ProjectDD/DDUnity"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    const actors = await listActorPresences(store);
+    expect(actors).toHaveLength(1);
+    expect(actors[0]?.activeResources).toBeUndefined();
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: "pre-tool",
+      toolName: "Bash",
+      resources: [],
+      ignoredCommands: ["agentq owners --resource unity:ProjectDD/DDUnity"]
+    });
   });
 
   it("does not nudge on read-only pre-tool overlap", async () => {

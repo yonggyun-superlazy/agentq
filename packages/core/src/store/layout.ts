@@ -10,6 +10,8 @@ export interface WorkspaceStoreLayout {
   readonly inboxDir: string;
   readonly messagesDir: string;
   readonly workDir: string;
+  readonly diagnosticsDir: string;
+  readonly diagnosticsRingPath: string;
   readonly workActorsDir: string;
   readonly workItemsDir: string;
   readonly actorPresencePath: (actorId: string) => string;
@@ -31,6 +33,7 @@ export function createWorkspaceStoreLayout(root: string): WorkspaceStoreLayout {
   const inboxDir = path.join(root, "inbox");
   const messagesDir = path.join(root, "messages");
   const workDir = path.join(root, "work");
+  const diagnosticsDir = path.join(root, "diagnostics");
   const workActorsDir = path.join(workDir, "actors");
   const workItemsDir = path.join(workDir, "items");
 
@@ -42,6 +45,8 @@ export function createWorkspaceStoreLayout(root: string): WorkspaceStoreLayout {
     inboxDir,
     messagesDir,
     workDir,
+    diagnosticsDir,
+    diagnosticsRingPath: path.join(diagnosticsDir, "ring.jsonl"),
     workActorsDir,
     workItemsDir,
     actorPresencePath: (actorId) => path.join(actorsDir, safeSegment("actor id", actorId), "presence.yaml"),

@@ -21,6 +21,7 @@ import {
   readActiveWorkState,
   runWorkDoneCheck
 } from "../work/workStack.js";
+import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
 
 export type HookAdapter = "codex" | "claude-code" | "copilot-cli";
 export type HookRuntimeEvent = "session-start" | "pre-tool" | "stop";
@@ -67,7 +68,8 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
 
   if (options.event === "pre-tool") {
     const hookPaths = extractActivePaths(payload, cwd);
-    const hookResources = extractActiveResources(payload, cwd);
+    const resourceInference = extractActiveResourceInference(payload, cwd);
+    const hookResources = resourceInference.resources;
     const mutatingTool = shouldNudgeForTool(payload);
     const adapter = adapterKind(options.adapter);
     const actorId = await resolveOrCreateHookActorId(store, {
@@ -98,6 +100,18 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     const ownerNudge = mutatingTool
       ? await buildRelatedOwnerNudge(store, actorId, hookPaths, hookResources, options.now)
       : null;
+    await writeHookDiagnostic(store, {
+      actorId,
+      adapter: options.adapter,
+      event: options.event,
+      sessionId,
+      toolName: toolNameFromPayload(payload),
+      paths: hookPaths,
+      resources: hookResources,
+      ignoredCommands: resourceInference.ignoredCommands,
+      nudge: ownerNudge !== null,
+      at: options.now
+    });
 
     return {
       code: 0,
@@ -107,6 +121,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   }
 
   const adapter = adapterKind(options.adapter);
+  const stopResourceInference = extractActiveResourceInference(payload, cwd);
   const actorId = await resolveOrCreateHookActorId(store, {
     adapter,
     sessionId,
@@ -114,13 +129,13 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   }, {
     activePaths: extractActivePaths(payload, cwd),
     observedPaths: [],
-    activeResources: extractActiveResources(payload, cwd),
+    activeResources: stopResourceInference.resources,
     responsibilities: [`${options.adapter} stop gate`],
     summary: `${options.adapter} stop gate`,
     now: options.now
   });
   const stopPaths = extractActivePaths(payload, cwd);
-  const stopResources = extractActiveResources(payload, cwd);
+  const stopResources = stopResourceInference.resources;
   await appendSpecificActiveWorkTouch(store, actorId, stopPaths, options.now);
   await refreshHookPresence(store, {
     adapter,
@@ -133,6 +148,16 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     fallbackResponsibilities: [`${options.adapter} stop gate`],
     fallbackSummary: `${options.adapter} stop gate`,
     now: options.now
+  });
+  await writeHookDiagnostic(store, {
+    actorId,
+    adapter: options.adapter,
+    event: options.event,
+    sessionId,
+    paths: stopPaths,
+    resources: stopResources,
+    ignoredCommands: stopResourceInference.ignoredCommands,
+    at: options.now
   });
 
   const done = await runDoneCheck(store, actorId);
@@ -216,7 +241,6 @@ async function refreshHookPresence(
         cwd: input.cwd,
         activePaths: [],
         observedPaths: activePaths.filter(isSpecificPath),
-        activeResources: [],
         responsibilities: [],
         mergeObservedPaths: true,
         now: input.now
@@ -231,7 +255,6 @@ async function refreshHookPresence(
       activeResources: input.hookResources,
       responsibilities: [],
       mergeActivePaths: true,
-      mergeActiveResources: true,
       now: input.now
     });
     return;
@@ -241,10 +264,9 @@ async function refreshHookPresence(
     actorId: input.actorId,
     cwd: input.cwd,
     activePaths,
-    activeResources: input.hookResources,
+    ...(input.hookResources.length === 0 ? {} : { activeResources: input.hookResources, mergeActiveResources: true }),
     responsibilities: [activeWork.title],
     summary: activeWork.title,
-    mergeActiveResources: true,
     now: input.now
   });
 }
@@ -401,9 +423,43 @@ function booleanField(payload: PayloadObject, key: string): boolean {
   return payload[key] === true;
 }
 
+function toolNameFromPayload(payload: PayloadObject): string | undefined {
+  return stringFieldOptional(payload, "tool_name") ?? stringFieldOptional(payload, "toolName");
+}
+
 function shouldNudgeForTool(payload: PayloadObject): boolean {
-  const toolName = stringFieldOptional(payload, "tool_name") ?? stringFieldOptional(payload, "toolName") ?? "";
+  const toolName = toolNameFromPayload(payload) ?? "";
   return /(bash|write|edit|apply|patch|shell|command|delete|move|rename)/i.test(toolName);
+}
+
+async function writeHookDiagnostic(
+  store: WorkspaceStore,
+  input: {
+    readonly actorId: string;
+    readonly adapter: HookAdapter;
+    readonly event: HookRuntimeEvent;
+    readonly sessionId: string;
+    readonly toolName?: string | undefined;
+    readonly paths: readonly string[];
+    readonly resources: readonly string[];
+    readonly ignoredCommands: readonly string[];
+    readonly nudge?: boolean;
+    readonly at: string;
+  }
+): Promise<void> {
+  await tryAppendDiagnosticEvent(store, {
+    kind: "hook",
+    actorId: input.actorId,
+    adapter: input.adapter,
+    event: input.event,
+    sessionId: input.sessionId,
+    ...(input.toolName === undefined ? {} : { toolName: input.toolName }),
+    paths: [...input.paths],
+    resources: [...input.resources],
+    ignoredCommands: [...input.ignoredCommands],
+    ...(input.nudge === undefined ? {} : { nudge: input.nudge }),
+    at: input.at
+  });
 }
 
 async function buildRelatedOwnerNudge(
@@ -470,18 +526,32 @@ function extractActivePaths(payload: PayloadObject, cwd: string): string[] {
   return paths.length === 0 ? ["."] : paths;
 }
 
-function extractActiveResources(payload: PayloadObject, cwd: string): string[] {
+interface ResourceInference {
+  readonly resources: readonly string[];
+  readonly ignoredCommands: readonly string[];
+}
+
+function extractActiveResourceInference(payload: PayloadObject, cwd: string): ResourceInference {
   const commands = new Set<string>();
   collectCommandCandidates(payload, commands);
   const resources = new Set<string>();
+  const ignoredCommands = new Set<string>();
 
   for (const command of commands) {
+    if (isAgentQMetaCommand(command)) {
+      ignoredCommands.add(summarizeCommand(command));
+      continue;
+    }
+
     for (const resource of inferCommandResources(command, cwd)) {
       resources.add(resource);
     }
   }
 
-  return [...resources].slice(0, 8);
+  return {
+    resources: [...resources].slice(0, 8),
+    ignoredCommands: [...ignoredCommands].slice(0, 8)
+  };
 }
 
 function collectCommandCandidates(value: unknown, commands: Set<string>, key = ""): void {
@@ -540,6 +610,15 @@ function inferCommandResources(command: string, cwd: string): string[] {
   }
 
   return [...resources];
+}
+
+function isAgentQMetaCommand(command: string): boolean {
+  return /(^|[\s"';&|])agentq(?:\.cmd|\.ps1|\.bat|\.exe)?\s+(accept-blocked|actors|block|diag|doctor|done-check|enter|follow-up|hook|inbox|install|owners|question|respond|scope-check|status|supersede|uninstall|wake|work)\b/i.test(command);
+}
+
+function summarizeCommand(command: string): string {
+  const normalized = command.replace(/\s+/g, " ").trim();
+  return normalized.length <= 160 ? normalized : `${normalized.slice(0, 157)}...`;
 }
 
 function extractUnityProjectPath(command: string, cwd: string): string | null {
