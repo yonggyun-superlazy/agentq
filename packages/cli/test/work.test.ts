@@ -385,6 +385,10 @@ describe("CLI work stack", () => {
       code: 2,
       stderr: expect.stringContaining(`agentq next --actor ${actorId}`)
     });
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("--resource conversation:current-request")
+    });
 
     await runCommand([
       "enter",

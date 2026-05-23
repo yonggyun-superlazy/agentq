@@ -830,8 +830,10 @@ function renderNextAction(input: NextActionInput): string {
     lines.push(
       "Action: refresh your actor scope.",
       ...input.scopeResult.weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
-      "Run:",
+      "Run for file/code tasks:",
       `  agentq enter --actor ${input.actorId} --paths <owned-path> [--resource <resource>] --responsibility "<owned contract>"`,
+      "Run for file-less judgment or conversation-only tasks:",
+      `  agentq enter --actor ${input.actorId} --resource conversation:current-request --responsibility "<concrete user task>"`,
       "Then:",
       `  agentq next --actor ${input.actorId}`
     );

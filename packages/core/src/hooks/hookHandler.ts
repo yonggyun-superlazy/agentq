@@ -346,7 +346,7 @@ async function openHookStore(cwd: string, env: NodeJS.ProcessEnv | undefined): P
 }
 
 function sessionStartOutput(adapter: HookAdapter, actorId: string): object {
-  const context = `AgentQ actor id: ${actorId}. Use this exact id in every AgentQ command. Primary command: agentq next --actor ${actorId}. Run it before finishing, after AgentQ questions, and whenever AgentQ state is ambiguous; it will print the exact inbox/work/scope/done-check step.`;
+  const context = `AgentQ actor id: ${actorId}. Use this exact id in every AgentQ command. Primary command: agentq next --actor ${actorId}. After identifying the concrete user task, run it and follow any printed scope refresh before the substantive answer; for file-less judgment tasks, a conversation resource with a concrete responsibility is acceptable. Also run next before finishing, after AgentQ questions, and whenever AgentQ state is ambiguous.`;
 
   if (adapter === "copilot-cli") {
     return { additionalContext: context };

@@ -38,6 +38,8 @@ describe("AgentQ hook handler", () => {
       now: "2026-05-18T00:00:00.000Z"
     });
     expect(start.stdout).toContain("AgentQ actor id:");
+    expect(start.stdout).toContain("After identifying the concrete user task");
+    expect(start.stdout).toContain("conversation resource");
     const actorId = actorIdFromContext(start.stdout);
 
     const store = await resolveWorkspaceStore(workspace, { env });

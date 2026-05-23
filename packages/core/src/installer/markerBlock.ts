@@ -49,12 +49,12 @@ const ROOT_MARKER_BODY = [
   "# AgentQ",
   "",
   "See `.github/instructions/agentq.instructions.md`.",
-  "Primary: `agentq next --actor <id>` before finish or when ambiguous.",
-  "Use hook id; let `next` show exact inbox/work/scope commands.",
+  "Primary: `agentq next --actor <id>` before finish/ambiguous.",
+  "Use hook id; `next` prints exact inbox/work/scope commands.",
+  "Fileless scope: `--resource conversation:current-request`.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "After `work start`, record context evidence: frame, basis, paths/resources, next check.",
-  "Before done: run `next`, final evidence, then `done-check`.",
-  "External failures: `block` with evidence."
+  "After `work start`: evidence = frame, basis, paths/resources, next check.",
+  "Before done: `next`, final evidence, `done-check`."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
@@ -62,11 +62,12 @@ const SCOPED_MARKER_BODY = [
   "",
   "This workspace uses AgentQ: required-response queues for coding agents.",
   "",
-  "- Use the hook actor id; every command must pass `--actor <id>`.",
-  "- Primary command: `agentq next --actor <id>` before finish, after questions, and whenever AgentQ state is ambiguous.",
-  "- Let `next` print exact inbox/work/scope commands instead of guessing the lower-level sequence.",
-  "- Track work with `agentq work start --actor <id>`; immediately record context evidence after start: current frame, observed basis, touched paths/resources, next pass check.",
-  "- Run `agentq next --actor <id>` and then `agentq done-check --actor <id>` before done.",
+  "- Use the hook actor id; pass `--actor <id>` every time.",
+  "- Primary: `agentq next --actor <id>` before finish, after questions, or when ambiguous.",
+  "- Let `next` print exact inbox/work/scope commands.",
+  "- Fileless judgment: `--resource conversation:current-request` + concrete responsibility.",
+  "- Track work with `agentq work start --actor <id>`; immediately record context evidence after start: frame, basis, paths/resources, next check.",
+  "- Before done: `agentq next --actor <id>`, then `agentq done-check --actor <id>`.",
   "- Shared edit/tool: `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Use `question` to classify overlap, `note` for context.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
   "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",
