@@ -50,6 +50,92 @@ queue/stack UX는 기본값으로 유지할 근거가 있다.
 선택하는지를 본 것이다. 다음 확인은 실제 멀티에이전트 작업 중 interrupt
 상황에서 같은 패턴이 유지되는지 보는 것이다.
 
+## 한국어 후속 실험: 실제 산출물 기준
+
+위 결과만으로 "답변 품질"이라고 부르기에는 부족하다는 지적이 맞다.
+그래서 임시 JavaScript 코드베이스를 만들고 Codex가 실제 파일을 수정하게
+했다.
+
+작업:
+
+```text
+src/ui/statusPanel.js 를 구현해서 node tests/statusPanel.test.js 통과
+계약: statusPanel은 eventBus의 badgeState를 직접 읽지 말고 getBadgeSnapshot()만 사용
+```
+
+결과:
+
+| 항목 | A안: 기존 inbox | B안: queue/stack inbox |
+|------|-----------------|------------------------|
+| 코드 수정 | 성공 | 성공 |
+| 테스트 | `statusPanel outcome test passed` | `statusPanel outcome test passed` |
+| 구현 형태 | `getBadgeSnapshot()` 사용, `badgeState` 직접 접근 없음 | `getBadgeSnapshot()` 사용, `badgeState` 직접 접근 없음 |
+| required inbox | 답변됨 | 답변됨 |
+| work evidence | 없음 | 기록됨 |
+| active work close | 안 됨 | 닫힘 |
+| done-check | 실패: active work open | 성공: no required replies or active work |
+
+실제 코드 결과는 양쪽 모두 동일하게 성공했다.
+
+Before 산출물:
+
+```js
+const { getBadgeSnapshot } = require('../runtime/eventBus');
+
+function renderBadgeLabel() {
+  const badge = getBadgeSnapshot();
+  return `${badge.level}:${badge.count}`;
+}
+
+module.exports = { renderBadgeLabel };
+```
+
+After 산출물:
+
+```js
+const { getBadgeSnapshot } = require('../runtime/eventBus');
+
+function renderBadgeLabel() {
+  const badge = getBadgeSnapshot();
+  return `${badge.level}:${badge.count}`;
+}
+module.exports = { renderBadgeLabel };
+```
+
+차이는 코드가 아니라 완료 상태였다.
+
+Before의 AgentQ 상태:
+
+```text
+inbox empty
+work stack for <receiver>
+
+current: AW-eval-queue-stack
+  status: open
+  title: Implement statusPanel badge rendering
+  evidence: 0
+
+AgentQ work-check failed ... Active work AW-eval-queue-stack is still open
+```
+
+After의 AgentQ 상태:
+
+```text
+inbox empty
+no active work for <receiver>
+ok: no required replies or active work remain open
+```
+
+엄격한 판정:
+
+- 이 단순 구현 과제에서는 queue/stack UX가 코드 산출물 품질을 높였다고
+  말할 수 없다.
+- 대신 queue/stack UX는 "작업을 끝냈다고 말해도 되는 상태"를 만들었다.
+- 제품 가치 표현도 "코딩 정확도 향상"보다는 "required inbox 처리 후
+  active work evidence/close/done-check까지 이어지게 함"이 더 정확하다.
+- 코드 품질 개선을 주장하려면 더 복잡한 interrupt 상황이 필요하다. 예:
+  inbox 처리 후 원래 parent task를 잊으면 실제 구현 누락이 생기는 시나리오.
+
 ## Question
 
 Does AgentQ's queue/stack inbox surface improve agent answer quality compared to
