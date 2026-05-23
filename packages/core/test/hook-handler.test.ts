@@ -37,9 +37,9 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:00.000Z"
     });
-    expect(start.stdout).toContain("AgentQ actor id:");
-    expect(start.stdout).toContain("After identifying the concrete user task");
-    expect(start.stdout).toContain("conversation resource");
+    expect(start.stdout).toContain("Internal coordination actor id:");
+    expect(start.stdout).toContain("For short read-only answers");
+    expect(start.stdout).toContain("do not run coordination commands before answering");
     const actorId = actorIdFromContext(start.stdout);
 
     const store = await resolveWorkspaceStore(workspace, { env });
@@ -108,7 +108,7 @@ describe("AgentQ hook handler", () => {
     expect(presence).toContain("src/protocol.ts");
   });
 
-  it("bootstraps a missing session binding from Stop for already-running sessions", async () => {
+  it("bootstraps a missing session binding from Stop without blocking on scope-only weakness", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-stop-bootstrap-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "src"), { recursive: true });
@@ -131,10 +131,7 @@ describe("AgentQ hook handler", () => {
     });
 
     expect(stop.code).toBe(0);
-    expect(JSON.parse(stop.stdout)).toMatchObject({
-      decision: "block",
-      reason: expect.stringContaining("scope-check failed")
-    });
+    expect(stop.stdout).toBe("{}\n");
 
     const store = await resolveWorkspaceStore(workspace, { env });
     const session = await readFile(
@@ -654,7 +651,7 @@ describe("AgentQ hook handler", () => {
 });
 
 function actorIdFromContext(stdout: string): string {
-  const match = stdout.match(/AgentQ actor id: ([^.]+)\./);
+  const match = stdout.match(/Internal coordination actor id: ([^.]+)\./);
   if (match?.[1] === undefined) {
     throw new Error(`No actor id in hook output: ${stdout}`);
   }

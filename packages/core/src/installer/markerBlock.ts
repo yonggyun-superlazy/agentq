@@ -46,32 +46,33 @@ interface MarkerEdit {
 }
 
 const ROOT_MARKER_BODY = [
-  "# AgentQ",
+  "# Coordination",
   "",
   "See `.github/instructions/agentq.instructions.md`.",
-  "Primary: `agentq next --actor <id>` before finish/ambiguous.",
-  "Use hook id; `next` prints exact inbox/work/scope commands.",
-  "Fileless scope: `--resource conversation:current-request`.",
+  "Use coordination only for file edits, handoffs, active work, or ambiguity.",
+  "Short read-only answers do not need pre-answer coordination calls.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "After `work start`: evidence = frame, basis, paths/resources, next check.",
-  "Before done: `next`, final evidence, `done-check`."
+  "Before done on tracked work, refresh coordination state, preserve the live stack, and record final evidence.",
+  "Keep coordination names/commands out of user-facing answers."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
-  "# AgentQ",
+  "# Coordination",
   "",
-  "This workspace uses AgentQ: required-response queues for coding agents.",
+  "AgentQ handles required-response queues.",
   "",
-  "- Use the hook actor id; pass `--actor <id>` every time.",
-  "- Primary: `agentq next --actor <id>` before finish, after questions, or when ambiguous.",
-  "- Let `next` print exact inbox/work/scope commands.",
-  "- Fileless judgment: `--resource conversation:current-request` + concrete responsibility.",
-  "- Track work with `agentq work start --actor <id>`; immediately record context evidence after start: frame, basis, paths/resources, next check.",
-  "- Before done: `agentq next --actor <id>`, then `agentq done-check --actor <id>`.",
-  "- Shared edit/tool: `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Use `question` to classify overlap, `note` for context.",
-  "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
-  "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",
+  "- Use the hook actor id with `--actor <id>`.",
+  "- Run `agentq next --actor <id>` for file edits, handoffs, active work, AgentQ questions, or ambiguous state.",
+  "- Short read-only answers do not need pre-answer coordination calls.",
+  "- Let `next` print exact commands.",
+  "- Fileless judgment: `--resource conversation:current-request`.",
+  "- Track the live work stack with `agentq work start --actor <id>`; then evidence: frame, basis, paths/resources, next check.",
+  "- Before done on tracked work: `agentq next --actor <id>`, then `agentq done-check --actor <id>`.",
+  "- Shared edit/tool: `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Use `question` for overlap, `note` for context.",
+  "- Required replies block done-check; answer with `agentq respond ...`.",
+  "- External build/test/generated failures: create `agentq block` with evidence.",
   "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",
+  "- Keep coordination names/commands out of user-facing answers unless exact details are requested.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 

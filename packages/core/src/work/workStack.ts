@@ -36,6 +36,7 @@ export interface WorkCheckResult {
   readonly ok: boolean;
   readonly actorId: string;
   readonly activeWork?: WorkState;
+  readonly activeStack?: readonly WorkState[];
 }
 
 export interface StartWorkInput {
@@ -179,16 +180,46 @@ export async function readActiveWorkState(
   return workId === null ? null : await readWorkState(store, workId);
 }
 
+export async function readActiveWorkStack(
+  store: WorkspaceStore,
+  actorId: string
+): Promise<readonly WorkState[]> {
+  const active = await readActiveWorkState(store, actorId);
+  if (active === null) {
+    return [];
+  }
+
+  const activeToRoot: WorkState[] = [];
+  const seenWorkIds = new Set<string>();
+  let current: WorkState | null = active;
+
+  while (current !== null) {
+    if (current.actorId !== actorId) {
+      throw new Error(`AgentQ work stack frame belongs to another actor: ${current.workId}`);
+    }
+    if (seenWorkIds.has(current.workId)) {
+      throw new Error(`AgentQ work stack has a cycle at ${current.workId}`);
+    }
+
+    activeToRoot.push(current);
+    seenWorkIds.add(current.workId);
+    current = current.parentWorkId === null ? null : await readWorkState(store, current.parentWorkId);
+  }
+
+  return activeToRoot.reverse();
+}
+
 export async function runWorkDoneCheck(
   store: WorkspaceStore,
   actorId: string
 ): Promise<WorkCheckResult> {
-  const activeWork = await readActiveWorkState(store, actorId);
-  if (activeWork === null || activeWork.status !== "open") {
+  const activeStack = await readActiveWorkStack(store, actorId);
+  const activeWork = activeStack[activeStack.length - 1];
+  if (activeWork === undefined || activeWork.status !== "open") {
     return { ok: true, actorId };
   }
 
-  return { ok: false, actorId, activeWork };
+  return { ok: false, actorId, activeWork, activeStack };
 }
 
 export function planWorkStopContinuation(result: WorkCheckResult): string {

@@ -34,6 +34,7 @@ import {
   planWorkStopContinuation,
   planScopeContinuation,
   refreshActorPresence,
+  readActiveWorkStack,
   readActiveWorkState,
   resolveWorkspaceStore,
   runHookHandler,
@@ -622,10 +623,10 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   }
 
   if (subcommand === "status") {
-    const state = await readActiveWorkState(store, actorId);
+    const stack = await readActiveWorkStack(store, actorId);
     return {
       code: 0,
-      stdout: state === null ? `no active work for ${actorId}\n` : renderWorkState("active", state),
+      stdout: stack.length === 0 ? `no active work for ${actorId}\n` : renderWorkStackStatus(actorId, stack),
       stderr: ""
     };
   }
@@ -842,11 +843,13 @@ function renderNextAction(input: NextActionInput): string {
 
   if (!input.workResult.ok && input.workResult.activeWork !== undefined) {
     const work = input.workResult.activeWork;
+    const stack = input.workResult.activeStack ?? [work];
     lines.push(
       work.evidence.length === 0
         ? "Action: record context evidence for your active work."
         : "Action: close or update your active work before claiming done.",
       `Work: ${work.workId} - ${work.title}`,
+      ...renderWorkStackLines(stack, "Stack"),
       work.evidence.length === 0
         ? `Run: agentq work evidence --actor ${input.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`
         : `Run: agentq work close --actor ${input.actorId} --summary "<what changed and how it was verified>"`,
@@ -2497,6 +2500,46 @@ function formatDuration(ms: number): string {
   }
 
   return `${Math.floor(hours / 24)}d`;
+}
+
+function renderWorkStackStatus(actorId: string, stack: readonly WorkState[]): string {
+  const current = stack[stack.length - 1];
+  if (current === undefined) {
+    return `no active work for ${actorId}\n`;
+  }
+
+  const lines = [
+    `work stack for ${actorId}`,
+    ...renderWorkStackLines(stack, "Stack"),
+    "",
+    `current: ${current.workId}`,
+    `  status: ${current.status}`,
+    `  title: ${current.title}`,
+    `  touched: ${current.touchedPaths.join(", ")}`,
+    `  evidence: ${current.evidence.length}`
+  ];
+
+  if (current.status === "open" && current.evidence.length === 0) {
+    lines.push(`  next: record collaboration context now: agentq work evidence --actor ${current.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`);
+  } else if (current.status === "open") {
+    lines.push("  next: add missing final evidence or close with summary when the frame is actually done");
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderWorkStackLines(stack: readonly WorkState[], label: string): string[] {
+  if (stack.length <= 1) {
+    return [];
+  }
+
+  return [
+    `${label}:`,
+    ...stack.map((frame, index) => {
+      const marker = index === stack.length - 1 ? "current" : "parent";
+      return `  ${index + 1}. ${frame.workId} [${marker}] ${frame.title} (evidence ${frame.evidence.length})`;
+    })
+  ];
 }
 
 function isNotFoundError(error: unknown): boolean {

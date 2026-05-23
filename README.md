@@ -17,9 +17,9 @@ When multiple agents edit the same repo, one stale write or unasked ownership qu
 - `respond`: resolve the request with evidence.
 - `done-check`: fail if required replies or active work remain open.
 
-AgentQ keeps the agent-facing surface small: agents can run `agentq next --actor <id>` before finishing or whenever the queue feels ambiguous. It inspects inbox, outbound replies, active work, and scope, then prints exactly one next action plus the lower-level command only when needed. The lower-level commands remain scriptable, but agents do not need to remember the full sequence.
+AgentQ keeps the agent-facing surface small: agents can run `agentq next --actor <id>` before finishing or whenever the queue feels ambiguous. It inspects inbox, outbound replies, the live work stack, and scope, then prints exactly one next action plus the lower-level command only when needed. The lower-level commands remain scriptable, but agents do not need to remember the full sequence.
 
-Active work evidence is collaboration context, not only final proof. After `agentq work start`, the first `work evidence` entry should say what frame is active, what was observed, which paths/resources are involved, and what check will prove the frame. That gives other agents enough context to route questions and classify overlap before the final test/build evidence exists.
+Active work evidence is collaboration context, not only final proof. `agentq work start` pushes a live frame, and nested work returns to its parent when the child closes. After `agentq work start`, the first `work evidence` entry should say what frame is active, what was observed, which paths/resources are involved, and what check will prove the frame. That gives other agents enough context to route questions and classify overlap before the final test/build evidence exists.
 
 ## Before And After
 
@@ -116,7 +116,7 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - Dry-run first: print touched files, marker blocks, hook commands, and uninstall command.
 - Mutate only with `--yes`.
 - Keep runtime queue state outside the repository in an OS-local workspace store.
-- Use `agentq next --actor <id>` as the primary agent-facing command. It chooses between required inbox replies, outbound wait state, active work evidence/close, scope refresh, answered evidence, optional notes, or normal continuation.
+- Use `agentq next --actor <id>` as the primary agent-facing command. It chooses between required inbox replies, outbound wait state, live stack evidence/close, scope refresh, answered evidence, optional notes, or normal continuation.
 - Use `agentq status` for a one-screen health summary: doctor result, active/stale actors, pending inboxes, open work, and weak-scope counts.
 - Read the `Next:` line in `agentq status` before broad cleanup; it prioritizes pending inbox, weak scope, zero-evidence work, stale work, and missing owner checks.
 - After `agentq work start`, immediately record context evidence: current frame, observed basis, touched paths/resources, and next pass check. Do not leave active work at evidence `0` until the stop hook.
@@ -160,7 +160,7 @@ Copilot CLI prompt mode (`copilot -p`) loads repository hook files only when the
 | `.github/instructions/agentq.instructions.md` | Yes for Copilot projects | Copilot instruction marker |
 | OS-local AgentQ store | Never | Runtime messages, actor presence, session bindings |
 
-The OS-local store also holds each actor's active work stack. Long-lived project docs can stay in a wiki or README; the in-flight frame that blocks a final answer belongs in AgentQ.
+The OS-local store also holds each actor's live work stack. Long-lived project docs can stay in a wiki or README; the in-flight call stack that decides what to do next belongs in AgentQ.
 
 ## Uninstall
 

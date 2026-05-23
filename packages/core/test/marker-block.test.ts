@@ -98,18 +98,21 @@ describe("AgentQ marker installer", () => {
 
     expect(agentsBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
-    expect(agentsBlock).toContain("After `work start`: evidence");
-    expect(claudeBlock).toContain("`next` prints exact inbox/work/scope commands");
-    expect(agentsBlock).toContain("conversation:current-request");
+    expect(agentsBlock).toContain("Short read-only answers");
+    expect(claudeBlock).toContain("tracked work");
+    expect(agentsBlock).toContain("Keep coordination names");
+    expect(agentsBlock).not.toContain("done-check");
+    expect(claudeBlock).not.toContain("agentq next");
     expect(agentsBlock).toContain("routes, not locks");
     expect(claudeBlock).toContain("routes, not locks");
-    expect(scopedBlock).toContain("classify overlap");
+    expect(scopedBlock).toContain("question` for overlap");
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
     expect(scopedBlock).toContain("agentq work start --actor <id>");
-    expect(scopedBlock).toContain("Let `next` print exact inbox/work/scope commands");
-    expect(scopedBlock).toContain("immediately record context evidence after start");
+    expect(scopedBlock).toContain("Let `next` print exact commands");
+    expect(scopedBlock).toContain("then evidence: frame");
     expect(scopedBlock).toContain("create `agentq block`");
+    expect(scopedBlock).toContain("Short read-only answers");
     expect(Buffer.byteLength(agentsBlock, "utf8")).toBeLessThan(
       Buffer.byteLength(scopedBlock, "utf8")
     );

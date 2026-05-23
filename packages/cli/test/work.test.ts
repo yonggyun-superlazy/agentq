@@ -625,6 +625,66 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("renders nested work stack lineage in status and next", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-stack-lineage-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "stack-lineage",
+      "--paths",
+      "AgentQ",
+      "--responsibility",
+      "AgentQ stack lineage"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-top",
+      "--title",
+      "Top user request",
+      "--path",
+      "AgentQ"
+    ], runtime);
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-current",
+      "--title",
+      "Current interrupt",
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], runtime);
+
+    await expect(runCommand(["work", "status", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("work stack for")
+    });
+    await expect(runCommand(["work", "status", "--actor", actorId], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("AW-top [parent] Top user request")
+    });
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("Stack:")
+    });
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("AW-current [current] Current interrupt")
+    });
+  });
+
   it("routes non-blocking notes without gating sender or receiver done-check", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-note-"));
     const runtime = {

@@ -5,7 +5,7 @@ Use this when AgentQ is installed in a shared coding workspace.
 You are an independent coding agent, not an orchestrated worker. AgentQ gives you two gates:
 
 - Required replies from other actors: `agentq inbox`, `agentq respond`, `agentq done-check`.
-- Your own active work frame: `agentq work start/status/touch/evidence/close`.
+- Your own live work stack: `agentq work start/status/touch/evidence/close`.
 
 The primary agent-facing command is:
 
@@ -14,9 +14,9 @@ agentq next --actor <agentq-actor-id>
 ```
 
 Use it before claiming done, after sending/receiving questions, and whenever
-AgentQ state feels ambiguous. It checks required inbox, outbound replies, active
-work, scope, answered evidence, and optional notes, then prints one next action
-with the exact lower-level command only when needed.
+AgentQ state feels ambiguous. It checks required inbox, outbound replies, the
+live work stack, scope, answered evidence, and optional notes, then prints one
+next action with the exact lower-level command only when needed.
 
 At the start of non-trivial work, identify your actor id from the session
 context or `agentq actors`, then run `agentq next --actor <agentq-actor-id>`
@@ -27,6 +27,12 @@ If there is no active work frame for the current task, run:
 ```bash
 agentq work start --actor <agentq-actor-id> --title "<current frame>" --path <main-path>
 ```
+
+If an interrupt or child investigation is part of the current task, start it as
+new work instead of replacing the old frame. AgentQ records the previous active
+frame as the parent and returns to it when the child closes. Use `agentq work
+status --actor <id>` or `agentq next --actor <id>` to see the root-to-current
+stack before deciding whether to continue the interrupt or return to the parent.
 
 Immediately add the first evidence entry. This first entry is not final proof;
 it is the collaboration context other agents need to route questions, judge
@@ -103,7 +109,7 @@ shows zero evidence, record context first even before tests exist: current
 frame, observed basis, touched paths/resources, and next pass check. Later
 evidence can add the test/build/diff/review artifact that closes the frame.
 
-Treat the active work frame as a focus/order tool, not a scope boundary. If a
+Treat the live work stack as a focus/order tool, not a scope boundary. If a
 parent frame already has a proven denominator, required replacement lanes, or
 parent pass criteria, a child frame such as "remove first" must keep that
 evidence as parent evidence or a residual frame. When deletion and replacement

@@ -66,7 +66,7 @@ const sessionStart = runAgentq(
     source: "startup"
   })
 );
-assert(sessionStart.includes("AgentQ actor id:"), "SessionStart hook did not return actor context");
+assert(sessionStart.includes("Internal coordination actor id:"), "SessionStart hook did not return actor context");
 const actorId = actorIdFromHookOutput(sessionStart);
 
 const unscopedStop = runAgentq(
@@ -79,7 +79,9 @@ const unscopedStop = runAgentq(
     stop_hook_active: false
   })
 );
-assert(unscopedStop.includes("scope-check failed"), `Stop hook should require concrete scope before finishing, got ${unscopedStop}`);
+assert(unscopedStop.trim() === "{}", `Stop hook should not block only on scope weakness, got ${unscopedStop}`);
+const unscopedNext = runAgentq(["next", "--actor", actorId], workspace);
+assert(unscopedNext.includes("Action: refresh your actor scope."), `next should still report broad scope, got ${unscopedNext}`);
 
 runAgentq([
   "enter",
@@ -312,7 +314,7 @@ function assertJsonOutput(command: string, output: string): void {
   const parsed = JSON.parse(output) as unknown;
   assert(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed), `${command} returned non-object JSON`);
   if (command.endsWith(" session-start")) {
-    assert(output.includes("AgentQ actor id:"), `${command} did not return actor context`);
+    assert(output.includes("Internal coordination actor id:"), `${command} did not return actor context`);
   }
 }
 
@@ -372,7 +374,7 @@ function assertPublishablePackageMetadata(
 }
 
 function actorIdFromHookOutput(output: string): string {
-  const match = output.match(/AgentQ actor id:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
+  const match = output.match(/Internal coordination actor id:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
   assert(match?.[1] !== undefined, `missing actor id in hook output: ${output}`);
   return match[1];
 }

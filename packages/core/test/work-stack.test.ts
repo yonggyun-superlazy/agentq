@@ -7,6 +7,7 @@ import {
   appendWorkEvidence,
   closeWork,
   ensureWorkspaceStore,
+  readActiveWorkStack,
   readActiveWorkState,
   resolveWorkspaceStore,
   runWorkDoneCheck,
@@ -99,6 +100,39 @@ describe("AgentQ work stack", () => {
       ok: false,
       activeWork: expect.objectContaining({ workId: "AW-parent" })
     });
+  });
+
+  it("reads the active work lineage from root to current", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await startWork(store, {
+      actorId,
+      workId: "AW-top",
+      title: "Top request",
+      paths: ["AgentQ"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await startWork(store, {
+      actorId,
+      workId: "AW-parent",
+      title: "Parent investigation",
+      paths: ["AgentQ/packages/core"],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+    await startWork(store, {
+      actorId,
+      workId: "AW-current",
+      title: "Current interruption",
+      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
+      now: "2026-05-18T00:02:00.000Z"
+    });
+
+    await expect(readActiveWorkStack(store, actorId)).resolves.toMatchObject([
+      { workId: "AW-top", title: "Top request" },
+      { workId: "AW-parent", title: "Parent investigation" },
+      { workId: "AW-current", title: "Current interruption" }
+    ]);
   });
 
   it("requires observable evidence before closing active work", async () => {
