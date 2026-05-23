@@ -42,6 +42,7 @@ Resolve required replies before final response.
 $ agentq inbox --actor <owner>
 AQ-instruction-path
   kind: question
+  required: yes
   from: <target>
   summary: I need to update the protocol consumer. What protocol fields must I preserve?
   paths: src/protocol.ts

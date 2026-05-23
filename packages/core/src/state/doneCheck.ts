@@ -104,7 +104,7 @@ function outboundBlockingItem(
   state: FoldedMessageState,
   request: FoldedRequest
 ): DoneCheckBlockingItem[] {
-  if (request.status === "pending") {
+  if (request.status === "pending" && request.blocksSenderDone) {
     return [
       {
         kind: "outbound_pending",

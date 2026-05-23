@@ -198,6 +198,14 @@ export async function refreshActorPresence(
   return presence;
 }
 
+export async function readActorPresence(store: WorkspaceStore, actorId: string): Promise<Presence> {
+  SafeIdSchema.parse(actorId);
+  return parseYamlWithSchema(
+    PresenceSchema,
+    await readFile(store.layout.actorPresencePath(actorId), "utf8")
+  );
+}
+
 function refreshedActivePaths(
   existingPaths: readonly string[],
   inputPaths: readonly string[],

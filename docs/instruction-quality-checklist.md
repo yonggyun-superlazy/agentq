@@ -12,6 +12,7 @@ Every agent surface should pass these scenarios:
 | Before shared edit | Run `agentq owners --actor <self> --path <path>`. |
 | Before soft-exclusive tool | Run `agentq owners --actor <self> --resource <resource>`. |
 | Owner found | Send `agentq question` or `agentq block`; do not silently proceed. |
+| Advisory review/context | Send `agentq note`; do not use it for decisions that must block completion. |
 | Receives inbox | Run `agentq inbox --actor <self>` and answer with `agentq respond ... --evidence`. |
 | Finishing | Close active work and run `agentq done-check --actor <self>`. |
 | Done-check fails | Resolve the queue/work failure before claiming done. |

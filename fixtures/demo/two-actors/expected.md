@@ -34,6 +34,7 @@ $ agentq inbox --actor <codex>
 
 AQ-0001
   kind: question
+  required: yes
   from: <claude>
   summary: I need to change src/protocol.ts. Are you actively changing the protocol schema?
   paths: src/protocol.ts

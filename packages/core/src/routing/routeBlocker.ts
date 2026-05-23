@@ -77,6 +77,13 @@ export async function planRequiredRequestRoutes(
   store: WorkspaceStore,
   input: RequiredRequestRouteInput
 ): Promise<RequiredRequestRoutePlan> {
+  return await planMessageRoutes(store, input);
+}
+
+async function planMessageRoutes(
+  store: WorkspaceStore,
+  input: RequiredRequestRouteInput
+): Promise<RequiredRequestRoutePlan> {
   MessageSchema.parse(input.message);
   const activePresences = await readActivePresences(store, input.now, input.staleAfterMs);
   const routeMap = new Map<string, RoutingEvidence[]>();
@@ -204,7 +211,7 @@ export async function createRoutedRequest(
   store: WorkspaceStore,
   input: RequiredRequestRouteInput
 ): Promise<RequiredRequestRoutePlan> {
-  const plan = await planRequiredRequestRoutes(store, input);
+  const plan = await planMessageRoutes(store, input);
   const messageDir = store.layout.messageDir(input.message.id);
   await mkdir(path.join(messageDir, "requests"), { recursive: true });
   await mkdir(path.join(messageDir, "events"), { recursive: true });
@@ -221,6 +228,39 @@ export async function createRoutedRequest(
         messageId: input.message.id,
         to: recipient.actorId,
         required: true,
+        routingEvidence: [...recipient.evidence]
+      };
+      await writeOnceYaml(store.layout.requestPath(input.message.id, recipient.actorId), request);
+      await writeOnceYaml(store.layout.inboxPointerPath(recipient.actorId, input.message.id), {
+        messageId: input.message.id
+      });
+    })
+  );
+
+  return plan;
+}
+
+export async function createRoutedNote(
+  store: WorkspaceStore,
+  input: RequiredRequestRouteInput
+): Promise<RequiredRequestRoutePlan> {
+  const plan = await planMessageRoutes(store, input);
+  const messageDir = store.layout.messageDir(input.message.id);
+  await mkdir(path.join(messageDir, "requests"), { recursive: true });
+  await mkdir(path.join(messageDir, "events"), { recursive: true });
+
+  await writeOnceYaml(store.layout.messagePath(input.message.id), input.message);
+  await writeOnceYaml(store.layout.routingPath(input.message.id), {
+    messageId: input.message.id,
+    recipients: plan.recipients
+  });
+
+  await Promise.all(
+    plan.recipients.map(async (recipient) => {
+      const request: RequiredRequest = {
+        messageId: input.message.id,
+        to: recipient.actorId,
+        required: false,
         routingEvidence: [...recipient.evidence]
       };
       await writeOnceYaml(store.layout.requestPath(input.message.id, recipient.actorId), request);

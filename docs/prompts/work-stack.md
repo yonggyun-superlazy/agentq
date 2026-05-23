@@ -61,6 +61,17 @@ If a resource owner appears, ask a required question before running the tool:
 agentq question --actor <agentq-actor-id> --to <target-actor-id> --resource <resource> --question "<tool/resource decision needed>" --expect "<clear-to-run or blocker evidence>"
 ```
 
+Use a non-blocking note only when the other actor should see review/context but
+your completion does not require their reply:
+
+```bash
+agentq note --actor <agentq-actor-id> --to <target-actor-id> --path <path> --summary "<review/context>" --note "<evidence; no reply required>"
+```
+
+Do not supersede a required question just to avoid waiting; that removes the
+receiver's required inbox item. Supersede only when the request is objectively
+obsolete, rerouted, or replaced with stronger evidence.
+
 `agentq actors` marks actors stale from recent AgentQ presence, not from OS
 process state. The default stale window is 1 hour so long-running CLI reasoning
 or user-input waits do not disappear after a short pause. A stale actor may still

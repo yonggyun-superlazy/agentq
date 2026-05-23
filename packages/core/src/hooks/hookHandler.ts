@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   createOrRefreshSessionBinding,
+  readActorPresence,
   refreshActorPresence,
   resolveHookActorId,
   type HookActorLookup
@@ -232,6 +233,16 @@ async function refreshHookPresence(
 ): Promise<void> {
   const activeWork = await readActiveWorkState(store, input.actorId);
   if (activeWork === null && !input.hookPaths.some(isSpecificPath) && input.hookResources.length === 0) {
+    const existing = await readActorPresence(store, input.actorId);
+    if (existing.activePaths.some(isSpecificPath) || (existing.activeResources ?? []).length > 0) {
+      await refreshActorPresence(store, {
+        actorId: input.actorId,
+        cwd: input.cwd,
+        activePaths: [],
+        responsibilities: [],
+        now: input.now
+      });
+    }
     return;
   }
 
@@ -617,7 +628,7 @@ function inferCommandResources(command: string, cwd: string): string[] {
 
 function isAgentQMetaCommand(command: string): boolean {
   const normalizedCommand = command.replace(/\\/g, "/");
-  const subcommands = "accept-blocked|actors|block|diag|doctor|done-check|enter|follow-up|hook|inbox|install|owners|question|respond|scope-check|status|supersede|uninstall|wake|work";
+  const subcommands = "accept-blocked|actors|block|diag|doctor|done-check|enter|follow-up|hook|inbox|install|note|owners|question|respond|scope-check|status|supersede|uninstall|wake|work";
   return new RegExp(`(^|[\\s"';&|])agentq(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?\\s+(${subcommands})\\b`, "i").test(normalizedCommand) ||
     new RegExp(`(^|[\\s"';&|])(?:node(?:\\.exe)?|tsx(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?)\\s+[^\\s"';&|]*agentq[^\\s"';&|]*/packages/cli/(?:dist/main\\.js|src/main\\.ts)\\s+(${subcommands})\\b`, "i").test(normalizedCommand);
 }

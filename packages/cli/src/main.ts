@@ -11,6 +11,7 @@ import {
   appendWorkEvidence,
   createOrRefreshSessionBinding,
   createRoutedBlocker,
+  createRoutedNote,
   createRoutedRequest,
   ensureWorkspaceStore,
   EventSchema,
@@ -20,6 +21,7 @@ import {
   closeWork,
   applyMarkerInstall,
   applyMarkerUninstall,
+  listInboxItems,
   listPendingInboxItems,
   listActorPresences,
   readDiagnosticEvents,
@@ -90,7 +92,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "work", summary: "Manage one explicit actor's internal work stack" },
   { name: "block", summary: "Create a required-response blocker" },
   { name: "question", summary: "Ask an actor a required-response question" },
-  { name: "inbox", summary: "Show required requests for an explicit actor" },
+  { name: "note", summary: "Send a non-blocking inbox note" },
+  { name: "inbox", summary: "Show inbox requests and notes for an explicit actor" },
   { name: "wake", summary: "Inspect pending delivery targets" },
   { name: "diag", summary: "Show recent AgentQ diagnostic ring log entries" },
   { name: "respond", summary: "Resolve or answer a required request" },
@@ -214,6 +217,20 @@ export function renderCommandHelp(command: CommandSpec): string {
     ].join("\n");
   }
 
+  if (command.name === "note") {
+    return [
+      "agentq note",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq note --actor <id> --note \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --path <path>... [--resource <resource>...] [--contract <name>...]",
+      "  agentq note --actor <id> --note \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --resource <resource>...",
+      "  agentq note --actor <id> --note \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --contract <name>...",
+      "",
+      "Notes are non-blocking inbox items. Use question or block when the sender must wait for a reply."
+    ].join("\n");
+  }
+
   if (command.name === "inbox") {
     return [
       "agentq inbox",
@@ -222,7 +239,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       "Usage:",
       "  agentq inbox --actor <id>",
       "",
-      "Shows each pending request with sender, summary, path/contract context, pass criteria, and a response command."
+      "Shows each pending request or note with sender, summary, routing context, and the response/ack command."
     ].join("\n");
   }
 
@@ -442,6 +459,10 @@ export async function runCommand(
 
   if (command === "question") {
     return await questionCommand(argv.slice(1), runtime);
+  }
+
+  if (command === "note") {
+    return await noteCommand(argv.slice(1), runtime);
   }
 
   if (command === "actors") {
@@ -985,6 +1006,46 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
   };
 }
 
+async function noteCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const store = await openStore(runtime);
+  const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
+  const to = optionValues(args, "to");
+  const note = requiredOption(args, "note");
+  const paths = pathOptionValues(args, "path");
+  const resources = optionValues(args, "resource");
+  const contracts = optionValues(args, "contract");
+  if (paths.length === 0 && resources.length === 0 && contracts.length === 0) {
+    throw new Error("note requires --path, --resource, or --contract so recipients can judge relevance.");
+  }
+  const message: Message = {
+    id,
+    kind: "note",
+    createdBy: requiredOption(args, "actor"),
+    summary: optionValue(args, "summary") ?? note,
+    paths,
+    ...(resources.length === 0 ? {} : { resources }),
+    contracts,
+    passCriteria: ["not required; acknowledge if useful"],
+    body: note
+  };
+  const routeInput = {
+    message,
+    now: runtime.now(),
+    staleAfterMs: Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS))
+  };
+  const plan = await createRoutedNote(
+    store,
+    to.length === 0 ? routeInput : { ...routeInput, explicitTo: to }
+  );
+
+  return {
+    code: 0,
+    stdout: renderNonBlockingDelivery(id, plan.recipients.map((recipient) => recipient.actorId)),
+    stderr: ""
+  };
+}
+
 function renderRoutedDelivery(
   messageId: string,
   recipientActorIds: readonly string[],
@@ -996,11 +1057,22 @@ function renderRoutedDelivery(
   ].join("\n") + "\n";
 }
 
+function renderNonBlockingDelivery(
+  messageId: string,
+  recipientActorIds: readonly string[]
+): string {
+  return [
+    `${messageId} noted to ${recipientActorIds.join(", ")}`,
+    "delivery:",
+    ...recipientActorIds.map((actorId) => `  ${actorId}: inbox_note non_blocking`)
+  ].join("\n") + "\n";
+}
+
 async function inboxCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
   const actorId = requiredOption(args, "actor");
   const store = await openStore(runtime);
-  const openRequests = await listPendingInboxItems(store, actorId);
+  const openRequests = await listInboxItems(store, actorId);
 
   return {
     code: 0,
@@ -1018,9 +1090,11 @@ function renderInboxRequest(
 ): string {
   const message = state.message;
   const responseStatus = message.kind === "question" ? "answered" : "resolved";
+  const action = request.request.required ? "respond" : "ack";
   const lines = [
     message.id,
     `  kind: ${message.kind}`,
+    `  required: ${request.request.required ? "yes" : "no"}`,
     `  from: ${message.createdBy}`,
     `  summary: ${message.summary}`,
     `  paths: ${joinList(message.paths)}`,
@@ -1033,14 +1107,18 @@ function renderInboxRequest(
     if (message.expectedAnswer !== undefined) {
       lines.push(`  expected: ${message.expectedAnswer}`);
     }
+  } else if (message.kind === "note") {
+    lines.push(`  note: ${message.body}`);
   } else {
     lines.push(`  observed: ${message.observed}`);
     lines.push(`  broken: ${message.brokenContract}`);
   }
 
-  lines.push(`  pass: ${joinList(message.passCriteria)}`);
+  if (request.request.required) {
+    lines.push(`  pass: ${joinList(message.passCriteria)}`);
+  }
   lines.push(`  routing: ${request.request.routingEvidence.map((evidence) => `${evidence.kind}:${evidence.detail}`).join("; ")}`);
-  lines.push(`  respond: agentq respond ${message.id} --actor ${actorId} --status ${responseStatus} --evidence "..."`);
+  lines.push(`  ${action}: agentq respond ${message.id} --actor ${actorId} --status ${responseStatus} --evidence "..."`);
 
   return lines.join("\n");
 }

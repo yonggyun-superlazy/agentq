@@ -492,6 +492,87 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("routes non-blocking notes without gating sender or receiver done-check", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-note-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "packages/review/src/check.ts",
+      "--responsibility",
+      "review sender"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "packages/service/src/worker.ts",
+      "--responsibility",
+      "service worker owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "note",
+      "--id",
+      "AQ-note",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "packages/service/src/worker.ts",
+      "--summary",
+      "Review evidence",
+      "--note",
+      "Review evidence attached; no reply required."
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: expect.stringContaining(`AQ-note noted to ${receiver}`),
+      stderr: ""
+    });
+    await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
+      code: 0
+    });
+    await expect(runCommand(["done-check", "--actor", receiver], runtime)).resolves.toMatchObject({
+      code: 0
+    });
+    await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("ack: agentq respond AQ-note"),
+      stderr: ""
+    });
+    await expect(runCommand([
+      "respond",
+      "AQ-note",
+      "--actor",
+      receiver,
+      "--status",
+      "resolved",
+      "--evidence",
+      "Acknowledged review note."
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "AQ-note resolved\n",
+      stderr: ""
+    });
+    await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "inbox empty\n",
+      stderr: ""
+    });
+  });
+
   it("labels recent and stale actors in the actors view", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-actors-"));
     const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };

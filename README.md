@@ -12,6 +12,7 @@ When multiple agents edit the same repo, one stale write or unasked ownership qu
 - `enter`: declare the files or resources an actor is responsible for.
 - `owners`: find active actors on a path or soft-exclusive resource.
 - `question` / `block`: create a required request when another actor must answer.
+- `note`: send non-blocking review or context to another actor's inbox.
 - `respond`: resolve the request with evidence.
 - `done-check`: fail if required replies or active work remain open.
 
@@ -83,6 +84,15 @@ Headless resume is intentionally not part of AgentQ delivery:
 - Existing unmanaged TUI processes do not expose a reliable cross-CLI wake channel.
 - Future managed TUI or remote-control transports must prove visible delivery before they become AgentQ delivery targets.
 
+Use `agentq note` when the recipient should see review evidence or context but the sender should not block on a reply:
+
+```bash
+agentq note --actor <codex> --to <claude> --path src/protocol.ts --summary "Review evidence" --note "The current plan ignores routingEvidence."
+agentq inbox --actor <claude>   # shows the note with an ack command
+```
+
+Notes are inbox-visible and ackable, but they do not fail `done-check`. Use `question` or `block` instead when a decision, conflict classification, or required handoff must be answered before finishing.
+
 ## Agent prompt
 
 Use [`docs/prompts/work-stack.md`](docs/prompts/work-stack.md) as the handoff prompt for agents that need explicit work-stack discipline. It keeps the actor id, required replies, active work frames, evidence, and done-check in one copyable instruction surface.
@@ -101,6 +111,7 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - Use `agentq status` for a one-screen health summary: doctor result, active/stale actors, pending inboxes, open work, and weak-scope counts.
 - Use `agentq diag` for the OS-local hook diagnostic ring log when scope/resource inference looks noisy. The ring keeps up to 10,000 recent hook events. `agentq diag activity` groups recent hooks by actor and includes declared paths, resources, open-work title, and evidence count.
 - Use `agentq owners --path <path>` before editing shared surfaces and `agentq owners --resource <resource>` before touching soft-exclusive tools such as `setup-watcher:ProjectDD/DDSetup` or `unity:ProjectDD/DDUnity`. Owner presence is a routing signal, not a lock; ask the owner to classify overlap instead of waiting silently from scope alone. Pre-tool hooks also emit a non-blocking owner nudge when a mutating tool path or inferred resource overlaps another active actor.
+- Use `agentq note` for advisory review/context that should appear in another actor's inbox without blocking either side. Do not use notes for decisions that must be answered; those remain `question`/`block`.
 - Use `agentq actors` to inspect active/stale actor presence before routing blockers. Active means recent AgentQ presence, not a guaranteed live OS process; the default stale window is 1 hour.
 - Use `agentq scope-check --actor <id>` before finishing. It fails broad `.` paths and generic hook responsibilities so agents refresh concrete ownership.
 - Close stale work with evidence instead of deleting it: `agentq work close --actor <id> --status abandoned|superseded --summary "..." --evidence "..."`.

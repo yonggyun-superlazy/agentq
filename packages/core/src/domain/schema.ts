@@ -83,9 +83,17 @@ export const QuestionMessageSchema = BaseMessageSchema.extend({
     }
   });
 
+export const NoteMessageSchema = BaseMessageSchema.extend({
+  kind: z.literal("note"),
+  body: NonEmptyStringSchema
+})
+  .strict()
+  .superRefine(requireRoutingSurface);
+
 export const MessageSchema = z.discriminatedUnion("kind", [
   BlockerMessageSchema,
-  QuestionMessageSchema
+  QuestionMessageSchema,
+  NoteMessageSchema
 ]);
 
 export const RoutingEvidenceSchema = z
@@ -99,7 +107,7 @@ export const RequiredRequestSchema = z
   .object({
     messageId: SafeIdSchema,
     to: SafeIdSchema,
-    required: z.literal(true),
+    required: z.boolean(),
     routingEvidence: z.array(RoutingEvidenceSchema).min(1)
   })
   .strict();

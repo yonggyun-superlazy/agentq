@@ -8,7 +8,7 @@ export interface PendingInboxItem {
   readonly request: FoldedRequest;
 }
 
-export async function listPendingInboxItems(
+export async function listInboxItems(
   store: WorkspaceStore,
   actorId: string
 ): Promise<PendingInboxItem[]> {
@@ -30,7 +30,7 @@ export async function listPendingInboxItems(
   for (const messageId of messageIds) {
     const state = await foldMessageState(store, messageId);
     const request = state.requests.find((candidate) =>
-      candidate.request.to === actorId && candidate.blocksReceiverDone
+      candidate.request.to === actorId && candidate.status === "pending"
     );
     if (request !== undefined) {
       openRequests.push({ state, request });
@@ -38,4 +38,12 @@ export async function listPendingInboxItems(
   }
 
   return openRequests;
+}
+
+export async function listPendingInboxItems(
+  store: WorkspaceStore,
+  actorId: string
+): Promise<PendingInboxItem[]> {
+  const items = await listInboxItems(store, actorId);
+  return items.filter((item) => item.request.blocksReceiverDone);
 }

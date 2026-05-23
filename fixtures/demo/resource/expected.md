@@ -31,6 +31,7 @@ $ agentq inbox --actor <owner>
 
 AQ-resource-demo
   kind: question
+  required: yes
   from: <caller>
   summary: I need to run DD setup validation. Are you currently holding the DD setup watcher?
   paths: (none)

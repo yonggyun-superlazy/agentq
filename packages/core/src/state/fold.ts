@@ -72,8 +72,8 @@ export function foldRequest(
     request,
     status,
     terminalEvent,
-    blocksReceiverDone: status === "pending",
-    blocksSenderDone: status === "pending" || status === "blocked"
+    blocksReceiverDone: request.required && status === "pending",
+    blocksSenderDone: request.required && (status === "pending" || status === "blocked")
   };
 }
 

@@ -539,6 +539,46 @@ describe("AgentQ hook handler", () => {
     expect(presence).not.toContain("active tool scope");
   });
 
+  it("refreshes a concrete actor heartbeat on pathless pre-tool without broadening scope", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-heartbeat-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    const binding = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "S-heartbeat",
+      cwd: workspace,
+      activePaths: ["src/specific.ts"],
+      responsibilities: ["specific owner"],
+      summary: "specific owner",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-heartbeat",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "echo hello"
+        }
+      },
+      env,
+      now: "2026-05-18T00:10:00.000Z"
+    });
+
+    const presence = await readFile(store.layout.actorPresencePath(binding.actorId), "utf8");
+    expect(presence).toContain("src/specific.ts");
+    expect(presence).toContain("specific owner");
+    expect(presence).toContain("2026-05-18T00:10:00.000Z");
+    expect(presence).not.toContain("active tool scope");
+  });
+
   it("merges idle pre-tool paths instead of replacing concrete scope", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-merge-"));
     const workspace = path.join(tempRoot, "workspace");

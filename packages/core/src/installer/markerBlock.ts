@@ -49,10 +49,10 @@ const ROOT_MARKER_BODY = [
   "# AgentQ",
   "",
   "Procedure: `.github/instructions/agentq.instructions.md`.",
-  "Use hook actor id; run `enter --actor <id> --paths <path> --responsibility \"<contract>\"` before work.",
-  "`owners` routes, not locks. Ask `question` to classify overlap.",
-  "Before done: record `work evidence`, then run `scope-check`/`done-check`.",
-  "External failures become `block` with evidence."
+  "Use hook actor id; `enter --actor <id> --paths <path> --responsibility \"<contract>\"` before work.",
+  "`owners` routes, not locks; `question` for overlap, `note` for context.",
+  "Before done: record `work evidence`, then `scope-check`/`done-check`.",
+  "External failures: `block` with evidence."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
@@ -62,10 +62,10 @@ const SCOPED_MARKER_BODY = [
   "",
   "- Use the hook actor id; every command must pass `--actor <id>`.",
   "- Before work: `agentq status`, `agentq inbox --actor <id>`, and `agentq work status --actor <id>`.",
-  "- Track work with `agentq work start/status/evidence/close --actor <id>`; record evidence before close/done.",
+  "- Track work: `agentq work start/status/evidence/close --actor <id>`; record evidence before close/done.",
   "- Refresh scope: `agentq enter --actor <id> --paths <path> [--resource <resource>] --responsibility \"<contract>\"`.",
   "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
-  "- Before shared edits/exclusive tools, run `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Ask `question` to classify overlap.",
+  "- Shared edit/tool: `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Use `question` to classify overlap, `note` for context.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
   "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",
   "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",
