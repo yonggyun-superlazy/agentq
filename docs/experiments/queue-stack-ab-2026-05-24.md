@@ -136,6 +136,86 @@ ok: no required replies or active work remain open
 - 코드 품질 개선을 주장하려면 더 복잡한 interrupt 상황이 필요하다. 예:
   inbox 처리 후 원래 parent task를 잊으면 실제 구현 누락이 생기는 시나리오.
 
+## 한국어 3-way 후속 실험: AgentQ 없음 / 기존 / 신규
+
+사용자 지적대로 "AgentQ를 아예 안 쓰면 어떤가"도 봐야 한다. 그래서
+같은 임시 JavaScript 코드베이스에서 세 그룹을 비교했다.
+
+- 0안: AgentQ 없음. 제품 요구와 코드 계약만 전달.
+- 1안: 기존 raw inbox. required question은 있지만 queue/stack 안내 없음.
+- 2안: 신규 queue/stack inbox. required queue, return stack, `next`, work close
+  안내 포함.
+
+과제 복잡도도 올렸다. `statusPanel` 하나만 구현하는 대신,
+`statusPanel`과 `dashboard`가 함께 동작해야 하고, 숨은 계약으로
+`dashboard`가 `eventBus`를 직접 읽지 않고 `statusPanel`을 조합해야 했다.
+
+검증 기준:
+
+```text
+visible: renderBadgeLabel / renderBadgeTooltip / renderDashboardSummary 테스트 통과
+hidden: statusPanel은 getBadgeSnapshot() 사용
+hidden: statusPanel은 getBadgeState() 직접 사용 금지
+hidden: dashboard는 eventBus 직접 import 금지
+AgentQ: required question 처리, evidence 기록, active work close, done-check
+```
+
+결과:
+
+| 그룹 | 코드 산출물 | visible/hidden 계약 | AgentQ 완료 상태 |
+|------|-------------|---------------------|------------------|
+| AgentQ 없음 | 성공 | Pass | 없음 |
+| 기존 raw inbox | 성공 | Pass | 실패: active work open, evidence 0 |
+| 신규 queue/stack inbox | 성공 | Pass | Pass: question answered, evidence recorded, work closed, done-check ok |
+
+가장 중요한 결론:
+
+- 이 복잡도에서도 AgentQ 없음이 올바른 코드를 만들었다.
+- 기존 raw inbox도 올바른 코드를 만들고 required question에 답했다.
+- 신규 queue/stack도 올바른 코드를 만들었다.
+- 따라서 이 실험만으로는 "AgentQ가 코드 품질을 높였다"고 주장하면 안 된다.
+- 차이는 완료 가능 상태였다. 기존 raw inbox는 일을 끝냈어도 active work를
+  열어둔 채 종료했고, 신규 queue/stack은 질문 답변, evidence, close,
+  done-check까지 닫았다.
+
+제품 표현을 좁히면 이렇다.
+
+```text
+AgentQ queue/stack UX improves coordination completion hygiene.
+It has not yet proven code-quality improvement in this fixture.
+```
+
+다음에 코드 품질 차이를 보려면 더 적대적인 시나리오가 필요하다. 예를 들어
+required question을 처리한 뒤 원래 parent task로 복귀하지 못하면 실제 기능이
+누락되는 interrupt/return-stack 과제를 만들어야 한다.
+
+## Three-Way Complex Outcome Test
+
+To separate code quality from coordination hygiene, a follow-up test compared
+three variants on the same temporary JavaScript repo:
+
+- No AgentQ: only the product task and code contract were provided.
+- Legacy raw inbox: the required AgentQ question was shown without queue/stack
+  guidance.
+- New queue/stack inbox: the required queue, return stack, `next`, evidence, and
+  close guidance were shown.
+
+The task required `statusPanel` and `dashboard` to work together. Visible tests
+checked rendered output. Hidden checks required `statusPanel` to use
+`getBadgeSnapshot()`, avoid `getBadgeState()`, and required `dashboard` to
+compose `statusPanel` instead of reading `eventBus` directly.
+
+| Variant | Code output | Visible/hidden contract | AgentQ completion state |
+|---------|-------------|-------------------------|-------------------------|
+| No AgentQ | Pass | Pass | No coordination state |
+| Legacy raw inbox | Pass | Pass | Failed: active work open, evidence 0 |
+| New queue/stack inbox | Pass | Pass | Passed: question answered, evidence recorded, work closed, done-check ok |
+
+This test does not prove code-quality improvement. It shows that the new
+queue/stack surface improves completion reliability: agents are more likely to
+answer the required item, record evidence, close the active work, and pass
+`done-check` before claiming completion.
+
 ## Question
 
 Does AgentQ's queue/stack inbox surface improve agent answer quality compared to
