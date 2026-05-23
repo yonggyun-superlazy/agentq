@@ -49,7 +49,8 @@ const ROOT_MARKER_BODY = [
   "# AgentQ",
   "",
   "Procedure: `.github/instructions/agentq.instructions.md`.",
-  "Use the hook actor id, keep scope concrete, and run `scope-check`/`done-check` before done."
+  "Use the hook actor id, keep scope concrete, and run `scope-check`/`done-check` before done.",
+  "Out-of-scope build/test failures are AgentQ blockers, not chat-only notes."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
@@ -63,6 +64,7 @@ const SCOPED_MARKER_BODY = [
   "- Refresh concrete scope with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
   "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
+  "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",
   "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
