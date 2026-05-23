@@ -62,15 +62,17 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
 
   if (options.event === "pre-tool") {
     const hookPaths = extractActivePaths(payload, cwd);
+    const mutatingTool = shouldNudgeForTool(payload);
     const adapter = adapterKind(options.adapter);
     const actorId = await resolveOrCreateHookActorId(store, {
       adapter,
       sessionId,
       cwd
     }, {
-      activePaths: hookPaths,
-      responsibilities: [`${options.adapter} active tool scope`],
-      summary: `${options.adapter} pre-tool scope`,
+      activePaths: mutatingTool ? hookPaths : ["."],
+      observedPaths: mutatingTool ? [] : hookPaths.filter(isSpecificPath),
+      responsibilities: [mutatingTool ? `${options.adapter} active tool scope` : `${options.adapter} read scope`],
+      summary: mutatingTool ? `${options.adapter} pre-tool scope` : `${options.adapter} read scope`,
       now: options.now
     });
     await appendSpecificActiveWorkTouch(store, actorId, hookPaths, options.now);
@@ -80,11 +82,12 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       cwd,
       actorId,
       hookPaths,
+      mutatingTool,
       fallbackResponsibilities: [`${options.adapter} active tool scope`],
       fallbackSummary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
-    const ownerNudge = shouldNudgeForTool(payload)
+    const ownerNudge = mutatingTool
       ? await buildRelatedOwnerNudge(store, actorId, hookPaths, options.now)
       : null;
 
@@ -102,6 +105,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     cwd
   }, {
     activePaths: extractActivePaths(payload, cwd),
+    observedPaths: [],
     responsibilities: [`${options.adapter} stop gate`],
     summary: `${options.adapter} stop gate`,
     now: options.now
@@ -114,6 +118,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     cwd,
     actorId,
     hookPaths: stopPaths,
+    mutatingTool: true,
     fallbackResponsibilities: [`${options.adapter} stop gate`],
     fallbackSummary: `${options.adapter} stop gate`,
     now: options.now
@@ -180,6 +185,7 @@ async function refreshHookPresence(
     readonly cwd: string;
     readonly actorId: string;
     readonly hookPaths: readonly string[];
+    readonly mutatingTool: boolean;
     readonly fallbackResponsibilities: readonly string[];
     readonly fallbackSummary: string;
     readonly now: string;
@@ -192,11 +198,25 @@ async function refreshHookPresence(
 
   const activePaths = effectivePresencePaths(input.hookPaths, activeWork?.touchedPaths ?? []);
   if (activeWork === null) {
+    if (!input.mutatingTool) {
+      await refreshActorPresence(store, {
+        actorId: input.actorId,
+        cwd: input.cwd,
+        activePaths: [],
+        observedPaths: activePaths.filter(isSpecificPath),
+        responsibilities: [],
+        mergeObservedPaths: true,
+        now: input.now
+      });
+      return;
+    }
+
     await refreshActorPresence(store, {
       actorId: input.actorId,
       cwd: input.cwd,
       activePaths,
       responsibilities: [],
+      mergeActivePaths: true,
       now: input.now
     });
     return;
@@ -239,6 +259,7 @@ async function resolveOrCreateHookActorId(
   lookup: HookActorLookup,
   bootstrap: {
     readonly activePaths: readonly string[];
+    readonly observedPaths: readonly string[];
     readonly responsibilities: readonly string[];
     readonly summary: string;
     readonly now: string;
@@ -256,6 +277,7 @@ async function resolveOrCreateHookActorId(
       sessionId: lookup.sessionId,
       cwd: lookup.cwd,
       activePaths: bootstrap.activePaths,
+      observedPaths: bootstrap.observedPaths,
       responsibilities: bootstrap.responsibilities,
       summary: bootstrap.summary,
       now: bootstrap.now

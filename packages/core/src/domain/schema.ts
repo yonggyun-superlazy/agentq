@@ -26,6 +26,7 @@ export const PresenceSchema = z
     handle: NonEmptyStringSchema,
     workspaceRoot: NonEmptyStringSchema,
     activePaths: NonEmptyStringArraySchema,
+    observedPaths: NonEmptyStringArraySchema.optional(),
     responsibilities: NonEmptyStringArraySchema,
     summary: NonEmptyStringSchema,
     lastSeen: NonEmptyStringSchema

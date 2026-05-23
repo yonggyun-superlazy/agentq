@@ -29,7 +29,12 @@ export async function writeAtomicText(filePath: string, content: string): Promis
   await mkdir(path.dirname(filePath), { recursive: true });
   const tempPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${randomUUID()}.tmp`);
   await writeFile(tempPath, content);
-  await rename(tempPath, filePath);
+  try {
+    await renameWithRetry(tempPath, filePath);
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
+  }
 }
 
 export async function writeAtomicYaml(filePath: string, value: unknown): Promise<void> {
@@ -43,4 +48,34 @@ export function isFileAlreadyExistsError(error: unknown): boolean {
     "code" in error &&
     (error as { readonly code?: unknown }).code === "EEXIST"
   );
+}
+
+async function renameWithRetry(source: string, destination: string): Promise<void> {
+  const maxAttempts = 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      if (!isTransientRenameError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+
+      await delay(10 * attempt);
+    }
+  }
+}
+
+function isTransientRenameError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ((error as { readonly code?: unknown }).code === "EPERM" ||
+      (error as { readonly code?: unknown }).code === "EBUSY")
+  );
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

@@ -1495,6 +1495,7 @@ function renderStatusActorLine(detail: WorkspaceStatusActor): string {
     `  ${actor.actorId}`,
     `age ${detail.summary.ageMs === null ? "unknown" : formatDuration(detail.summary.ageMs)}`,
     `paths: ${formatList(actor.activePaths)}`,
+    ...(actor.observedPaths === undefined ? [] : [`observing: ${formatList(actor.observedPaths)}`]),
     `responsibilities: ${formatList(actor.responsibilities)}`
   ].join(" | ");
 }
@@ -1533,6 +1534,7 @@ function renderActorPresence(summary: ActorStatusSummary): string {
     `  age: ${summary.ageMs === null ? "unknown" : formatDuration(summary.ageMs)}`,
     `  lastSeen: ${actor.lastSeen}`,
     `  paths: ${actor.activePaths.join(", ")}`,
+    ...(actor.observedPaths === undefined ? [] : [`  observing: ${actor.observedPaths.join(", ")}`]),
     `  responsibilities: ${actor.responsibilities.join(", ")}`
   ];
   const warning = routingScopeWarning(actor);

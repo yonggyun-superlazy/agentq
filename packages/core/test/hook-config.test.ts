@@ -47,8 +47,14 @@ describe("AgentQ hook config installer", () => {
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
       "agentq hook codex pre-tool"
     );
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
+      "\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""
+    );
     await expect(readFile(path.join(workspace, ".claude", "settings.json"), "utf8")).resolves.toContain(
       "agentq hook claude-code stop"
+    );
+    await expect(readFile(path.join(workspace, ".claude", "settings.json"), "utf8")).resolves.toContain(
+      "\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""
     );
     await expect(readFile(path.join(workspace, ".github", "hooks", "agentq.json"), "utf8")).resolves.toContain(
       "agentq hook copilot-cli pre-tool"

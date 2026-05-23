@@ -28,6 +28,7 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
 
 const AGENTQ_COMMAND_PREFIX = "agentq hook ";
+const AGENTQ_PRE_TOOL_MATCHER = "Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write";
 
 const HOOK_TARGETS: readonly HookTarget[] = [
   {
@@ -53,7 +54,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
         {
           event: "PreToolUse",
           group: {
-            matcher: "*",
+            matcher: AGENTQ_PRE_TOOL_MATCHER,
             hooks: [
               {
                 type: "command",
@@ -103,7 +104,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
         {
           event: "PreToolUse",
           group: {
-            matcher: "*",
+            matcher: AGENTQ_PRE_TOOL_MATCHER,
             hooks: [
               {
                 type: "command",

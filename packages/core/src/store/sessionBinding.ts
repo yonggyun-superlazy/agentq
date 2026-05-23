@@ -30,6 +30,7 @@ export interface SessionBindingInput {
   readonly cwd: string;
   readonly handle?: string;
   readonly activePaths: readonly string[];
+  readonly observedPaths?: readonly string[];
   readonly responsibilities: readonly string[];
   readonly summary: string;
   readonly now: string;
@@ -45,8 +46,11 @@ export interface ActorPresenceRefreshInput {
   readonly actorId: string;
   readonly cwd: string;
   readonly activePaths: readonly string[];
+  readonly observedPaths?: readonly string[];
   readonly responsibilities: readonly string[];
   readonly summary?: string;
+  readonly mergeActivePaths?: boolean;
+  readonly mergeObservedPaths?: boolean;
   readonly now: string;
 }
 
@@ -75,6 +79,7 @@ export async function createOrRefreshSessionBinding(
     handle: input.handle ?? input.adapter,
     workspaceRoot: store.workspaceRoot,
     activePaths: [...input.activePaths],
+    ...(input.observedPaths === undefined ? {} : { observedPaths: [...input.observedPaths] }),
     responsibilities: [...input.responsibilities],
     summary: input.summary,
     lastSeen: input.now
@@ -169,7 +174,8 @@ export async function refreshActorPresence(
 
   const presence: Presence = {
     ...existing,
-    activePaths: input.activePaths.length > 0 ? [...input.activePaths] : existing.activePaths,
+    activePaths: refreshedActivePaths(existing.activePaths, input.activePaths, input.mergeActivePaths === true),
+    ...refreshedObservedPaths(existing.observedPaths, input.observedPaths, input.mergeObservedPaths === true),
     responsibilities: input.responsibilities.length > 0
       ? [...input.responsibilities]
       : existing.responsibilities,
@@ -180,6 +186,38 @@ export async function refreshActorPresence(
   PresenceSchema.parse(presence);
   await writeAtomicYaml(store.layout.actorPresencePath(input.actorId), presence);
   return presence;
+}
+
+function refreshedActivePaths(
+  existingPaths: readonly string[],
+  inputPaths: readonly string[],
+  mergeActivePaths: boolean
+): string[] {
+  if (inputPaths.length === 0) {
+    return [...existingPaths];
+  }
+
+  if (!mergeActivePaths) {
+    return [...inputPaths];
+  }
+
+  return [...new Set([...existingPaths, ...inputPaths])].slice(0, 8);
+}
+
+function refreshedObservedPaths(
+  existingPaths: readonly string[] | undefined,
+  inputPaths: readonly string[] | undefined,
+  mergeObservedPaths: boolean
+): { readonly observedPaths?: string[] } {
+  if (inputPaths === undefined || inputPaths.length === 0) {
+    return existingPaths === undefined ? {} : { observedPaths: [...existingPaths] };
+  }
+
+  if (!mergeObservedPaths) {
+    return { observedPaths: [...inputPaths] };
+  }
+
+  return { observedPaths: [...new Set([...(existingPaths ?? []), ...inputPaths])].slice(0, 8) };
 }
 
 export function createAdapterSessionKey(adapter: AgentKind, sessionId: string): string {

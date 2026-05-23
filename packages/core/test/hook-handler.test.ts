@@ -6,6 +6,7 @@ import {
   createRoutedBlocker,
   createOrRefreshSessionBinding,
   ensureWorkspaceStore,
+  listActorPresences,
   resolveWorkspaceStore,
   runHookHandler,
   createAdapterSessionKey,
@@ -70,7 +71,7 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(stop.stdout)).toMatchObject({ decision: "block" });
   });
 
-  it("updates active paths from a pre-tool hook before routing blockers", async () => {
+  it("updates active paths from a mutating pre-tool hook before routing blockers", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "src"), { recursive: true });
@@ -79,7 +80,7 @@ describe("AgentQ hook handler", () => {
       session_id: "S2",
       cwd: workspace,
       hook_event_name: "PreToolUse",
-      tool_name: "Read",
+      tool_name: "Edit",
       tool_input: {
         file_path: "src/protocol.ts"
       }
@@ -271,7 +272,7 @@ describe("AgentQ hook handler", () => {
     expect(presence).not.toContain("activePaths:\n  - .");
   });
 
-  it("does not refresh a specific idle presence back to broad scope on pathless tools", async () => {
+  it("keeps read-only pre-tool paths as observed scope", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-idle-paths-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "src"), { recursive: true });
@@ -314,8 +315,9 @@ describe("AgentQ hook handler", () => {
       "utf8"
     );
     const presence = await readFile(store.layout.actorPresencePath(actorIdFromSession(session)), "utf8");
+    expect(presence).toContain("observedPaths:");
     expect(presence).toContain("src/specific.ts");
-    expect(presence).not.toContain("activePaths:\n  - .");
+    expect(presence).toContain("activePaths:\n  - .");
   });
 
   it("adds a non-blocking owner nudge on mutating pre-tool overlap", async () => {
@@ -432,6 +434,77 @@ describe("AgentQ hook handler", () => {
     const presence = await readFile(store.layout.actorPresencePath(binding.actorId), "utf8");
     expect(presence).toContain("specific owner");
     expect(presence).not.toContain("active tool scope");
+  });
+
+  it("merges idle pre-tool paths instead of replacing concrete scope", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-merge-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    const binding = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "S10",
+      cwd: workspace,
+      activePaths: ["src/first.ts"],
+      responsibilities: ["specific owner"],
+      summary: "specific owner",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S10",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "src/second.ts"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    const presence = await readFile(store.layout.actorPresencePath(binding.actorId), "utf8");
+    expect(presence).toContain("src/first.ts");
+    expect(presence).toContain("src/second.ts");
+    expect(presence).toContain("specific owner");
+  });
+
+  it("keeps one deterministic actor for concurrent pre-tool hooks in one session", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-concurrent-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    await Promise.all(
+      Array.from({ length: 12 }, async (_, index) =>
+        await runHookHandler({
+          adapter: "codex",
+          event: "pre-tool",
+          payload: {
+            session_id: "S11",
+            cwd: workspace,
+            hook_event_name: "PreToolUse",
+            tool_name: "Edit",
+            tool_input: {
+              file_path: `src/file-${index}.ts`
+            }
+          },
+          env,
+          now: `2026-05-18T00:00:${String(index).padStart(2, "0")}.000Z`
+        })
+      )
+    );
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const actors = await listActorPresences(store);
+    expect(actors).toHaveLength(1);
+    expect(actors[0]?.actorId).toContain("@s11@");
   });
 });
 
