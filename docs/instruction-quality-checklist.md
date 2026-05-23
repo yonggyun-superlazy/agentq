@@ -91,6 +91,13 @@ Executable baseline:
 - It covers broad-scope failure, exact actor refresh, inbox/work inspection, active work start, owner lookup, required question routing, done-check failure, owner response, evidence, work close, and final done-check pass.
 - It is a protocol fixture, not proof that each real CLI model will choose the right commands without prompting.
 
+Executable eval:
+
+- `pnpm eval:agent-behavior` runs `scripts/eval-agent-behavior.ts` in a temporary workspace and temporary AgentQ state root.
+- [`../fixtures/eval/agent-behavior/expected.md`](../fixtures/eval/agent-behavior/expected.md) is the expected report.
+- The eval verifies required path handshake behavior, note non-blocking behavior, and static transcript rules that reject missing owner lookup, missing `--actor`, and missing `done-check`.
+- This is still protocol validation, not a replacement for real Codex, Claude Code, and Copilot transcript captures.
+
 ## Current Manual Checklist
 
 ```bash
@@ -99,6 +106,7 @@ agentq next --actor <self>
 agentq diag activity --window 24h --limit 20
 agentq owners --path src/protocol.ts
 agentq owners --resource tool:demo/shared-build
+pnpm eval:agent-behavior
 ```
 
 Before claiming an agent surface is ready, run the path prompt and resource prompt once on that surface and store the transcript under `fixtures/` or in release notes.

@@ -59,7 +59,10 @@ The runnable demos are simulated in a temporary workspace, so they do not requir
 
 ```bash
 pnpm demo:test
+pnpm eval:agent-behavior
 ```
+
+`eval:agent-behavior` is a protocol eval, not a model benchmark. It runs in a temporary workspace and verifies that required questions block completion, notes do not block completion, and transcript rules reject missing owner lookup, missing explicit actor id, and missing `done-check`.
 
 ## Local Install
 

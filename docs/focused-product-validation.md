@@ -216,6 +216,7 @@ Default policy should only change when the observation shows it would reduce noi
 AgentQ only works if the agent actually uses it at the right moments.
 
 The executable checklist lives in [`instruction-quality-checklist.md`](instruction-quality-checklist.md).
+Run `pnpm eval:agent-behavior` for the current executable protocol eval. It is deliberately narrower than a model benchmark: it verifies AgentQ queue behavior and transcript-shape rules before real Codex, Claude Code, and Copilot transcript captures are added.
 
 The instruction quality test should verify behavior, not prose.
 
@@ -245,6 +246,7 @@ Current manual evidence:
 
 - Cross-CLI inbox probe: [`../fixtures/cross-cli/2026-05-23-inbox-probe.md`](../fixtures/cross-cli/2026-05-23-inbox-probe.md).
 - Copilot hook-surface probe: [`../fixtures/cross-cli/2026-05-23-copilot-hook-surface.md`](../fixtures/cross-cli/2026-05-23-copilot-hook-surface.md).
+- Agent behavior eval report: [`../fixtures/eval/agent-behavior/expected.md`](../fixtures/eval/agent-behavior/expected.md).
 - Claude Code answered a required inbox item and passed `done-check` with an explicit actor id.
 - Copilot CLI answered a required inbox item and passed `done-check` with an explicit actor id using `--experimental`.
 - Copilot hook events were observed in `diag` after setting `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`; without folder trust or that env opt-in, prompt mode did not load repository hooks.
