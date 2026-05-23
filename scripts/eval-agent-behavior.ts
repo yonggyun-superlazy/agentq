@@ -26,6 +26,7 @@ const scenarios: ScenarioResult[] = [];
 scenarios.push(await runRequiredPathHandshake());
 scenarios.push(await runNonBlockingNote());
 scenarios.push(runStaticTranscriptRules());
+scenarios.push(await runCrossCliFixtureCoverage());
 
 const actual = renderReport(scenarios);
 const expected = await readFile(
@@ -218,6 +219,43 @@ function runStaticTranscriptRules(): ScenarioResult {
     evidence: [
       "recorded good transcript passed command-sequence rules",
       "bad transcript failed missing owner lookup, missing --actor, and missing done-check"
+    ]
+  };
+}
+
+async function runCrossCliFixtureCoverage(): Promise<ScenarioResult> {
+  const inboxProbe = await readFile(
+    new URL("../fixtures/cross-cli/2026-05-23-inbox-probe.md", import.meta.url),
+    "utf8"
+  );
+  const copilotHookProbe = await readFile(
+    new URL("../fixtures/cross-cli/2026-05-23-copilot-hook-surface.md", import.meta.url),
+    "utf8"
+  );
+
+  assertIncludes(inboxProbe, "temporary `LOCALAPPDATA` store", "cross-cli inbox probe should be non-polluting");
+  assertIncludes(inboxProbe, "agentq question --actor $sender --to $claude", "cross-cli inbox probe should ask Claude");
+  assertIncludes(inboxProbe, "agentq question --actor $sender --to $copilot", "cross-cli inbox probe should ask Copilot");
+  assertIncludes(inboxProbe, "agentq done-check --actor claude-code@", "Claude fixture should verify done-check");
+  assertIncludes(inboxProbe, "agentq done-check --actor copilot-cli@", "Copilot fixture should verify done-check");
+  assertIncludes(inboxProbe, "pending inbox: 0", "cross-cli inbox probe should end with no pending inbox");
+  assertIncludes(inboxProbe, "open work: 0", "cross-cli inbox probe should end with no open work");
+
+  assertIncludes(
+    copilotHookProbe,
+    "GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS",
+    "Copilot fixture should document prompt-mode hook opt-in"
+  );
+  assertIncludes(copilotHookProbe, "actors: 0", "Copilot fixture should include negative hook-load evidence");
+  assertIncludes(copilotHookProbe, "pre-tool", "Copilot fixture should include positive pre-tool hook evidence");
+  assertIncludes(copilotHookProbe, "stop", "Copilot fixture should include positive stop hook evidence");
+
+  return {
+    name: "manual cross-cli fixture coverage",
+    result: "pass",
+    evidence: [
+      "Claude and Copilot inbox probes include explicit actor done-check evidence",
+      "Copilot hook fixture preserves negative and opt-in positive hook-load evidence"
     ]
   };
 }

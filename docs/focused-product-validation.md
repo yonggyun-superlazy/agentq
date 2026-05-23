@@ -216,7 +216,7 @@ Default policy should only change when the observation shows it would reduce noi
 AgentQ only works if the agent actually uses it at the right moments.
 
 The executable checklist lives in [`instruction-quality-checklist.md`](instruction-quality-checklist.md).
-Run `pnpm eval:agent-behavior` for the current executable protocol eval. It is deliberately narrower than a model benchmark: it verifies AgentQ queue behavior and transcript-shape rules before real Codex, Claude Code, and Copilot transcript captures are added.
+Run `pnpm eval:agent-behavior` for the current executable protocol eval. It is deliberately narrower than a model benchmark: it verifies AgentQ queue behavior, transcript-shape rules, and the stored manual cross-CLI fixture coverage for Claude Code and Copilot CLI.
 
 The instruction quality test should verify behavior, not prose.
 

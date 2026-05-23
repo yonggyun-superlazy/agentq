@@ -62,7 +62,7 @@ pnpm demo:test
 pnpm eval:agent-behavior
 ```
 
-`eval:agent-behavior` is a protocol eval, not a model benchmark. It runs in a temporary workspace and verifies that required questions block completion, notes do not block completion, and transcript rules reject missing owner lookup, missing explicit actor id, and missing `done-check`.
+`eval:agent-behavior` is a protocol eval, not a model benchmark. It runs in a temporary workspace and verifies that required questions block completion, notes do not block completion, transcript rules reject missing owner lookup, missing explicit actor id, and missing `done-check`, and the stored Claude/Copilot cross-CLI fixture coverage stays present.
 
 ## Local Install
 

@@ -95,7 +95,7 @@ Executable eval:
 
 - `pnpm eval:agent-behavior` runs `scripts/eval-agent-behavior.ts` in a temporary workspace and temporary AgentQ state root.
 - [`../fixtures/eval/agent-behavior/expected.md`](../fixtures/eval/agent-behavior/expected.md) is the expected report.
-- The eval verifies required path handshake behavior, note non-blocking behavior, and static transcript rules that reject missing owner lookup, missing `--actor`, and missing `done-check`.
+- The eval verifies required path handshake behavior, note non-blocking behavior, static transcript rules that reject missing owner lookup, missing `--actor`, and missing `done-check`, plus manual cross-CLI fixture coverage for Claude Code and Copilot CLI probes.
 - This is still protocol validation, not a replacement for real Codex, Claude Code, and Copilot transcript captures.
 
 ## Current Manual Checklist
