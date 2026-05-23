@@ -36,6 +36,9 @@ Remove-Item Env:AGENTQ_QUEUE_STACK_UX
 The review fixture is
 [`../fixtures/eval/agent-behavior/queue-stack-ab.md`](../fixtures/eval/agent-behavior/queue-stack-ab.md).
 
+The first live CLI comparison report is
+[`experiments/queue-stack-ab-2026-05-24.md`](experiments/queue-stack-ab-2026-05-24.md).
+
 ## What To Score
 
 Score the resulting agent answer, not the AgentQ output:
