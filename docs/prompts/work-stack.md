@@ -7,13 +7,20 @@ You are an independent coding agent, not an orchestrated worker. AgentQ gives yo
 - Required replies from other actors: `agentq inbox`, `agentq respond`, `agentq done-check`.
 - Your own active work frame: `agentq work start/status/touch/evidence/close`.
 
-At the start of non-trivial work, identify your actor id from the session context or `agentq actors`, then check both gates before opening new work:
+The primary agent-facing command is:
 
 ```bash
-agentq status
-agentq inbox --actor <agentq-actor-id>
-agentq work status --actor <agentq-actor-id>
+agentq next --actor <agentq-actor-id>
 ```
+
+Use it before claiming done, after sending/receiving questions, and whenever
+AgentQ state feels ambiguous. It checks required inbox, outbound replies, active
+work, scope, answered evidence, and optional notes, then prints one next action
+with the exact lower-level command only when needed.
+
+At the start of non-trivial work, identify your actor id from the session
+context or `agentq actors`, then run `agentq next --actor <agentq-actor-id>`
+before opening new work.
 
 If there is no active work frame for the current task, run:
 
@@ -107,8 +114,9 @@ unless the parent denominator is reclassified with source evidence.
 Before claiming done, close the active work and then run done-check:
 
 ```bash
+agentq next --actor <agentq-actor-id>
 agentq work close --actor <agentq-actor-id> --summary "<closed frame>"
-agentq scope-check --actor <agentq-actor-id>
+agentq next --actor <agentq-actor-id>
 agentq done-check --actor <agentq-actor-id>
 ```
 
@@ -125,7 +133,10 @@ agentq work close --actor <agentq-actor-id> --status abandoned --summary "<why t
 agentq work close --actor <agentq-actor-id> --status superseded --summary "<replacement frame>" --evidence "<replacement evidence>"
 ```
 
-If `done-check` fails, resolve the required inbox item or active work item first. Do not create repo `.agentq/` or `agentq.config.yaml`; AgentQ runtime state is OS-local.
+If `done-check` fails, switch back to `agentq next --actor <agentq-actor-id>`;
+it will show whether to answer inbox, wait for outbound replies, refresh scope,
+record evidence, or close work. Do not create repo `.agentq/` or
+`agentq.config.yaml`; AgentQ runtime state is OS-local.
 If `scope-check` fails, refresh the exact hook actor with a specific owned path
 and responsibility; broad `.` paths and hook-only responsibilities are not
 enough evidence for routing.

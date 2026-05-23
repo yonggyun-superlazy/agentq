@@ -6,6 +6,7 @@ describe("CLI help", () => {
     const help = renderHelp();
 
     expect(help).toContain("The handshake between coding agents.");
+    expect(help).toContain("next");
     expect(help).toContain("done-check");
     expect(help).toContain("question");
     expect(help).toContain("accept-blocked");

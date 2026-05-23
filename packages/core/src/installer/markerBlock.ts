@@ -48,11 +48,12 @@ interface MarkerEdit {
 const ROOT_MARKER_BODY = [
   "# AgentQ",
   "",
-  "Procedure: `.github/instructions/agentq.instructions.md`.",
-  "Use hook actor id; `enter --actor <id> --paths <path> --responsibility \"<contract>\"` before work.",
+  "See `.github/instructions/agentq.instructions.md`.",
+  "Primary: `agentq next --actor <id>` before finish or when ambiguous.",
+  "Use hook id; `enter --actor <id> --paths <path> --responsibility \"<contract>\"` before work.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "After `work start`, record context evidence: frame, observed basis, touched paths/resources, next pass check.",
-  "Before done: add final `work evidence`, then `scope-check`/`done-check`.",
+  "After `work start`, record context evidence: frame, basis, paths/resources, next check.",
+  "Before done: final evidence, then `done-check`.",
   "External failures: `block` with evidence."
 ].join("\n");
 
@@ -62,7 +63,7 @@ const SCOPED_MARKER_BODY = [
   "This workspace uses AgentQ: required-response queues for coding agents.",
   "",
   "- Use the hook actor id; every command must pass `--actor <id>`.",
-  "- Before work: `agentq status`, `agentq inbox --actor <id>`, and `agentq work status --actor <id>`.",
+  "- Primary command: `agentq next --actor <id>` before finish, after questions, and whenever AgentQ state is ambiguous.",
   "- Track work: `agentq work start/status/evidence/close --actor <id>`; immediately record context evidence after start: current frame, observed basis, touched paths/resources, next pass check.",
   "- Refresh scope: `agentq enter --actor <id> --paths <path> [--resource <resource>] --responsibility \"<contract>\"`.",
   "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",

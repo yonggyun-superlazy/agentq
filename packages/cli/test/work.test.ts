@@ -492,6 +492,135 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("renders one next action for required inbox and answered outbound replies", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-next-question-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "packages/ui/src/statusPanel.ts",
+      "--responsibility",
+      "status panel view"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "packages/runtime/src/eventBus.ts",
+      "--responsibility",
+      "event bus owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await runCommand([
+      "question",
+      "--id",
+      "AQ-next",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "packages/runtime/src/eventBus.ts",
+      "--question",
+      "Which state source owns badges?",
+      "--expect",
+      "Answer with owner evidence"
+    ], runtime);
+
+    await expect(runCommand(["next", "--actor", receiver], runtime)).resolves.toMatchObject({
+      code: 0,
+      stderr: "",
+      stdout: expect.stringContaining("Action: answer the required inbox item.")
+    });
+    await expect(runCommand(["next", "--actor", receiver], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining(`agentq respond AQ-next --actor ${receiver} --status answered`)
+    });
+    await expect(runCommand(["next", "--actor", sender], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("Action: wait for the required reply")
+    });
+
+    await runCommand([
+      "respond",
+      "AQ-next",
+      "--actor",
+      receiver,
+      "--status",
+      "answered",
+      "--evidence",
+      "Badges read from event payload."
+    ], runtime);
+
+    await expect(runCommand(["next", "--actor", sender], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("Action: use the answered evidence before continuing.")
+    });
+    await expect(runCommand(["next", "--actor", sender], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("Badges read from event payload.")
+    });
+  });
+
+  it("renders active work as the next action before final done-check", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-next-work-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "next-work",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ next command"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-next",
+      "--title",
+      "Thin AgentQ CLI",
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], runtime);
+
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("Action: record context evidence for your active work.")
+    });
+    await runCommand([
+      "work",
+      "evidence",
+      "--actor",
+      actorId,
+      "--evidence",
+      "Context recorded."
+    ], runtime);
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("Action: close or update your active work before claiming done.")
+    });
+  });
+
   it("routes non-blocking notes without gating sender or receiver done-check", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-note-"));
     const runtime = {

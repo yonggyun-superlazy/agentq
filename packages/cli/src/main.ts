@@ -86,6 +86,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "install", summary: "Install agent instructions and hook gates" },
   { name: "doctor", summary: "Explain AgentQ workspace and hook state" },
   { name: "status", summary: "Summarize workspace AgentQ health" },
+  { name: "next", summary: "Show the one AgentQ action this actor should take now" },
   { name: "uninstall", summary: "Remove AgentQ-owned integration markers and hook gates" },
   { name: "actors", summary: "List workspace actors by recent presence" },
   { name: "owners", summary: "Find active actors responsible for paths or resources" },
@@ -360,6 +361,19 @@ export function renderCommandHelp(command: CommandSpec): string {
     ].join("\n");
   }
 
+  if (command.name === "next") {
+    return [
+      "agentq next",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq next --actor <id>",
+      "",
+      "Use this as the agent-facing entrypoint before finishing or when AgentQ feels ambiguous.",
+      "It renders one next action and the exact lower-level command only when needed."
+    ].join("\n");
+  }
+
   if (command.name === "owners") {
     return [
       "agentq owners",
@@ -444,6 +458,10 @@ export async function runCommand(
 
   if (command === "status") {
     return await statusCommand(argv.slice(1), runtime);
+  }
+
+  if (command === "next") {
+    return await nextCommand(argv.slice(1), runtime);
   }
 
   if (command === "owners") {
@@ -754,6 +772,205 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
     stdout: renderWorkspaceStatus(report, details, staleAfterMs, recentMessages),
     stderr: ""
   };
+}
+
+async function nextCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const actorId = requiredOption(args, "actor");
+  const store = await openStore(runtime);
+  const [inboxItems, doneResult, workResult, scopeResult, resolvedOutbound] = await Promise.all([
+    listInboxItems(store, actorId),
+    runDoneCheck(store, actorId),
+    runWorkDoneCheck(store, actorId),
+    runScopeCheck(store, actorId),
+    resolvedOutboundItems(store, actorId)
+  ]);
+
+  return {
+    code: 0,
+    stdout: renderNextAction({
+      actorId,
+      inboxItems,
+      doneResult,
+      workResult,
+      scopeResult,
+      resolvedOutbound
+    }),
+    stderr: ""
+  };
+}
+
+interface NextActionInput {
+  readonly actorId: string;
+  readonly inboxItems: Awaited<ReturnType<typeof listInboxItems>>;
+  readonly doneResult: Awaited<ReturnType<typeof runDoneCheck>>;
+  readonly workResult: Awaited<ReturnType<typeof runWorkDoneCheck>>;
+  readonly scopeResult: Awaited<ReturnType<typeof runScopeCheck>>;
+  readonly resolvedOutbound: readonly ResolvedOutboundItem[];
+}
+
+function renderNextAction(input: NextActionInput): string {
+  const requiredInbox = input.inboxItems.filter((item) => item.request.blocksReceiverDone);
+  const notes = input.inboxItems.filter((item) => !item.request.blocksReceiverDone);
+  const lines = [`AgentQ next for ${input.actorId}`];
+
+  if (requiredInbox.length > 0) {
+    const item = requiredInbox[0];
+    if (item !== undefined) {
+      return renderNextRequiredInbox(input.actorId, item, requiredInbox.length);
+    }
+  }
+
+  const blocking = input.doneResult.blocking[0];
+  if (blocking !== undefined) {
+    return renderNextDoneBlocker(input.actorId, blocking);
+  }
+
+  if (!input.scopeResult.ok) {
+    lines.push(
+      "Action: refresh your actor scope.",
+      ...input.scopeResult.weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
+      "Run:",
+      `  agentq enter --actor ${input.actorId} --paths <owned-path> [--resource <resource>] --responsibility "<owned contract>"`,
+      "Then:",
+      `  agentq next --actor ${input.actorId}`
+    );
+    return `${lines.join("\n")}\n`;
+  }
+
+  if (!input.workResult.ok && input.workResult.activeWork !== undefined) {
+    const work = input.workResult.activeWork;
+    lines.push(
+      work.evidence.length === 0
+        ? "Action: record context evidence for your active work."
+        : "Action: close or update your active work before claiming done.",
+      `Work: ${work.workId} - ${work.title}`,
+      work.evidence.length === 0
+        ? `Run: agentq work evidence --actor ${input.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`
+        : `Run: agentq work close --actor ${input.actorId} --summary "<what changed and how it was verified>"`,
+      "Then:",
+      `  agentq next --actor ${input.actorId}`
+    );
+    return `${lines.join("\n")}\n`;
+  }
+
+  if (input.resolvedOutbound.length > 0) {
+    const item = input.resolvedOutbound[0];
+    if (item !== undefined) {
+      lines.push(
+        "Action: use the answered evidence before continuing.",
+        `Reply: ${item.messageId} ${item.status} by ${item.to}`,
+        `Summary: ${item.summary}`,
+        ...item.evidence.map((evidence) => `Evidence: ${evidence}`),
+        "Then:",
+        `  agentq next --actor ${input.actorId}`
+      );
+      return `${lines.join("\n")}\n`;
+    }
+  }
+
+  if (notes.length > 0) {
+    const item = notes[0];
+    if (item !== undefined) {
+      const message = item.state.message;
+      lines.push(
+        "Action: continue current work; optional note is waiting.",
+        `Note: ${message.id} from ${message.createdBy}`,
+        `Summary: ${message.summary}`,
+        message.kind === "note" ? `Body: ${message.body}` : "",
+        "Optional ack:",
+        `  agentq respond ${message.id} --actor ${input.actorId} --status resolved --evidence "<acknowledged if useful>"`
+      );
+      return `${lines.filter((line) => line.length > 0).join("\n")}\n`;
+    }
+  }
+
+  lines.push(
+    "Action: continue current task.",
+    "No required replies, active work, or scope blockers are open.",
+    "Before final response:",
+    `  agentq done-check --actor ${input.actorId}`
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function renderNextRequiredInbox(
+  actorId: string,
+  item: Awaited<ReturnType<typeof listInboxItems>>[number],
+  totalRequired: number
+): string {
+  const message = item.state.message;
+  const status = message.kind === "question" ? "answered" : "resolved";
+  const lines = [
+    `AgentQ next for ${actorId}`,
+    "Action: answer the required inbox item.",
+    `Item: ${message.id} (${message.summary})`,
+    `From: ${message.createdBy}`,
+    ...renderNextMessageBody(message),
+    "Run:",
+    `  agentq respond ${message.id} --actor ${actorId} --status ${status} --evidence "<answer with evidence>"`,
+    "Then:",
+    `  agentq next --actor ${actorId}`
+  ];
+  if (totalRequired > 1) {
+    lines.splice(4, 0, `More required items after this: ${totalRequired - 1}`);
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderNextMessageBody(message: Message): string[] {
+  if (message.kind === "question") {
+    return [
+      `Question: ${message.question}`,
+      ...(message.expectedAnswer === undefined ? [] : [`Expected: ${message.expectedAnswer}`])
+    ];
+  }
+
+  if (message.kind === "note") {
+    return [`Note: ${message.body}`];
+  }
+
+  return [
+    `Observed: ${message.observed}`,
+    `Broken: ${message.brokenContract}`
+  ];
+}
+
+function renderNextDoneBlocker(
+  actorId: string,
+  blocker: Awaited<ReturnType<typeof runDoneCheck>>["blocking"][number]
+): string {
+  const lines = [`AgentQ next for ${actorId}`];
+  if (blocker.kind === "outbound_pending") {
+    lines.push(
+      "Action: wait for the required reply or continue only non-overlapping work.",
+      `Pending: ${blocker.messageId} for ${blocker.actorId}`,
+      `Summary: ${blocker.summary}`,
+      "Do not supersede just to make done-check pass.",
+      "Check again:",
+      `  agentq next --actor ${actorId}`
+    );
+    return `${lines.join("\n")}\n`;
+  }
+
+  if (blocker.kind === "outbound_blocked_requires_follow_up") {
+    lines.push(
+      "Action: follow up on the blocked reply or explicitly accept the blocked evidence.",
+      `Blocked: ${blocker.messageId} by ${blocker.actorId}`,
+      `Summary: ${blocker.summary}`,
+      "Run one:",
+      `  agentq follow-up ${blocker.messageId} --actor ${actorId} --to ${blocker.actorId} --evidence "<what is still needed>"`,
+      `  agentq accept-blocked ${blocker.messageId} --actor ${actorId} --to ${blocker.actorId} --evidence "<why this is enough>"`
+    );
+    return `${lines.join("\n")}\n`;
+  }
+
+  lines.push(
+    "Action: inspect inbox.",
+    `Run: agentq inbox --actor ${actorId}`
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 async function ownersCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {

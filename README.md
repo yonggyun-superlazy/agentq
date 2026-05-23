@@ -9,6 +9,7 @@ When multiple agents edit the same repo, one stale write or unasked ownership qu
 
 ## How It Works
 
+- `next`: show the one AgentQ action the current actor should take now.
 - `enter`: declare the files or resources an actor is responsible for.
 - `owners`: find active actors on a path or soft-exclusive resource.
 - `question` / `block`: create a required request when another actor must answer.
@@ -16,7 +17,7 @@ When multiple agents edit the same repo, one stale write or unasked ownership qu
 - `respond`: resolve the request with evidence.
 - `done-check`: fail if required replies or active work remain open.
 
-AgentQ keeps the agent-facing surface small: commands that agents already run print the next command to run. `owners` explains whether to ask a required question or send a non-blocking note, `inbox` prints the response command, `work status` prints the evidence/close step, `status` picks the highest-priority cleanup, and successful `done-check` shows recently answered outbound evidence so the sender does not need a separate outbox command.
+AgentQ keeps the agent-facing surface small: agents can run `agentq next --actor <id>` before finishing or whenever the queue feels ambiguous. It inspects inbox, outbound replies, active work, and scope, then prints exactly one next action plus the lower-level command only when needed. The lower-level commands remain scriptable, but agents do not need to remember the full sequence.
 
 Active work evidence is collaboration context, not only final proof. After `agentq work start`, the first `work evidence` entry should say what frame is active, what was observed, which paths/resources are involved, and what check will prove the frame. That gives other agents enough context to route questions and classify overlap before the final test/build evidence exists.
 
@@ -35,9 +36,9 @@ With AgentQ, the second agent finds the owner and cannot finish until the requir
 ```text
 agentq owners --actor <claude> --path src/protocol.ts
 agentq question --actor <claude> --to <codex> --path src/protocol.ts --question "Can I change this?"
-agentq done-check --actor <claude>   # fails while the answer is pending
+agentq next --actor <claude>         # says to wait for the required reply
 agentq respond AQ-... --actor <codex> --status answered --evidence "Preserve routingEvidence."
-agentq done-check --actor <claude>   # passes
+agentq next --actor <claude>         # shows the answered evidence before continuing
 ```
 
 Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md). The before/after collision transcript is [`fixtures/demo/before-after/expected.md`](fixtures/demo/before-after/expected.md), the soft-exclusive resource transcript is [`fixtures/demo/resource/expected.md`](fixtures/demo/resource/expected.md), and the instruction behavior transcript is [`fixtures/instruction-quality/expected.md`](fixtures/instruction-quality/expected.md).
@@ -112,6 +113,7 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - Dry-run first: print touched files, marker blocks, hook commands, and uninstall command.
 - Mutate only with `--yes`.
 - Keep runtime queue state outside the repository in an OS-local workspace store.
+- Use `agentq next --actor <id>` as the primary agent-facing command. It chooses between required inbox replies, outbound wait state, active work evidence/close, scope refresh, answered evidence, optional notes, or normal continuation.
 - Use `agentq status` for a one-screen health summary: doctor result, active/stale actors, pending inboxes, open work, and weak-scope counts.
 - Read the `Next:` line in `agentq status` before broad cleanup; it prioritizes pending inbox, weak scope, zero-evidence work, stale work, and missing owner checks.
 - After `agentq work start`, immediately record context evidence: current frame, observed basis, touched paths/resources, and next pass check. Do not leave active work at evidence `0` until the stop hook.
