@@ -78,7 +78,7 @@ ok: no required replies or active work remain open
 Finding:
 
 - Copilot CLI can consume a required AgentQ inbox item and answer it when the prompt includes the explicit actor id.
-- No Copilot hook event appeared in `agentq diag` during this probe. Treat Copilot command execution as proven, but Copilot hook gate activation as still unproven until a dedicated hook-surface test shows events.
+- No Copilot hook event appeared in `agentq diag` during this probe. The follow-up hook-surface probe showed why: prompt mode needs folder trust or `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true` before repository hooks load. See [`2026-05-23-copilot-hook-surface.md`](2026-05-23-copilot-hook-surface.md).
 
 ## Final State
 

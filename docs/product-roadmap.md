@@ -17,7 +17,7 @@ Every AgentQ progress briefing should include this table or an updated equivalen
 | Non-polluting demos | Shipped baseline | demo scripts and package smoke use temp stores | Add explicit no-real-store-pollution assertion. |
 | Hook diagnostics | Shipped baseline | `diag`, `diag activity`, ignored meta command logging | Improve attribution when resource inference looks wrong. |
 | Instruction quality | Shipped baseline | checklist, executable protocol fixture, and cross-CLI inbox probe | Add a Codex-specific fixture and keep real CLI probes small. |
-| Cross-CLI proof | Partial | Claude Code and Copilot CLI both answered required inbox probes; Claude hook events observed | Verify Copilot hook events and stop gate activation separately. |
+| Cross-CLI proof | Partial | Claude Code and Copilot CLI both answered required inbox probes; Copilot hook events observed with prompt-mode repo-hook opt-in | Verify Copilot stop gate blocking with a pending inbox/work item. |
 | Public release readiness | Partial | package smoke, metadata, install/uninstall, README | Confirm npm ownership and publishing path. |
 | Stale policy | Observing | 1h default, `diag activity` gap data | Keep collecting live gap data before changing default. |
 
@@ -91,13 +91,14 @@ Current state:
 
 - Hook files are installed for all three.
 - Claude Code and Copilot CLI both answered required inbox probes in a temporary workspace.
-- Claude Code hook events were observed during the probe.
-- Copilot CLI command execution worked, but Copilot hook events were not observed in `diag`.
+- Claude Code hook events were observed during the inbox probe.
+- Copilot CLI hook events were observed when prompt-mode repo hooks were enabled with `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`.
+- Without folder trust or that env opt-in, Copilot prompt mode deferred repository hooks and did not run AgentQ.
 
 Next:
 
-- Run a dedicated Copilot hook-surface test and prove `agentStop`/pre-tool events appear in `diag`.
-- Run one resource-owner scenario in Copilot CLI after hook-surface proof.
+- Run a Copilot stop-gate blocker scenario with a pending inbox/work item.
+- Run one resource-owner scenario in Copilot CLI with prompt-mode repo hooks enabled.
 - Keep exact transcripts under `fixtures/`.
 
 ### 5. Public Release Readiness

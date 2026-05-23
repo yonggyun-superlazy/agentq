@@ -72,6 +72,7 @@ export async function runDoctor(
   checks.push(...(await checkHookTargets(store.workspaceRoot)));
   checks.push(await checkCodexProjectHooksFeature(store.workspaceRoot));
   checks.push(await checkCopilotRepositorySettings(store.workspaceRoot));
+  checks.push(checkCopilotPromptModeRepoHooks(options.env));
   checks.push(checkCopilotCloudScope());
   checks.push(await checkRepoLocalRuntime(store.workspaceRoot));
   checks.push(await checkCommittedConfig(store.workspaceRoot));
@@ -233,6 +234,23 @@ async function checkCopilotRepositorySettings(workspaceRoot: string): Promise<Do
     level: "ok",
     name: "Copilot repository hook settings",
     detail: "no repository-level Copilot disableAllHooks setting found"
+  };
+}
+
+function checkCopilotPromptModeRepoHooks(env: NodeJS.ProcessEnv | undefined): DoctorCheck {
+  if (env?.GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS === "true") {
+    return {
+      level: "ok",
+      name: "Copilot prompt-mode repo hooks",
+      detail: "GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true is set; `copilot -p` can load repository hook files"
+    };
+  }
+
+  return {
+    level: "ok",
+    name: "Copilot prompt-mode repo hooks",
+    detail: "`copilot -p` loads repository hook files only when the folder is trusted or GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true is set",
+    remediation: "For non-interactive Copilot CLI probes or CI, set GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true before relying on repository hooks."
   };
 }
 

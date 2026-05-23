@@ -146,6 +146,42 @@ describe("AgentQ doctor", () => {
       })
     );
   });
+
+  it("explains Copilot prompt-mode repo hook opt-in", async () => {
+    const tempRoot = await createTempRoot();
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(workspace, { recursive: true });
+
+    const report = await runDoctor(workspace, {
+      platform: "linux",
+      env: { HOME: tempRoot, XDG_STATE_HOME: path.join(tempRoot, "state") }
+    });
+
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        level: "ok",
+        name: "Copilot prompt-mode repo hooks",
+        detail: expect.stringContaining("GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true")
+      })
+    );
+
+    const optedIn = await runDoctor(workspace, {
+      platform: "linux",
+      env: {
+        HOME: tempRoot,
+        XDG_STATE_HOME: path.join(tempRoot, "state"),
+        GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS: "true"
+      }
+    });
+
+    expect(optedIn.checks).toContainEqual(
+      expect.objectContaining({
+        level: "ok",
+        name: "Copilot prompt-mode repo hooks",
+        detail: expect.stringContaining("is set")
+      })
+    );
+  });
 });
 
 async function createTempRoot(): Promise<string> {

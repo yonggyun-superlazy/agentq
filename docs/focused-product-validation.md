@@ -244,9 +244,10 @@ Manual test matrix:
 Current manual evidence:
 
 - Cross-CLI inbox probe: [`../fixtures/cross-cli/2026-05-23-inbox-probe.md`](../fixtures/cross-cli/2026-05-23-inbox-probe.md).
+- Copilot hook-surface probe: [`../fixtures/cross-cli/2026-05-23-copilot-hook-surface.md`](../fixtures/cross-cli/2026-05-23-copilot-hook-surface.md).
 - Claude Code answered a required inbox item and passed `done-check` with an explicit actor id.
 - Copilot CLI answered a required inbox item and passed `done-check` with an explicit actor id using `--experimental`.
-- Copilot hook events were not observed in `diag` during that probe, so Copilot hook activation remains a separate validation item.
+- Copilot hook events were observed in `diag` after setting `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true`; without folder trust or that env opt-in, prompt mode did not load repository hooks.
 
 Pass criteria:
 

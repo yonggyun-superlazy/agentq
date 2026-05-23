@@ -122,6 +122,8 @@ Coordination, not orchestration: AgentQ does not create a boss agent, assign tas
 | GitHub Copilot cloud agent | Remote/sandboxed agent | Advisory until a shared remote transport exists |
 | Custom CLI | Local actor | Uses explicit `agentq enter`, `block`, `respond`, `done-check` |
 
+Copilot CLI prompt mode (`copilot -p`) loads repository hook files only when the folder is trusted or `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=true` is set. Use that environment variable for scripted Copilot CLI probes or CI runs that must exercise `.github/hooks/*.json`.
+
 ## Files touched by install
 
 | Surface | Commit? | Purpose |
