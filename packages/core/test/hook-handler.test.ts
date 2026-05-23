@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createRoutedBlocker,
+  createOrRefreshSessionBinding,
   ensureWorkspaceStore,
   resolveWorkspaceStore,
   runHookHandler,
@@ -315,6 +316,122 @@ describe("AgentQ hook handler", () => {
     const presence = await readFile(store.layout.actorPresencePath(actorIdFromSession(session)), "utf8");
     expect(presence).toContain("src/specific.ts");
     expect(presence).not.toContain("activePaths:\n  - .");
+  });
+
+  it("adds a non-blocking owner nudge on mutating pre-tool overlap", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-owner-nudge-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    const owner = await createOrRefreshSessionBinding(store, {
+      adapter: "claude-code",
+      sessionId: "owner",
+      cwd: workspace,
+      activePaths: ["src/protocol.ts"],
+      responsibilities: ["protocol owner"],
+      summary: "protocol owner",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S7",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "src/protocol.ts"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      readonly hookSpecificOutput?: { readonly additionalContext?: string };
+    };
+    expect(output.hookSpecificOutput?.additionalContext).toContain("related active actor");
+    expect(output.hookSpecificOutput?.additionalContext).toContain(owner.actorId);
+    expect(output.hookSpecificOutput?.additionalContext).toContain("agentq question --actor");
+  });
+
+  it("does not nudge on read-only pre-tool overlap", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-owner-read-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    await createOrRefreshSessionBinding(store, {
+      adapter: "claude-code",
+      sessionId: "owner",
+      cwd: workspace,
+      activePaths: ["src/protocol.ts"],
+      responsibilities: ["protocol owner"],
+      summary: "protocol owner",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S8",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: {
+          file_path: "src/protocol.ts"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    expect(result.stdout).toBe("{}\n");
+  });
+
+  it("preserves concrete responsibility when idle pre-tool refreshes paths", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-preserve-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    const binding = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "S9",
+      cwd: workspace,
+      activePaths: ["src/specific.ts"],
+      responsibilities: ["specific owner"],
+      summary: "specific owner",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S9",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Edit",
+        tool_input: {
+          file_path: "src/specific.ts"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    const presence = await readFile(store.layout.actorPresencePath(binding.actorId), "utf8");
+    expect(presence).toContain("specific owner");
+    expect(presence).not.toContain("active tool scope");
   });
 });
 

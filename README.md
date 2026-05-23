@@ -90,6 +90,7 @@ Use [`docs/prompts/work-stack.md`](docs/prompts/work-stack.md) as the handoff pr
 - Mutate only with `--yes`.
 - Keep runtime queue state outside the repository in an OS-local workspace store.
 - Use `agentq status` for a one-screen health summary: doctor result, active/stale actors, pending inboxes, open work, and weak-scope counts.
+- Use `agentq owners --path <path>` before editing shared surfaces. Pre-tool hooks also emit a non-blocking owner nudge when a mutating tool path overlaps another active actor.
 - Use `agentq actors` to inspect active/stale actor presence before routing blockers. Active means recent AgentQ presence, not a guaranteed live OS process; the default stale window is 1 hour.
 - Use `agentq scope-check --actor <id>` before finishing. It fails broad `.` paths and generic hook responsibilities so agents refresh concrete ownership.
 - Out-of-scope build, test, or generated-artifact failures should become required AgentQ blockers with observable evidence, not chat-only notes.

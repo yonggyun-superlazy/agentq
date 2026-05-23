@@ -127,6 +127,21 @@ const wakeReceiver = runAgentq([
   "--responsibility",
   "package smoke wake receiver"
 ], workspace).trim().replace(/ registered$/, "");
+const owners = runAgentq(["owners", "--actor", actorId, "--path", "src/package-smoke.ts"], workspace);
+assert(owners.includes(wakeReceiver), `owners missed wake receiver: ${owners}`);
+assert(owners.includes("agentq question --actor <your-actor-id>"), `owners missed question guidance: ${owners}`);
+const ownerNudge = runAgentq(
+  ["hook", "codex", "pre-tool"],
+  workspace,
+  JSON.stringify({
+    session_id: "package-smoke",
+    cwd: workspace,
+    hook_event_name: "PreToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: "src/package-smoke.ts" }
+  })
+);
+assert(ownerNudge.includes(wakeReceiver), `pre-tool owner nudge missed wake receiver: ${ownerNudge}`);
 const wakeQuestion = runAgentq([
   "question",
   "--id",

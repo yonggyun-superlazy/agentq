@@ -38,6 +38,16 @@ Use `--actor` with the hook-provided actor id when refreshing scope. `agentq
 enter --as ... --session ...` creates or refreshes a manual session binding and
 can produce a different actor id.
 
+Before editing a shared surface, ask AgentQ who is already active on that path:
+
+```bash
+agentq owners --actor <agentq-actor-id> --path <path>
+```
+
+If `owners` or a pre-tool hook nudge shows another active owner and the edit can
+change their contract or unblock their work, create a required question/block
+instead of resolving it only in your local chat.
+
 `agentq actors` marks actors stale from recent AgentQ presence, not from OS
 process state. The default stale window is 1 hour so long-running CLI reasoning
 or user-input waits do not disappear after a short pause. A stale actor may still

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   AGENTQ_POSITIONING,
@@ -13,6 +14,7 @@ import {
   createRoutedRequest,
   ensureWorkspaceStore,
   EventSchema,
+  findActivePathOwners,
   foldMessageState,
   closeWork,
   applyMarkerInstall,
@@ -43,6 +45,7 @@ import {
   runDoneCheck,
   writeOnceYaml,
   type AgentKind,
+  type ActivePathOwnerMatch,
   type FoldedMessageState,
   type FoldedRequest,
   type Message,
@@ -77,6 +80,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "status", summary: "Summarize workspace AgentQ health" },
   { name: "uninstall", summary: "Remove AgentQ-owned integration markers and hook gates" },
   { name: "actors", summary: "List workspace actors by recent presence" },
+  { name: "owners", summary: "Find active actors responsible for paths" },
   { name: "enter", summary: "Register actor presence and responsibilities" },
   { name: "work", summary: "Manage one explicit actor's internal work stack" },
   { name: "block", summary: "Create a required-response blocker" },
@@ -300,7 +304,19 @@ export function renderCommandHelp(command: CommandSpec): string {
       "Usage:",
       "  agentq status [--stale-ms <milliseconds>]",
       "",
-      "Shows doctor summary, active/stale actors, pending inbox requests, open work, and weak scope counts."
+      "Shows doctor summary, active/stale actors, routeable actors, recent messages, pending inbox requests, open work, and weak scope counts."
+    ].join("\n");
+  }
+
+  if (command.name === "owners") {
+    return [
+      "agentq owners",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq owners --path <path>... [--actor <id>] [--stale-ms <milliseconds>]",
+      "",
+      "Shows active actors whose specific path scope overlaps the provided path. Use --actor to exclude yourself."
     ].join("\n");
   }
 
@@ -376,6 +392,10 @@ export async function runCommand(
 
   if (command === "status") {
     return await statusCommand(argv.slice(1), runtime);
+  }
+
+  if (command === "owners") {
+    return await ownersCommand(argv.slice(1), runtime);
   }
 
   if (command === "hook") {
@@ -645,7 +665,8 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
   const store = await openStore(runtime);
   const report = await runDoctor(runtime.cwd, { env: runtime.env });
   const actors = await listActorPresences(store);
-  const nowMs = Date.parse(runtime.now());
+  const now = runtime.now();
+  const nowMs = Date.parse(now);
   const details = await Promise.all(
     actors.map(async (actor) => {
       const summary = actorStatus(actor, nowMs, staleAfterMs);
@@ -661,10 +682,39 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
       };
     })
   );
+  const recentMessages = await listRecentMessageSummaries(store, nowMs, 86_400_000);
 
   return {
     code: report.summary === "fail" ? 2 : 0,
-    stdout: renderWorkspaceStatus(report, details, staleAfterMs),
+    stdout: renderWorkspaceStatus(report, details, staleAfterMs, recentMessages),
+    stderr: ""
+  };
+}
+
+async function ownersCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const staleAfterMs = Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS));
+  if (!Number.isFinite(staleAfterMs) || staleAfterMs < 0) {
+    throw new Error("owners --stale-ms must be a non-negative number.");
+  }
+
+  const paths = optionValues(args, "path");
+  if (paths.length === 0) {
+    throw new Error("owners requires --path <path>.");
+  }
+
+  const store = await openStore(runtime);
+  const actorId = optionValue(args, "actor");
+  const matches = await findActivePathOwners(store, {
+    paths,
+    now: runtime.now(),
+    staleAfterMs,
+    ...(actorId === undefined ? {} : { actorId })
+  });
+
+  return {
+    code: 0,
+    stdout: renderOwners(paths, matches),
     stderr: ""
   };
 }
@@ -1246,6 +1296,14 @@ interface WorkspaceStatusActor {
   readonly weaknesses: ReturnType<typeof actorScopeWeaknesses>;
 }
 
+interface RecentMessageSummary {
+  readonly id: string;
+  readonly kind: Message["kind"];
+  readonly summary: string;
+  readonly updatedAt: string;
+  readonly updatedAtMs: number;
+}
+
 function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
   const lastSeenMs = Date.parse(actor.lastSeen);
   const ageMs = Number.isFinite(nowMs) && Number.isFinite(lastSeenMs)
@@ -1261,22 +1319,33 @@ function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): Acto
 function renderWorkspaceStatus(
   report: DoctorReport,
   details: readonly WorkspaceStatusActor[],
-  staleAfterMs: number
+  staleAfterMs: number,
+  recentMessages: readonly RecentMessageSummary[]
 ): string {
-  const activeCount = details.filter((detail) => detail.summary.status === "active").length;
+  const activeDetails = details.filter((detail) => detail.summary.status === "active");
+  const activeCount = activeDetails.length;
   const staleCount = details.length - activeCount;
   const pendingInboxCount = details.reduce(
     (count, detail) => count + detail.pendingInbox.length,
     0
   );
   const openWorkCount = details.filter((detail) => detail.activeWork !== null).length;
+  const staleOpenWorkCount = details.filter(
+    (detail) => detail.activeWork !== null && detail.summary.status === "stale"
+  ).length;
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
+  const routeableActiveCount = activeDetails.filter((detail) => detail.weaknesses.length === 0).length;
+  const weakActiveCount = activeCount - routeableActiveCount;
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
-  const activeActorLines = details
-    .filter((detail) => detail.summary.status === "active")
-    .map(renderStatusActorLine);
+  const activeActorLines = activeDetails.map(renderStatusActorLine);
   const openWorkLines = details.flatMap(renderStatusWorkLines);
   const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
+  const recommendationLines = statusRecommendations({
+    routeableActiveCount,
+    weakActiveCount,
+    recentMessageCount: recentMessages.length,
+    staleOpenWorkCount
+  });
 
   const lines = [
     "AgentQ status",
@@ -1284,9 +1353,13 @@ function renderWorkspaceStatus(
     `Runtime store: ${report.storePath}`,
     `doctor: ${report.summary}`,
     `actors: ${details.length} (active ${activeCount}, stale ${staleCount}, staleAfter ${formatDuration(staleAfterMs)})`,
+    `routeable active actors: ${routeableActiveCount}`,
+    `broad/generic active actors: ${weakActiveCount}`,
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
-    `weak-scope actors: ${weakScopeActorCount}`
+    `stale open work: ${staleOpenWorkCount}`,
+    `weak-scope actors: ${weakScopeActorCount}`,
+    `recent messages 24h: ${recentMessages.length}${recentMessages[0] === undefined ? "" : ` (latest ${recentMessages[0].updatedAt})`}`
   ];
 
   if (doctorIssues.length > 0) {
@@ -1295,6 +1368,10 @@ function renderWorkspaceStatus(
       "Doctor issues:",
       ...doctorIssues.map((check) => `  ${check.level} ${check.name}: ${check.detail}`)
     );
+  }
+
+  if (recommendationLines.length > 0) {
+    lines.push("", "Recommendations:", ...recommendationLines.map((line) => `  ${line}`));
   }
 
   lines.push(
@@ -1310,6 +1387,106 @@ function renderWorkspaceStatus(
   );
 
   return `${lines.join("\n")}\n`;
+}
+
+async function listRecentMessageSummaries(
+  store: Awaited<ReturnType<typeof openStore>>,
+  nowMs: number,
+  windowMs: number
+): Promise<RecentMessageSummary[]> {
+  const entries = await readdir(store.layout.messagesDir, { withFileTypes: true }).catch((error: unknown) => {
+    if (isNotFoundError(error)) {
+      return [];
+    }
+
+    throw error;
+  });
+  const summaries: RecentMessageSummary[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const messagePath = store.layout.messagePath(entry.name);
+    const fileStat = await stat(messagePath).catch((error: unknown) => {
+      if (isNotFoundError(error)) {
+        return null;
+      }
+
+      throw error;
+    });
+    if (fileStat === null) {
+      continue;
+    }
+
+    const updatedAtMs = fileStat.mtimeMs;
+    if (Number.isFinite(nowMs) && nowMs - updatedAtMs > windowMs) {
+      continue;
+    }
+
+    const state = await foldMessageState(store, entry.name);
+    summaries.push({
+      id: state.message.id,
+      kind: state.message.kind,
+      summary: state.message.summary,
+      updatedAt: fileStat.mtime.toISOString(),
+      updatedAtMs
+    });
+  }
+
+  return summaries.sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.id.localeCompare(right.id));
+}
+
+function statusRecommendations(input: {
+  readonly routeableActiveCount: number;
+  readonly weakActiveCount: number;
+  readonly recentMessageCount: number;
+  readonly staleOpenWorkCount: number;
+}): string[] {
+  const lines: string[] = [];
+
+  if (input.weakActiveCount > 0) {
+    lines.push("Refresh broad active actors with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.");
+  }
+
+  if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
+    lines.push("No recent inter-agent messages; run `agentq owners --path <path>` before editing shared surfaces and ask/block when another active owner overlaps.");
+  }
+
+  if (input.staleOpenWorkCount > 0) {
+    lines.push("Stale open work remains; close, supersede, or re-route it only with evidence from the responsible actor or current owner.");
+  }
+
+  return lines;
+}
+
+function renderOwners(paths: readonly string[], matches: readonly ActivePathOwnerMatch[]): string {
+  const lines = [
+    `owners for ${paths.join(", ")}:`
+  ];
+
+  if (matches.length === 0) {
+    lines.push("  none");
+    return `${lines.join("\n")}\n`;
+  }
+
+  lines.push(...matches.map(renderOwnerMatch));
+  lines.push(
+    "",
+    "Use a required question when this path may affect the owner:",
+    `  agentq question --actor <your-actor-id> --to ${matches[0]?.actor.actorId ?? "<target-actor-id>"} --path ${matches[0]?.queriedPath ?? paths[0] ?? "<path>"} --question "<decision needed>" --expect "<answer with evidence>"`
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function renderOwnerMatch(match: ActivePathOwnerMatch): string {
+  return [
+    `  ${match.actor.actorId}`,
+    `owns: ${match.activePath}`,
+    `matched: ${match.queriedPath}`,
+    `responsibilities: ${formatList(match.actor.responsibilities)}`
+  ].join(" | ");
 }
 
 function renderStatusActorLine(detail: WorkspaceStatusActor): string {
@@ -1394,6 +1571,15 @@ function formatDuration(ms: number): string {
   }
 
   return `${Math.floor(hours / 24)}d`;
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { readonly code?: unknown }).code === "ENOENT"
+  );
 }
 
 function renderWorkState(label: string, work: WorkState): string {

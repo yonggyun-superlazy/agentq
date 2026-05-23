@@ -32,6 +32,19 @@ export interface BlockerRoutePlan {
   readonly recipients: readonly RecipientRoute[];
 }
 
+export interface ActivePathOwnerQuery {
+  readonly actorId?: string;
+  readonly paths: readonly string[];
+  readonly now: string;
+  readonly staleAfterMs: number;
+}
+
+export interface ActivePathOwnerMatch {
+  readonly actor: Presence;
+  readonly activePath: string;
+  readonly queriedPath: string;
+}
+
 export type RequiredRequestRouteInput = BlockerRouteInput;
 export type RequiredRequestRoutePlan = BlockerRoutePlan;
 
@@ -78,6 +91,39 @@ export async function planRequiredRequestRoutes(
     message: input.message,
     recipients
   };
+}
+
+export async function findActivePathOwners(
+  store: WorkspaceStore,
+  input: ActivePathOwnerQuery
+): Promise<ActivePathOwnerMatch[]> {
+  const queriedPaths = input.paths.filter((candidate) => normalizePath(candidate) !== ".");
+  if (queriedPaths.length === 0) {
+    return [];
+  }
+
+  const activePresences = await readActivePresences(store, input.now, input.staleAfterMs);
+  const matches: ActivePathOwnerMatch[] = [];
+
+  for (const actor of activePresences) {
+    if (actor.actorId === input.actorId) {
+      continue;
+    }
+
+    for (const activePath of actor.activePaths) {
+      for (const queriedPath of queriedPaths) {
+        if (pathPatternsOverlap(activePath, queriedPath)) {
+          matches.push({ actor, activePath, queriedPath });
+        }
+      }
+    }
+  }
+
+  return uniqueOwnerMatches(matches).sort((left, right) =>
+    left.actor.actorId.localeCompare(right.actor.actorId) ||
+    left.activePath.localeCompare(right.activePath) ||
+    left.queriedPath.localeCompare(right.queriedPath)
+  );
 }
 
 function validateExplicitRecipients(
@@ -288,6 +334,27 @@ function pathPatternOverlaps(activePattern: string, messagePath: string): boolea
   return message.startsWith(`${active}/`);
 }
 
+function pathPatternsOverlap(leftPattern: string, rightPattern: string): boolean {
+  return pathPatternOverlaps(leftPattern, rightPattern) || pathPatternOverlaps(rightPattern, leftPattern);
+}
+
 function normalizePath(value: string): string {
   return value.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+}
+
+function uniqueOwnerMatches(matches: readonly ActivePathOwnerMatch[]): ActivePathOwnerMatch[] {
+  const seen = new Set<string>();
+  const unique: ActivePathOwnerMatch[] = [];
+
+  for (const match of matches) {
+    const key = `${match.actor.actorId}\n${match.activePath}\n${match.queriedPath}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(match);
+  }
+
+  return unique;
 }

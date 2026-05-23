@@ -1,12 +1,14 @@
 import path from "node:path";
 import {
   createOrRefreshSessionBinding,
+  refreshActorPresence,
   resolveHookActorId,
   type HookActorLookup
 } from "../store/sessionBinding.js";
 import { ensureWorkspaceStore, resolveWorkspaceStore, type WorkspaceStore } from "../store/workspaceStore.js";
 import { planStopContinuation, runDoneCheck } from "../state/doneCheck.js";
 import { planScopeContinuation, runScopeCheck } from "../state/scopeCheck.js";
+import { findActivePathOwners, type ActivePathOwnerMatch } from "../routing/routeBlocker.js";
 import type { AgentKind } from "../domain/types.js";
 import {
   appendActiveWorkTouch,
@@ -82,10 +84,13 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       fallbackSummary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
+    const ownerNudge = shouldNudgeForTool(payload)
+      ? await buildRelatedOwnerNudge(store, actorId, hookPaths, options.now)
+      : null;
 
     return {
       code: 0,
-      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId))}\n`,
+      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId, ownerNudge))}\n`,
       stderr: ""
     };
   }
@@ -186,16 +191,24 @@ async function refreshHookPresence(
   }
 
   const activePaths = effectivePresencePaths(input.hookPaths, activeWork?.touchedPaths ?? []);
-  const summary = activeWork?.title ?? input.fallbackSummary;
-  const responsibilities = activeWork === null ? input.fallbackResponsibilities : [activeWork.title];
+  if (activeWork === null) {
+    await refreshActorPresence(store, {
+      actorId: input.actorId,
+      cwd: input.cwd,
+      activePaths,
+      responsibilities: [],
+      now: input.now
+    });
+    return;
+  }
 
   await createOrRefreshSessionBinding(store, {
     adapter: input.adapter,
     sessionId: input.sessionId,
     cwd: input.cwd,
     activePaths,
-    responsibilities,
-    summary,
+    responsibilities: [activeWork.title],
+    summary: activeWork.title,
     now: input.now
   });
 }
@@ -272,9 +285,20 @@ function sessionStartOutput(adapter: HookAdapter, actorId: string): object {
   };
 }
 
-function preToolOutput(adapter: HookAdapter, actorId: string): object {
+function preToolOutput(adapter: HookAdapter, actorId: string, nudge: string | null): object {
   if (adapter === "copilot-cli") {
-    return { additionalContext: `AgentQ refreshed active scope for ${actorId}.` };
+    return {
+      additionalContext: nudge ?? `AgentQ refreshed active scope for ${actorId}.`
+    };
+  }
+
+  if (nudge !== null) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        additionalContext: nudge
+      }
+    };
   }
 
   return {};
@@ -335,6 +359,43 @@ function stringFieldOptional(payload: PayloadObject, key: string): string | unde
 
 function booleanField(payload: PayloadObject, key: string): boolean {
   return payload[key] === true;
+}
+
+function shouldNudgeForTool(payload: PayloadObject): boolean {
+  const toolName = stringFieldOptional(payload, "tool_name") ?? stringFieldOptional(payload, "toolName") ?? "";
+  return /(write|edit|apply|patch|shell|command|delete|move|rename)/i.test(toolName);
+}
+
+async function buildRelatedOwnerNudge(
+  store: WorkspaceStore,
+  actorId: string,
+  paths: readonly string[],
+  now: string
+): Promise<string | null> {
+  const matches = await findActivePathOwners(store, {
+    actorId,
+    paths,
+    now,
+    staleAfterMs: 3_600_000
+  });
+  if (matches.length === 0) {
+    return null;
+  }
+
+  return renderRelatedOwnerNudge(actorId, matches.slice(0, 3));
+}
+
+function renderRelatedOwnerNudge(actorId: string, matches: readonly ActivePathOwnerMatch[]): string {
+  const firstPath = matches[0]?.queriedPath ?? "<path>";
+  return [
+    "AgentQ related active actor detected for this tool path.",
+    ...matches.map(
+      (match) =>
+        `- ${match.actor.actorId} owns ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
+    ),
+    "If this changes their contract or unblocks their work, ask before local-only resolution:",
+    `agentq question --actor ${actorId} --to ${matches[0]?.actor.actorId ?? "<target-actor-id>"} --path ${firstPath} --question "<decision needed>" --expect "<answer with evidence>"`
+  ].join("\n");
 }
 
 function extractActivePaths(payload: PayloadObject, cwd: string): string[] {

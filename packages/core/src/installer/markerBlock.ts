@@ -50,6 +50,7 @@ const ROOT_MARKER_BODY = [
   "",
   "Procedure: `.github/instructions/agentq.instructions.md`.",
   "Use the hook actor id, keep scope concrete, and run `scope-check`/`done-check` before done.",
+  "Before editing shared surfaces, use `agentq owners --path <path>` or follow pre-tool owner nudges.",
   "Out-of-scope build/test failures are AgentQ blockers, not chat-only notes."
 ].join("\n");
 
@@ -63,6 +64,7 @@ const SCOPED_MARKER_BODY = [
   "- Track complex work with `agentq work start/status/evidence/close --actor <id>`.",
   "- Refresh concrete scope with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.",
   "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
+  "- Before editing shared surfaces, run `agentq owners --path <path>` or follow the pre-tool owner nudge; use `question`/`block` when another active owner overlaps.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
   "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",
   "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",

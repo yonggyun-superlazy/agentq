@@ -508,11 +508,62 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("AgentQ status");
     expect(result.stdout).toContain("doctor: warn");
     expect(result.stdout).toContain("actors: 2 (active 2, stale 0, staleAfter 1h)");
+    expect(result.stdout).toContain("routeable active actors: 2");
+    expect(result.stdout).toContain("broad/generic active actors: 0");
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
+    expect(result.stdout).toContain("recent messages 24h: 1");
     expect(result.stdout).toContain("weak-scope actors: 0");
     expect(result.stdout).toContain("AW-status");
     expect(result.stdout).toContain("AQ-status");
+  });
+
+  it("finds active path owners and excludes the current actor when requested", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-owners-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ CLI status view"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "AgentQ/packages/cli/src",
+      "--responsibility",
+      "AgentQ CLI source owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    const result = await runCommand([
+      "owners",
+      "--actor",
+      sender,
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], runtime);
+
+    expect(result).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(result.stdout).toContain(`owners for AgentQ/packages/cli/src/main.ts:`);
+    expect(result.stdout).toContain(receiver);
+    expect(result.stdout).not.toContain(`  ${sender} |`);
+    expect(result.stdout).toContain("agentq question --actor <your-actor-id>");
   });
 
   it("refreshes exact actor presence when work starts", async () => {
