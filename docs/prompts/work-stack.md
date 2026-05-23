@@ -103,6 +103,10 @@ agentq scope-check --actor <agentq-actor-id>
 agentq done-check --actor <agentq-actor-id>
 ```
 
+If this actor sent a required question earlier, successful `done-check` prints
+the resolved outbound evidence inline. Read that evidence before continuing;
+there is no separate outbox/current command to remember.
+
 The close command requires prior `work evidence` or inline
 `--evidence "<observable evidence>"`. If an older frame is no longer the live
 path, close it as a terminal audit record instead of deleting it:

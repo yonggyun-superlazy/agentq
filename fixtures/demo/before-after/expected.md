@@ -27,13 +27,16 @@ owners for src/protocol.ts:
 Use a required question when this may affect the owner:
   Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.
   agentq question --actor <your-actor-id> --to <codex> --path src/protocol.ts --question "<decision needed>" --expect "<answer with evidence>"
+  Use `agentq note ...` instead when this is review/context and your completion should not wait for a reply.
 $ agentq question --id AQ-before-after --actor <claude> --to <codex> --path src/protocol.ts --question I need to change src/protocol.ts. Are you actively changing the protocol schema? --expect Answer with active edits or clear-to-edit evidence.
 AQ-before-after routed to <codex>
 delivery:
   <codex>: record_only
+next: run `agentq done-check --actor <your-actor-id>` before finishing; answered evidence will be shown there once resolved.
 $ agentq done-check --actor <claude>
 AgentQ done-check failed for <claude>.
 - outbound_pending: AQ-before-after for <codex> (I need to change src/protocol.ts. Are you actively changing the protocol schema?)
+  next: wait for <codex> to respond; rerun agentq done-check --actor <claude> to see answered evidence.
 Resolve required replies before final response.
 $ agentq respond AQ-before-after --actor <codex> --status answered --evidence I added routingEvidence; preserve it when adding consumerView.
 AQ-before-after answered
@@ -45,4 +48,11 @@ export interface ProtocolMessage {
 }
 $ agentq done-check --actor <claude>
 ok: no required replies or active work remain open
+
+Resolved outbound replies:
+  AQ-before-after answered by <codex>
+    summary: I need to change src/protocol.ts. Are you actively changing the protocol schema?
+    evidence: I added routingEvidence; preserve it when adding consumerView.
+
+next: use the answered evidence above before continuing; keep using --actor <claude> for AgentQ commands.
 ```

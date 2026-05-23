@@ -64,6 +64,7 @@ export function planStopContinuation(
     ...result.blocking.map(
       (item) => `- ${item.kind}: ${item.messageId} for ${item.actorId} (${item.summary})`
     ),
+    ...result.blocking.flatMap((item) => doneCheckNextLines(result.actorId, item)),
     stopHookActive
       ? "Stop hook is already active; resolve these exact required replies before trying to finish again."
       : "Resolve required replies before final response."
@@ -74,6 +75,22 @@ export function planStopContinuation(
     reason,
     loopGuard: stopHookActive ? "stop-hook-active" : "first-block"
   };
+}
+
+function doneCheckNextLines(actorId: string, item: DoneCheckBlockingItem): string[] {
+  if (item.kind === "inbound_pending") {
+    return [`  next: agentq inbox --actor ${actorId}`];
+  }
+
+  if (item.kind === "outbound_pending") {
+    return [
+      `  next: wait for ${item.actorId} to respond; rerun agentq done-check --actor ${actorId} to see answered evidence.`
+    ];
+  }
+
+  return [
+    `  next: agentq follow-up ${item.messageId} --actor ${actorId} --to ${item.actorId} --evidence "...", or accept with agentq accept-blocked ${item.messageId} --actor ${actorId} --to ${item.actorId} --evidence "..."`
+  ];
 }
 
 function blockingItemsForState(

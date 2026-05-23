@@ -14,6 +14,7 @@ Every AgentQ progress briefing should include this table or an updated equivalen
 | Actor presence and scope | Shipped, noisy history remains | `status`, `actors`, `scope-check`; broad active actor count visible; `work start` rejects missing or broad `--path` | Watch for remaining broad actors created by hook-only sessions. |
 | Path owner matching | Shipped | Absolute workspace paths and comma-separated legacy path values are tested | Watch dogfood `owners --path` misses. |
 | Resource coordination | Shipped baseline | `enter --resource`, `owners --resource`, hook inference, resource demo transcript | Add more real non-Superlazy resource examples. |
+| Contextual next-step UX | Shipped baseline | `owners`, routed delivery, `inbox`, `work status`, `status`, and successful `done-check` print next actions without adding outbox/current commands | Watch dogfood cases where agents still ask what command to run next. |
 | Non-polluting demos | Shipped baseline | demo scripts and package smoke use temp stores | Add explicit no-real-store-pollution assertion. |
 | Hook diagnostics | Shipped | `diag`, `diag activity`, 10,000-event ring, ignored meta command logging, declared scope and open-work evidence counts in activity output, heartbeat refresh for already-specific actors on pathless tools | Watch for tool payloads that still only infer `paths:.`. |
 | Instruction quality | Shipped baseline | checklist, executable protocol fixture, and cross-CLI inbox probe | Add a Codex-specific fixture and keep real CLI probes small. |
@@ -34,6 +35,7 @@ The strongest product wedge is not chat. It is the combination of:
 - active work frames that block premature completion
 - hook-based reminders that stay local and visible
 - diagnostics that explain why an actor is or is not routeable
+- contextual next-step output so agents do not memorize extra interfaces
 
 ## Roadmap Lanes
 

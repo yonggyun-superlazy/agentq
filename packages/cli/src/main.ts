@@ -21,6 +21,7 @@ import {
   closeWork,
   applyMarkerInstall,
   applyMarkerUninstall,
+  listMessageIdsFromStore,
   listInboxItems,
   listPendingInboxItems,
   listActorPresences,
@@ -54,6 +55,7 @@ import {
   type DiagnosticEvent,
   type FoldedMessageState,
   type FoldedRequest,
+  type AgentQEvent,
   type Message,
   type Presence,
   type ResponseStatus,
@@ -1053,7 +1055,8 @@ function renderRoutedDelivery(
 ): string {
   return [
     `${messageId} routed to ${recipientActorIds.join(", ")}`,
-    renderDeliveryReport(delivery)
+    renderDeliveryReport(delivery),
+    "next: run `agentq done-check --actor <your-actor-id>` before finishing; answered evidence will be shown there once resolved."
   ].join("\n") + "\n";
 }
 
@@ -1064,7 +1067,8 @@ function renderNonBlockingDelivery(
   return [
     `${messageId} noted to ${recipientActorIds.join(", ")}`,
     "delivery:",
-    ...recipientActorIds.map((actorId) => `  ${actorId}: inbox_note non_blocking`)
+    ...recipientActorIds.map((actorId) => `  ${actorId}: inbox_note non_blocking`),
+    "next: no reply is required; check `agentq done-check --actor <your-actor-id>` normally before finishing."
   ].join("\n") + "\n";
 }
 
@@ -1119,8 +1123,21 @@ function renderInboxRequest(
   }
   lines.push(`  routing: ${request.request.routingEvidence.map((evidence) => `${evidence.kind}:${evidence.detail}`).join("; ")}`);
   lines.push(`  ${action}: agentq respond ${message.id} --actor ${actorId} --status ${responseStatus} --evidence "..."`);
+  lines.push(`  next: ${inboxItemNext(message.kind, request.request.required)}`);
 
   return lines.join("\n");
+}
+
+function inboxItemNext(kind: Message["kind"], required: boolean): string {
+  if (!required) {
+    return "ack if useful; this note does not block done-check.";
+  }
+
+  if (kind === "question") {
+    return "answer with the requested decision/evidence so both actors can pass done-check.";
+  }
+
+  return "resolve, block with evidence, or mark not_mine/invalid; required replies block done-check.";
 }
 
 function joinList(values: readonly string[]): string {
@@ -1335,9 +1352,88 @@ async function doneCheckCommand(argv: readonly string[], runtime: CommandRuntime
 
   return {
     code: 0,
-    stdout: "ok: no required replies or active work remain open\n",
+    stdout: renderDoneCheckOk(actorId, await resolvedOutboundItems(store, actorId)),
     stderr: ""
   };
+}
+
+interface ResolvedOutboundItem {
+  readonly messageId: string;
+  readonly to: string;
+  readonly status: string;
+  readonly summary: string;
+  readonly evidence: readonly string[];
+  readonly at: string;
+}
+
+async function resolvedOutboundItems(
+  store: Awaited<ReturnType<typeof openStore>>,
+  actorId: string
+): Promise<ResolvedOutboundItem[]> {
+  const messageIds = await listMessageIdsFromStore(store);
+  const states = await Promise.all(messageIds.map(async (messageId) => foldMessageState(store, messageId)));
+  return states
+    .filter((state) => state.message.createdBy === actorId)
+    .flatMap((state) =>
+      state.requests.flatMap((request): ResolvedOutboundItem[] => {
+        if (request.status === "pending" || request.terminalEvent === null) {
+          return [];
+        }
+
+        const evidence = eventEvidence(request.terminalEvent);
+        if (evidence.length === 0) {
+          return [];
+        }
+
+        return [{
+          messageId: state.message.id,
+          to: request.request.to,
+          status: request.status,
+          summary: state.message.summary,
+          evidence,
+          at: eventTimestamp(request.terminalEvent)
+        }];
+      })
+    )
+    .sort((left, right) => right.at.localeCompare(left.at))
+    .slice(0, 5);
+}
+
+function eventEvidence(event: AgentQEvent): readonly string[] {
+  if (
+    event.kind === "response" ||
+    event.kind === "supersede" ||
+    event.kind === "follow_up" ||
+    event.kind === "accept_blocked" ||
+    event.kind === "delivery_attempt"
+  ) {
+    return event.evidence;
+  }
+
+  return [];
+}
+
+function eventTimestamp(event: AgentQEvent): string {
+  return "at" in event && typeof event.at === "string" ? event.at : "";
+}
+
+function renderDoneCheckOk(actorId: string, resolvedOutbound: readonly ResolvedOutboundItem[]): string {
+  const lines = ["ok: no required replies or active work remain open"];
+  if (resolvedOutbound.length > 0) {
+    lines.push(
+      "",
+      "Resolved outbound replies:",
+      ...resolvedOutbound.flatMap((item) => [
+        `  ${item.messageId} ${item.status} by ${item.to}`,
+        `    summary: ${item.summary}`,
+        ...item.evidence.map((evidence) => `    evidence: ${evidence}`)
+      ]),
+      "",
+      `next: use the answered evidence above before continuing; keep using --actor ${actorId} for AgentQ commands.`
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 async function scopeCheckCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
@@ -1587,6 +1683,7 @@ function renderWorkspaceStatus(
   const openWorkLines = details.flatMap(renderStatusWorkLines);
   const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
   const recommendationLines = statusRecommendations({
+    pendingInboxCount,
     routeableActiveCount,
     weakActiveCount,
     recentMessageCount: recentMessages.length,
@@ -1619,7 +1716,21 @@ function renderWorkspaceStatus(
   }
 
   if (recommendationLines.length > 0) {
-    lines.push("", "Recommendations:", ...recommendationLines.map((line) => `  ${line}`));
+    lines.push(
+      "",
+      "Next:",
+      `  ${statusNextAction({
+        pendingInboxCount,
+        weakActiveCount,
+        zeroEvidenceOpenWorkCount,
+        staleOpenWorkCount,
+        routeableActiveCount,
+        recentMessageCount: recentMessages.length
+      })}`,
+      "",
+      "Recommendations:",
+      ...recommendationLines.map((line) => `  ${line}`)
+    );
   }
 
   lines.push(
@@ -1765,6 +1876,7 @@ async function buildDiagnosticActivityRows(
 }
 
 function statusRecommendations(input: {
+  readonly pendingInboxCount: number;
   readonly routeableActiveCount: number;
   readonly weakActiveCount: number;
   readonly recentMessageCount: number;
@@ -1772,6 +1884,10 @@ function statusRecommendations(input: {
   readonly zeroEvidenceOpenWorkCount: number;
 }): string[] {
   const lines: string[] = [];
+
+  if (input.pendingInboxCount > 0) {
+    lines.push("Required inbox items are pending; run `agentq inbox --actor <id>` for the affected actor and answer with `agentq respond ... --evidence \"...\"`.");
+  }
 
   if (input.weakActiveCount > 0) {
     lines.push("Refresh broad active actors with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.");
@@ -1792,6 +1908,37 @@ function statusRecommendations(input: {
   return lines;
 }
 
+function statusNextAction(input: {
+  readonly pendingInboxCount: number;
+  readonly weakActiveCount: number;
+  readonly zeroEvidenceOpenWorkCount: number;
+  readonly staleOpenWorkCount: number;
+  readonly routeableActiveCount: number;
+  readonly recentMessageCount: number;
+}): string {
+  if (input.pendingInboxCount > 0) {
+    return "Resolve pending inbox first: `agentq inbox --actor <id>` then `agentq respond ... --evidence \"...\"`.";
+  }
+
+  if (input.weakActiveCount > 0) {
+    return "Refresh broad active scopes with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.";
+  }
+
+  if (input.zeroEvidenceOpenWorkCount > 0) {
+    return "Record observable evidence on open work before any final answer: `agentq work evidence --actor <id> --evidence \"...\"`.";
+  }
+
+  if (input.staleOpenWorkCount > 0) {
+    return "Review stale open work and close only with ownership evidence: `agentq work close --status abandoned|superseded ...`.";
+  }
+
+  if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
+    return "Before shared edits, run `agentq owners --path <path>` or `--resource <resource>` and route a question/block on overlap.";
+  }
+
+  return "No urgent AgentQ action; keep using explicit `--actor`, `owners`, `work evidence`, and `done-check`.";
+}
+
 function renderOwners(
   paths: readonly string[],
   resources: readonly string[],
@@ -1803,7 +1950,14 @@ function renderOwners(
   ];
 
   if (pathMatches.length === 0 && resourceMatches.length === 0) {
-    lines.push("  none");
+    lines.push(
+      "  none",
+      "",
+      "Next:",
+      "  No active owner matched. Do not route to broad actors or infer ownership from file mtimes.",
+      "  If you know the exact actor, send `agentq question --to <actor-id>` for required decisions or `agentq note --to <actor-id>` for non-blocking context.",
+      "  If no actor is knowable, record the evidence in the project handoff surface such as the relevant work queue or problem stack."
+    );
     return `${lines.join("\n")}\n`;
   }
 
@@ -1819,7 +1973,8 @@ function renderOwners(
     "",
     "Use a required question when this may affect the owner:",
     "  Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.",
-    `  agentq question --actor <your-actor-id> --to ${targetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
+    `  agentq question --actor <your-actor-id> --to ${targetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`,
+    "  Use `agentq note ...` instead when this is review/context and your completion should not wait for a reply."
   );
   return `${lines.join("\n")}\n`;
 }
@@ -2076,7 +2231,9 @@ function renderWorkState(label: string, work: WorkState): string {
     `  evidence: ${work.evidence.length}`
   ];
   if (work.status === "open" && work.evidence.length === 0) {
-    lines.push("  next: record observable evidence before close/done-check");
+    lines.push("  next: record observable evidence before close/done-check: agentq work evidence --actor <id> --evidence \"<test/build/diff/review evidence>\"");
+  } else if (work.status === "open") {
+    lines.push("  next: add missing final evidence or close with summary when the frame is actually done");
   }
   if (work.parentWorkId !== null) {
     lines.push(`  parent: ${work.parentWorkId}`);

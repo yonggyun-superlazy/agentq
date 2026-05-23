@@ -15,6 +15,7 @@ Every agent surface should pass these scenarios:
 | Advisory review/context | Send `agentq note`; do not use it for decisions that must block completion. |
 | Receives inbox | Run `agentq inbox --actor <self>` and answer with `agentq respond ... --evidence`. |
 | Finishing | Close active work and run `agentq done-check --actor <self>`. |
+| Sent question resolved | Read the resolved outbound evidence printed by successful `done-check`; do not look for a separate outbox command. |
 | Done-check fails | Resolve the queue/work failure before claiming done. |
 | Broad scope appears | Run `agentq enter --actor <self> --paths <owned-path> --responsibility "<owned contract>"`. |
 | Diagnostics are confusing | Use `agentq status`, `agentq diag`, or `agentq diag activity`; do not guess current identity. |
