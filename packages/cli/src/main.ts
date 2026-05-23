@@ -55,7 +55,6 @@ import {
   type DiagnosticEvent,
   type FoldedMessageState,
   type FoldedRequest,
-  type AgentQEvent,
   type Message,
   type Presence,
   type ResponseStatus,
@@ -1376,11 +1375,15 @@ async function resolvedOutboundItems(
     .filter((state) => state.message.createdBy === actorId)
     .flatMap((state) =>
       state.requests.flatMap((request): ResolvedOutboundItem[] => {
-        if (request.status === "pending" || request.terminalEvent === null) {
+        if (
+          request.status === "pending" ||
+          request.terminalEvent === null ||
+          request.terminalEvent.kind !== "response"
+        ) {
           return [];
         }
 
-        const evidence = eventEvidence(request.terminalEvent);
+        const evidence = request.terminalEvent.evidence;
         if (evidence.length === 0) {
           return [];
         }
@@ -1391,30 +1394,12 @@ async function resolvedOutboundItems(
           status: request.status,
           summary: state.message.summary,
           evidence,
-          at: eventTimestamp(request.terminalEvent)
+          at: request.terminalEvent.at
         }];
       })
     )
     .sort((left, right) => right.at.localeCompare(left.at))
     .slice(0, 5);
-}
-
-function eventEvidence(event: AgentQEvent): readonly string[] {
-  if (
-    event.kind === "response" ||
-    event.kind === "supersede" ||
-    event.kind === "follow_up" ||
-    event.kind === "accept_blocked" ||
-    event.kind === "delivery_attempt"
-  ) {
-    return event.evidence;
-  }
-
-  return [];
-}
-
-function eventTimestamp(event: AgentQEvent): string {
-  return "at" in event && typeof event.at === "string" ? event.at : "";
 }
 
 function renderDoneCheckOk(actorId: string, resolvedOutbound: readonly ResolvedOutboundItem[]): string {
