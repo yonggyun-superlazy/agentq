@@ -247,8 +247,10 @@ export function renderCommandHelp(command: CommandSpec): string {
       "",
       "Usage:",
       "  agentq diag [--limit <count>]",
+      "  agentq diag activity [--window <duration>] [--limit <count>]",
       "",
-      "Shows bounded OS-local hook diagnostics such as inferred paths/resources, ignored AgentQ meta commands, and nudge decisions."
+      "Shows bounded OS-local hook diagnostics such as inferred paths/resources, ignored AgentQ meta commands, and nudge decisions.",
+      "Activity groups recent diagnostics by actor so stale-window policy can be based on observed hook gaps."
     ].join("\n");
   }
 
@@ -789,6 +791,10 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 }
 
 async function diagCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  if (argv[0] === "activity") {
+    return await diagActivityCommand(argv.slice(1), runtime);
+  }
+
   const args = parseArgs(argv);
   const limit = Number(optionValue(args, "limit") ?? "20");
   if (!Number.isInteger(limit) || limit < 1) {
@@ -800,6 +806,40 @@ async function diagCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   return {
     code: 0,
     stdout: renderDiagnosticEvents(events),
+    stderr: ""
+  };
+}
+
+async function diagActivityCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
+  const args = parseArgs(argv);
+  const windowMs = parseDurationOption(optionValue(args, "window") ?? "24h", "diag activity --window");
+  const limit = Number(optionValue(args, "limit") ?? "20");
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error("diag activity --limit must be a positive integer.");
+  }
+
+  const store = await openStore(runtime);
+  const nowMs = Date.parse(runtime.now());
+  const ringEvents = await readDiagnosticEvents(store, 10_000);
+  const windowEvents = ringEvents.filter((event) => {
+    const atMs = Date.parse(event.at);
+    return event.actorId !== undefined &&
+      Number.isFinite(atMs) &&
+      Number.isFinite(nowMs) &&
+      nowMs - atMs >= 0 &&
+      nowMs - atMs <= windowMs;
+  });
+  const actors = await listActorPresences(store);
+  const rows = await buildDiagnosticActivityRows(store, actors, windowEvents, nowMs, windowMs);
+
+  return {
+    code: 0,
+    stdout: renderDiagnosticActivity(rows.slice(0, limit), {
+      windowMs,
+      eventCount: windowEvents.length,
+      rowCount: rows.length,
+      limit
+    }),
     stderr: ""
   };
 }
@@ -1372,6 +1412,29 @@ interface RecentMessageSummary {
   readonly updatedAtMs: number;
 }
 
+interface DiagnosticActivityRow {
+  readonly actorId: string;
+  readonly eventCount: number;
+  readonly firstEventAt: string | null;
+  readonly lastEventAt: string | null;
+  readonly lastEventAgeMs: number | null;
+  readonly maxGapMs: number | null;
+  readonly p95GapMs: number | null;
+  readonly avgGapMs: number | null;
+  readonly lastSeenAgeMs: number | null;
+  readonly pendingInboxCount: number;
+  readonly hasOpenWork: boolean;
+  readonly resources: readonly string[];
+  readonly summary: string | null;
+}
+
+interface DiagnosticActivityRenderInput {
+  readonly windowMs: number;
+  readonly eventCount: number;
+  readonly rowCount: number;
+  readonly limit: number;
+}
+
 function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
   const lastSeenMs = Date.parse(actor.lastSeen);
   const ageMs = Number.isFinite(nowMs) && Number.isFinite(lastSeenMs)
@@ -1506,6 +1569,80 @@ async function listRecentMessageSummaries(
   return summaries.sort((left, right) => right.updatedAtMs - left.updatedAtMs || left.id.localeCompare(right.id));
 }
 
+async function buildDiagnosticActivityRows(
+  store: Awaited<ReturnType<typeof openStore>>,
+  actors: readonly Presence[],
+  events: readonly DiagnosticEvent[],
+  nowMs: number,
+  windowMs: number
+): Promise<DiagnosticActivityRow[]> {
+  const presenceByActor = new Map(actors.map((actor) => [actor.actorId, actor]));
+  const eventsByActor = new Map<string, DiagnosticEvent[]>();
+  for (const event of events) {
+    if (event.actorId === undefined) {
+      continue;
+    }
+
+    const existing = eventsByActor.get(event.actorId) ?? [];
+    eventsByActor.set(event.actorId, [...existing, event]);
+  }
+
+  const actorIds = new Set(eventsByActor.keys());
+  for (const actor of actors) {
+    const lastSeenMs = Date.parse(actor.lastSeen);
+    if (Number.isFinite(lastSeenMs) && nowMs - lastSeenMs >= 0 && nowMs - lastSeenMs <= windowMs) {
+      actorIds.add(actor.actorId);
+    }
+  }
+
+  const rows = await Promise.all(
+    [...actorIds].map(async (actorId): Promise<DiagnosticActivityRow> => {
+      const actor = presenceByActor.get(actorId);
+      const actorEvents = [...(eventsByActor.get(actorId) ?? [])].sort((left, right) =>
+        left.at.localeCompare(right.at)
+      );
+      const eventTimes = actorEvents
+        .map((event) => Date.parse(event.at))
+        .filter((value) => Number.isFinite(value));
+      const gaps = eventTimes.slice(1).map((time, index) => time - (eventTimes[index] ?? time));
+      const [pendingInbox, activeWork] = actor === undefined
+        ? [[], null] as const
+        : await Promise.all([
+          listPendingInboxItems(store, actor.actorId),
+          readActiveWorkState(store, actor.actorId)
+        ]);
+      const lastEventMs = eventTimes[eventTimes.length - 1];
+      const lastSeenMs = actor === undefined ? Number.NaN : Date.parse(actor.lastSeen);
+
+      return {
+        actorId,
+        eventCount: actorEvents.length,
+        firstEventAt: actorEvents[0]?.at ?? null,
+        lastEventAt: actorEvents[actorEvents.length - 1]?.at ?? null,
+        lastEventAgeMs: lastEventMs === undefined ? null : Math.max(0, nowMs - lastEventMs),
+        maxGapMs: gaps.length === 0 ? null : Math.max(...gaps),
+        p95GapMs: percentile(gaps, 0.95),
+        avgGapMs: gaps.length === 0
+          ? null
+          : gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length,
+        lastSeenAgeMs: actor === undefined || !Number.isFinite(lastSeenMs)
+          ? null
+          : Math.max(0, nowMs - lastSeenMs),
+        pendingInboxCount: pendingInbox.length,
+        hasOpenWork: activeWork !== null,
+        resources: actor?.activeResources ?? [],
+        summary: actor?.summary ?? null
+      };
+    })
+  );
+
+  return rows.sort((left, right) =>
+    right.eventCount - left.eventCount ||
+    nullableNumber(left.lastEventAgeMs) - nullableNumber(right.lastEventAgeMs) ||
+    left.actorId.localeCompare(right.actorId)
+  );
+}
+
 function statusRecommendations(input: {
   readonly routeableActiveCount: number;
   readonly weakActiveCount: number;
@@ -1605,6 +1742,44 @@ function renderDiagnosticEvents(events: readonly DiagnosticEvent[]): string {
   return `${lines.join("\n")}\n`;
 }
 
+function renderDiagnosticActivity(
+  rows: readonly DiagnosticActivityRow[],
+  input: DiagnosticActivityRenderInput
+): string {
+  const lines = [
+    "AgentQ diagnostic activity",
+    `Window: ${formatDuration(input.windowMs)}`,
+    `Hook events in window: ${input.eventCount}`,
+    `Actors shown: ${rows.length}/${input.rowCount}${input.rowCount > input.limit ? ` (limit ${input.limit})` : ""}`,
+    "",
+    "Actors:"
+  ];
+  if (rows.length === 0) {
+    lines.push("  none");
+    return `${lines.join("\n")}\n`;
+  }
+
+  for (const row of rows) {
+    lines.push(
+      [
+        `  ${row.actorId}`,
+        `events:${row.eventCount}`,
+        `lastEvent:${formatNullableDuration(row.lastEventAgeMs)}`,
+        `maxGap:${formatNullableDuration(row.maxGapMs)}`,
+        `p95Gap:${formatNullableDuration(row.p95GapMs)}`,
+        `avgGap:${formatNullableDuration(row.avgGapMs)}`,
+        `lastSeen:${formatNullableDuration(row.lastSeenAgeMs)}`,
+        `inbox:${row.pendingInboxCount}`,
+        `work:${row.hasOpenWork ? "open" : "none"}`,
+        `resources:${formatList(row.resources)}`,
+        row.summary === null ? undefined : `summary:${row.summary}`
+      ].filter((part): part is string => part !== undefined).join(" | ")
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
 function renderStatusActorLine(detail: WorkspaceStatusActor): string {
   const actor = detail.summary.actor;
   return [
@@ -1676,7 +1851,52 @@ function formatList(values: readonly string[]): string {
   return values.length === 0 ? "(none)" : values.join(", ");
 }
 
+function parseDurationOption(value: string, label: string): number {
+  const match = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/i.exec(value.trim());
+  if (match === null) {
+    throw new Error(`${label} must be a duration such as 30m, 1h, or 24h.`);
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2]?.toLowerCase();
+  const multiplier =
+    unit === "ms" ? 1 :
+    unit === "s" ? 1_000 :
+    unit === "m" ? 60_000 :
+    unit === "h" ? 3_600_000 :
+    unit === "d" ? 86_400_000 :
+    Number.NaN;
+  const ms = amount * multiplier;
+  if (!Number.isFinite(ms) || ms <= 0) {
+    throw new Error(`${label} must be a positive duration.`);
+  }
+
+  return ms;
+}
+
+function percentile(values: readonly number[], ratio: number): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
+  return sorted[index] ?? null;
+}
+
+function nullableNumber(value: number | null): number {
+  return value ?? Number.MAX_SAFE_INTEGER;
+}
+
+function formatNullableDuration(ms: number | null): string {
+  return ms === null ? "n/a" : formatDuration(ms);
+}
+
 function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+
   const seconds = Math.floor(ms / 1000);
   if (seconds < 60) {
     return `${seconds}s`;

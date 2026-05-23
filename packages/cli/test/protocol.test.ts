@@ -186,6 +186,47 @@ describe("CLI required-response protocol", () => {
     });
   });
 
+  it("prints actor activity from diagnostic hook gaps", async () => {
+    const workspace = await createWorkspace("agentq-cli-diag-activity-");
+    const runtime = createRuntime(workspace, "2026-05-18T00:10:00.000Z");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await ensureWorkspaceStore(store);
+    const actorId = await enter(runtime, "codex", "activity");
+
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:00:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "Bash"
+    });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:01:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "Bash"
+    });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:05:00.000Z",
+      actorId,
+      event: "stop"
+    });
+
+    await expect(runCommand(["diag", "activity", "--window", "1h"], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("AgentQ diagnostic activity")
+    });
+    const result = await runCommand(["diag", "activity", "--window", "1h"], runtime);
+    expect(result.stdout).toContain(actorId);
+    expect(result.stdout).toContain("events:3");
+    expect(result.stdout).toContain("lastEvent:5m");
+    expect(result.stdout).toContain("maxGap:4m");
+    expect(result.stdout).toContain("p95Gap:4m");
+    expect(result.stdout).toContain("avgGap:2m");
+  });
+
   it.each(["typo", "superseded"])(
     "rejects invalid terminal response status %s before it is written",
     async (status) => {
@@ -314,11 +355,11 @@ async function createWorkspace(prefix: string): Promise<string> {
   return await mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
-function createRuntime(workspace: string): TestRuntime {
+function createRuntime(workspace: string, now = "2026-05-18T00:00:00.000Z"): TestRuntime {
   return {
     cwd: workspace,
     env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
-    now: () => "2026-05-18T00:00:00.000Z"
+    now: () => now
   };
 }
 
