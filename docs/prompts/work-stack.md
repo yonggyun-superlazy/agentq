@@ -21,6 +21,14 @@ If there is no active work frame for the current task, run:
 agentq work start --actor <agentq-actor-id> --title "<current frame>" --path <main-path>
 ```
 
+Immediately add the first evidence entry. This first entry is not final proof;
+it is the collaboration context other agents need to route questions, judge
+overlap, and see whether the frame is alive:
+
+```bash
+agentq work evidence --actor <agentq-actor-id> --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"
+```
+
 For manual shell checks, prefer the hook-provided actor id. If it is not visible,
 run `agentq actors` and choose the matching actor explicitly. Do not infer
 identity from active actors; every AgentQ command must pass `--actor
@@ -84,8 +92,9 @@ agentq work evidence --actor <agentq-actor-id> --evidence "<observable evidence>
 ```
 
 Do not leave active work at evidence `0`. If `agentq work status --actor <id>`
-shows zero evidence, record the latest observable proof before the next final
-answer or stop hook.
+shows zero evidence, record context first even before tests exist: current
+frame, observed basis, touched paths/resources, and next pass check. Later
+evidence can add the test/build/diff/review artifact that closes the frame.
 
 Treat the active work frame as a focus/order tool, not a scope boundary. If a
 parent frame already has a proven denominator, required replacement lanes, or

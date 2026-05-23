@@ -86,7 +86,7 @@ describe("AgentQ marker installer", () => {
 
   it("keeps the generated instruction block under the install trust budget", () => {
     for (const target of DEFAULT_MARKER_TARGETS) {
-      const budget = target.relativePath === ".github/instructions/agentq.instructions.md" ? 1200 : 400;
+      const budget = target.relativePath === ".github/instructions/agentq.instructions.md" ? 1300 : 520;
       expect(Buffer.byteLength(renderMarkerBlock(target), "utf8")).toBeLessThan(budget);
     }
   });
@@ -98,7 +98,7 @@ describe("AgentQ marker installer", () => {
 
     expect(agentsBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
-    expect(agentsBlock).toContain("Before done: record `work evidence`");
+    expect(agentsBlock).toContain("After `work start`, record context evidence");
     expect(claudeBlock).toContain("enter --actor <id> --paths <path>");
     expect(agentsBlock).toContain("routes, not locks");
     expect(claudeBlock).toContain("routes, not locks");
@@ -106,6 +106,7 @@ describe("AgentQ marker installer", () => {
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
     expect(scopedBlock).toContain("agentq work start/status/evidence/close");
+    expect(scopedBlock).toContain("immediately record context evidence after start");
     expect(scopedBlock).toContain("create `agentq block`");
     expect(Buffer.byteLength(agentsBlock, "utf8")).toBeLessThan(
       Buffer.byteLength(scopedBlock, "utf8")

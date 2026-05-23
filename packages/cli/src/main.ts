@@ -1887,7 +1887,7 @@ function statusRecommendations(input: {
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
-    lines.push("Open work without evidence remains; record observable evidence before it reaches the stop gate.");
+    lines.push("Open work without context evidence remains; record the current frame, observed basis, touched paths/resources, and next pass check before it reaches the stop gate.");
   }
 
   return lines;
@@ -1910,7 +1910,7 @@ function statusNextAction(input: {
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
-    return "Record observable evidence on open work before any final answer: `agentq work evidence --actor <id> --evidence \"...\"`.";
+    return "Record collaboration context on open work before any final answer: `agentq work evidence --actor <id> --evidence \"Context: current frame; observed basis; touched paths/resources; next pass check\"`.";
   }
 
   if (input.staleOpenWorkCount > 0) {
@@ -2216,7 +2216,7 @@ function renderWorkState(label: string, work: WorkState): string {
     `  evidence: ${work.evidence.length}`
   ];
   if (work.status === "open" && work.evidence.length === 0) {
-    lines.push("  next: record observable evidence before close/done-check: agentq work evidence --actor <id> --evidence \"<test/build/diff/review evidence>\"");
+    lines.push(`  next: record collaboration context now: agentq work evidence --actor ${work.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`);
   } else if (work.status === "open") {
     lines.push("  next: add missing final evidence or close with summary when the frame is actually done");
   }

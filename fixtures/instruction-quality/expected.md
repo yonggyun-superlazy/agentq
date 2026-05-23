@@ -23,7 +23,15 @@ started: AW-instruction-quality
   title: Modify protocol consumer safely
   touched: src/consumer.ts
   evidence: 0
-  next: record observable evidence before close/done-check: agentq work evidence --actor <id> --evidence "<test/build/diff/review evidence>"
+  next: record collaboration context now: agentq work evidence --actor <target> --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"
+$ agentq work evidence --actor <target> --evidence Context: current frame is protocol consumer update; observed owner on src/protocol.ts; touched path src/consumer.ts; next pass check is owner answer on fields to preserve.
+evidence: AW-instruction-quality
+  actor: <target>
+  status: open
+  title: Modify protocol consumer safely
+  touched: src/consumer.ts
+  evidence: 1
+  next: add missing final evidence or close with summary when the frame is actually done
 $ agentq owners --actor <target> --path src/protocol.ts
 owners for src/protocol.ts:
   <owner> | owns: src/protocol.ts | matched: src/protocol.ts | responsibilities: protocol schema
@@ -65,7 +73,7 @@ evidence: AW-instruction-quality
   status: open
   title: Modify protocol consumer safely
   touched: src/consumer.ts
-  evidence: 1
+  evidence: 2
   next: add missing final evidence or close with summary when the frame is actually done
 $ agentq work close --actor <target> --summary Protocol consumer update is unblocked by owner evidence.
 closed: AW-instruction-quality
@@ -73,7 +81,7 @@ closed: AW-instruction-quality
   status: closed
   title: Modify protocol consumer safely
   touched: src/consumer.ts
-  evidence: 1
+  evidence: 2
   summary: Protocol consumer update is unblocked by owner evidence.
 $ agentq done-check --actor <target>
 ok: no required replies or active work remain open

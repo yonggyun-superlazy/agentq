@@ -18,6 +18,8 @@ When multiple agents edit the same repo, one stale write or unasked ownership qu
 
 AgentQ keeps the agent-facing surface small: commands that agents already run print the next command to run. `owners` explains whether to ask a required question or send a non-blocking note, `inbox` prints the response command, `work status` prints the evidence/close step, `status` picks the highest-priority cleanup, and successful `done-check` shows recently answered outbound evidence so the sender does not need a separate outbox command.
 
+Active work evidence is collaboration context, not only final proof. After `agentq work start`, the first `work evidence` entry should say what frame is active, what was observed, which paths/resources are involved, and what check will prove the frame. That gives other agents enough context to route questions and classify overlap before the final test/build evidence exists.
+
 ## Before And After
 
 Without AgentQ, two agents can write from stale local context and silently lose each other's changes:
@@ -112,6 +114,7 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - Keep runtime queue state outside the repository in an OS-local workspace store.
 - Use `agentq status` for a one-screen health summary: doctor result, active/stale actors, pending inboxes, open work, and weak-scope counts.
 - Read the `Next:` line in `agentq status` before broad cleanup; it prioritizes pending inbox, weak scope, zero-evidence work, stale work, and missing owner checks.
+- After `agentq work start`, immediately record context evidence: current frame, observed basis, touched paths/resources, and next pass check. Do not leave active work at evidence `0` until the stop hook.
 - Use `agentq diag` for the OS-local hook diagnostic ring log when scope/resource inference looks noisy. The ring keeps up to 10,000 recent hook events. `agentq diag activity` groups recent hooks by actor and includes declared paths, resources, open-work title, and evidence count.
 - Use `agentq owners --path <path>` before editing shared surfaces and `agentq owners --resource <resource>` before touching soft-exclusive tools such as `setup-watcher:ProjectDD/DDSetup` or `unity:ProjectDD/DDUnity`. Owner presence is a routing signal, not a lock; ask the owner to classify overlap instead of waiting silently from scope alone. Pre-tool hooks also emit a non-blocking owner nudge when a mutating tool path or inferred resource overlaps another active actor.
 - After a required question is answered, rerun `agentq done-check --actor <id>`; it prints the resolved outbound evidence inline before reporting success.

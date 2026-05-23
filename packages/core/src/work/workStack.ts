@@ -197,7 +197,7 @@ export function planWorkStopContinuation(result: WorkCheckResult): string {
   }
 
   const evidenceInstruction = result.activeWork.evidence.length === 0
-    ? "This work currently has 0 evidence; record at least one observable test/build/diff/review artifact with `agentq work evidence --actor <agentq-actor-id> --evidence \"...\"`."
+    ? "This work currently has 0 evidence; record collaboration context now with `agentq work evidence --actor <agentq-actor-id> --evidence \"Context: current frame; observed basis; touched paths/resources; next pass check\"`."
     : "Record any missing final evidence with `agentq work evidence --actor <agentq-actor-id> --evidence \"...\"`.";
 
   return [

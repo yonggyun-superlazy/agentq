@@ -69,6 +69,14 @@ await runAndRecord([
   "src/consumer.ts"
 ]);
 await runAndRecord([
+  "work",
+  "evidence",
+  "--actor",
+  targetActor,
+  "--evidence",
+  "Context: current frame is protocol consumer update; observed owner on src/protocol.ts; touched path src/consumer.ts; next pass check is owner answer on fields to preserve."
+]);
+await runAndRecord([
   "owners",
   "--actor",
   targetActor,

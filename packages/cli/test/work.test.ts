@@ -49,7 +49,7 @@ describe("CLI work stack", () => {
     });
     await expect(runCommand(["work", "status", "--actor", actorId], runtime)).resolves.toMatchObject({
       code: 0,
-      stdout: expect.stringContaining("next: record observable evidence before close/done-check")
+      stdout: expect.stringContaining("next: record collaboration context now")
     });
 
     await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
@@ -703,6 +703,7 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
     expect(result.stdout).toContain("zero-evidence open work: 1");
+    expect(result.stdout).toContain("Open work without context evidence remains");
     expect(result.stdout).toContain("recent messages 24h: 1");
     expect(result.stdout).toContain("weak-scope actors: 0");
     expect(result.stdout).toContain("AW-status");
