@@ -24,7 +24,7 @@ describe("AgentQ domain schema", () => {
     expect(parsed.kind).toBe("blocker");
   });
 
-  it("rejects weak blockers without a path or contract", () => {
+  it("rejects weak blockers without a path, resource, or contract", () => {
     expect(() =>
       MessageSchema.parse({
         id: "AQ-1",
@@ -37,7 +37,7 @@ describe("AgentQ domain schema", () => {
         observed: "failure",
         brokenContract: "unknown"
       })
-    ).toThrow(/path or contract/);
+    ).toThrow(/path, resource, or contract/);
   });
 
   it("accepts a required question with expected-answer criteria", () => {

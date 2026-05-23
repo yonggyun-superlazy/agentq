@@ -61,6 +61,24 @@ describe("session-to-actor binding", () => {
     );
   });
 
+  it("records active resources on actor presence", async () => {
+    const store = await createStore("workspace");
+    const binding = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "session-resource",
+      cwd: store.workspaceRoot,
+      activePaths: ["ProjectDD"],
+      activeResources: ["setup-watcher:ProjectDD/DDSetup"],
+      responsibilities: ["DD setup watcher"],
+      summary: "DD setup watcher",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    await expect(readFile(store.layout.actorPresencePath(binding.actorId), "utf8")).resolves.toContain(
+      "setup-watcher:ProjectDD/DDSetup"
+    );
+  });
+
   it("rejects a hook cwd from another workspace", async () => {
     const store = await createStore("workspace-one");
     const otherWorkspace = path.join(path.dirname(store.workspaceRoot), "workspace-two");

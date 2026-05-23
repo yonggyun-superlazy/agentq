@@ -115,6 +115,54 @@ describe("CLI required-response protocol", () => {
     });
   });
 
+  it("routes resource questions to active resource owners", async () => {
+    const workspace = await createWorkspace("agentq-cli-resource-");
+    const runtime = createRuntime(workspace);
+    const sender = await enter(runtime, "codex", "sender");
+    const receiverResult = await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "setup-owner",
+      "--paths",
+      "ProjectDD",
+      "--resource",
+      "setup-watcher:ProjectDD/DDSetup",
+      "--responsibility",
+      "DD setup watcher"
+    ], runtime);
+    const receiver = receiverResult.stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "owners",
+      "--resource",
+      "setup-watcher:ProjectDD/DDSetup",
+      "--actor",
+      sender
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining(receiver)
+    });
+
+    await expect(runCommand([
+      "question",
+      "--id",
+      "AQ-resource-question",
+      "--actor",
+      sender,
+      "--resource",
+      "setup-watcher:ProjectDD/DDSetup",
+      "--question",
+      "Can DDSetup finish or confirm current watcher status?",
+      "--expect",
+      "Answer with current watcher state and evidence"
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining(`AQ-resource-question routed to ${receiver}`)
+    });
+  });
+
   it.each(["typo", "superseded"])(
     "rejects invalid terminal response status %s before it is written",
     async (status) => {

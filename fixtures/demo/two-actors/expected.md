@@ -22,6 +22,7 @@ AQ-0001
   from: <codex>
   summary: README promises config that protocol forbids
   paths: README.md
+  resources: (none)
   contracts: (none)
   observed: README promises config that protocol forbids
   broken: required handoff must be answered

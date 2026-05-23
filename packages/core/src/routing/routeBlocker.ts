@@ -45,6 +45,19 @@ export interface ActivePathOwnerMatch {
   readonly queriedPath: string;
 }
 
+export interface ActiveResourceOwnerQuery {
+  readonly actorId?: string;
+  readonly resources: readonly string[];
+  readonly now: string;
+  readonly staleAfterMs: number;
+}
+
+export interface ActiveResourceOwnerMatch {
+  readonly actor: Presence;
+  readonly activeResource: string;
+  readonly queriedResource: string;
+}
+
 export type RequiredRequestRouteInput = BlockerRouteInput;
 export type RequiredRequestRoutePlan = BlockerRoutePlan;
 
@@ -74,6 +87,7 @@ export async function planRequiredRequestRoutes(
   if (explicitTo.length === 0) {
     addContractRoutes(routeMap, activePresences, input.message.contracts);
     addPathRoutes(routeMap, activePresences, input.message.paths);
+    addResourceRoutes(routeMap, activePresences, input.message.resources ?? []);
     addKnownActorRoutes(routeMap, activePresences, input.threadActorIds ?? [], "thread");
     addKnownActorRoutes(routeMap, activePresences, input.recentActorIds ?? [], "recent");
     removeImplicitSelfRoute(routeMap, input.message.createdBy);
@@ -91,6 +105,39 @@ export async function planRequiredRequestRoutes(
     message: input.message,
     recipients
   };
+}
+
+export async function findActiveResourceOwners(
+  store: WorkspaceStore,
+  input: ActiveResourceOwnerQuery
+): Promise<ActiveResourceOwnerMatch[]> {
+  if (input.resources.length === 0) {
+    return [];
+  }
+
+  const queriedResources = input.resources.map(normalizeResource).filter((candidate) => candidate.length > 0);
+  const activePresences = await readActivePresences(store, input.now, input.staleAfterMs);
+  const matches: ActiveResourceOwnerMatch[] = [];
+
+  for (const actor of activePresences) {
+    if (actor.actorId === input.actorId) {
+      continue;
+    }
+
+    for (const activeResource of actor.activeResources ?? []) {
+      for (const queriedResource of queriedResources) {
+        if (normalizeResource(activeResource) === queriedResource) {
+          matches.push({ actor, activeResource, queriedResource });
+        }
+      }
+    }
+  }
+
+  return uniqueResourceOwnerMatches(matches).sort((left, right) =>
+    left.actor.actorId.localeCompare(right.actor.actorId) ||
+    left.activeResource.localeCompare(right.activeResource) ||
+    left.queriedResource.localeCompare(right.queriedResource)
+  );
 }
 
 export async function findActivePathOwners(
@@ -271,6 +318,28 @@ function addPathRoutes(
   }
 }
 
+function addResourceRoutes(
+  routeMap: Map<string, RoutingEvidence[]>,
+  presences: readonly Presence[],
+  messageResources: readonly string[]
+): void {
+  const normalizedResources = new Set(messageResources.map(normalizeResource).filter((resource) => resource.length > 0));
+  if (normalizedResources.size === 0) {
+    return;
+  }
+
+  for (const presence of presences) {
+    for (const activeResource of presence.activeResources ?? []) {
+      if (normalizedResources.has(normalizeResource(activeResource))) {
+        addEvidence(routeMap, presence.actorId, {
+          kind: "resource",
+          detail: activeResource
+        });
+      }
+    }
+  }
+}
+
 function addKnownActorRoutes(
   routeMap: Map<string, RoutingEvidence[]>,
   presences: readonly Presence[],
@@ -307,6 +376,10 @@ function removeImplicitSelfRoute(
 
 function normalize(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeResource(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
 function pathPatternOverlaps(activePattern: string, messagePath: string): boolean {
@@ -348,6 +421,22 @@ function uniqueOwnerMatches(matches: readonly ActivePathOwnerMatch[]): ActivePat
 
   for (const match of matches) {
     const key = `${match.actor.actorId}\n${match.activePath}\n${match.queriedPath}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    unique.push(match);
+  }
+
+  return unique;
+}
+
+function uniqueResourceOwnerMatches(matches: readonly ActiveResourceOwnerMatch[]): ActiveResourceOwnerMatch[] {
+  const seen = new Set<string>();
+  const unique: ActiveResourceOwnerMatch[] = [];
+  for (const match of matches) {
+    const key = `${match.actor.actorId}\0${match.activeResource}\0${match.queriedResource}`;
     if (seen.has(key)) {
       continue;
     }

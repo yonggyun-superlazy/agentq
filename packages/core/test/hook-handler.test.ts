@@ -362,6 +362,49 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain("agentq question --actor");
   });
 
+  it("adds a non-blocking owner nudge on exclusive resource overlap", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-resource-nudge-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "ProjectDD"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    const owner = await createOrRefreshSessionBinding(store, {
+      adapter: "claude-code",
+      sessionId: "owner",
+      cwd: workspace,
+      activePaths: ["ProjectDD"],
+      activeResources: ["setup-watcher:ProjectDD/DDSetup"],
+      responsibilities: ["DD setup watcher"],
+      summary: "DD setup watcher",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-resource",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: ".\\ProjectDD\\DDSetup.bat"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      readonly hookSpecificOutput?: { readonly additionalContext?: string };
+    };
+    expect(output.hookSpecificOutput?.additionalContext).toContain(owner.actorId);
+    expect(output.hookSpecificOutput?.additionalContext).toContain("uses setup-watcher:ProjectDD/DDSetup");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("--resource setup-watcher:projectdd/ddsetup");
+  });
+
   it("does not nudge on read-only pre-tool overlap", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-owner-read-"));
     const workspace = path.join(tempRoot, "workspace");

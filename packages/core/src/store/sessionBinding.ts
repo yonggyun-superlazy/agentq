@@ -31,6 +31,7 @@ export interface SessionBindingInput {
   readonly handle?: string;
   readonly activePaths: readonly string[];
   readonly observedPaths?: readonly string[];
+  readonly activeResources?: readonly string[];
   readonly responsibilities: readonly string[];
   readonly summary: string;
   readonly now: string;
@@ -47,10 +48,12 @@ export interface ActorPresenceRefreshInput {
   readonly cwd: string;
   readonly activePaths: readonly string[];
   readonly observedPaths?: readonly string[];
+  readonly activeResources?: readonly string[];
   readonly responsibilities: readonly string[];
   readonly summary?: string;
   readonly mergeActivePaths?: boolean;
   readonly mergeObservedPaths?: boolean;
+  readonly mergeActiveResources?: boolean;
   readonly now: string;
 }
 
@@ -80,6 +83,7 @@ export async function createOrRefreshSessionBinding(
     workspaceRoot: store.workspaceRoot,
     activePaths: [...input.activePaths],
     ...(input.observedPaths === undefined ? {} : { observedPaths: [...input.observedPaths] }),
+    ...(input.activeResources === undefined ? {} : { activeResources: [...input.activeResources] }),
     responsibilities: [...input.responsibilities],
     summary: input.summary,
     lastSeen: input.now
@@ -176,6 +180,7 @@ export async function refreshActorPresence(
     ...existing,
     activePaths: refreshedActivePaths(existing.activePaths, input.activePaths, input.mergeActivePaths === true),
     ...refreshedObservedPaths(existing.observedPaths, input.observedPaths, input.mergeObservedPaths === true),
+    ...refreshedOptionalList(existing.activeResources, input.activeResources, input.mergeActiveResources === true, "activeResources"),
     responsibilities: input.responsibilities.length > 0
       ? [...input.responsibilities]
       : existing.responsibilities,
@@ -218,6 +223,25 @@ function refreshedObservedPaths(
   }
 
   return { observedPaths: [...new Set([...(existingPaths ?? []), ...inputPaths])].slice(0, 8) };
+}
+
+function refreshedOptionalList<Key extends string>(
+  existingValues: readonly string[] | undefined,
+  inputValues: readonly string[] | undefined,
+  mergeValues: boolean,
+  key: Key
+): { readonly [K in Key]?: string[] } {
+  if (inputValues === undefined || inputValues.length === 0) {
+    return existingValues === undefined ? {} : { [key]: [...existingValues] } as { readonly [K in Key]?: string[] };
+  }
+
+  if (!mergeValues) {
+    return { [key]: [...inputValues] } as { readonly [K in Key]?: string[] };
+  }
+
+  return { [key]: [...new Set([...(existingValues ?? []), ...inputValues])].slice(0, 8) } as {
+    readonly [K in Key]?: string[];
+  };
 }
 
 export function createAdapterSessionKey(adapter: AgentKind, sessionId: string): string {

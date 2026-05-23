@@ -8,7 +8,12 @@ import {
 import { ensureWorkspaceStore, resolveWorkspaceStore, type WorkspaceStore } from "../store/workspaceStore.js";
 import { planStopContinuation, runDoneCheck } from "../state/doneCheck.js";
 import { planScopeContinuation, runScopeCheck } from "../state/scopeCheck.js";
-import { findActivePathOwners, type ActivePathOwnerMatch } from "../routing/routeBlocker.js";
+import {
+  findActivePathOwners,
+  findActiveResourceOwners,
+  type ActivePathOwnerMatch,
+  type ActiveResourceOwnerMatch
+} from "../routing/routeBlocker.js";
 import type { AgentKind } from "../domain/types.js";
 import {
   appendActiveWorkTouch,
@@ -62,6 +67,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
 
   if (options.event === "pre-tool") {
     const hookPaths = extractActivePaths(payload, cwd);
+    const hookResources = extractActiveResources(payload, cwd);
     const mutatingTool = shouldNudgeForTool(payload);
     const adapter = adapterKind(options.adapter);
     const actorId = await resolveOrCreateHookActorId(store, {
@@ -71,6 +77,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     }, {
       activePaths: mutatingTool ? hookPaths : ["."],
       observedPaths: mutatingTool ? [] : hookPaths.filter(isSpecificPath),
+      activeResources: mutatingTool ? hookResources : [],
       responsibilities: [mutatingTool ? `${options.adapter} active tool scope` : `${options.adapter} read scope`],
       summary: mutatingTool ? `${options.adapter} pre-tool scope` : `${options.adapter} read scope`,
       now: options.now
@@ -82,13 +89,14 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       cwd,
       actorId,
       hookPaths,
+      hookResources,
       mutatingTool,
       fallbackResponsibilities: [`${options.adapter} active tool scope`],
       fallbackSummary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
     const ownerNudge = mutatingTool
-      ? await buildRelatedOwnerNudge(store, actorId, hookPaths, options.now)
+      ? await buildRelatedOwnerNudge(store, actorId, hookPaths, hookResources, options.now)
       : null;
 
     return {
@@ -106,11 +114,13 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   }, {
     activePaths: extractActivePaths(payload, cwd),
     observedPaths: [],
+    activeResources: extractActiveResources(payload, cwd),
     responsibilities: [`${options.adapter} stop gate`],
     summary: `${options.adapter} stop gate`,
     now: options.now
   });
   const stopPaths = extractActivePaths(payload, cwd);
+  const stopResources = extractActiveResources(payload, cwd);
   await appendSpecificActiveWorkTouch(store, actorId, stopPaths, options.now);
   await refreshHookPresence(store, {
     adapter,
@@ -118,6 +128,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     cwd,
     actorId,
     hookPaths: stopPaths,
+    hookResources: stopResources,
     mutatingTool: true,
     fallbackResponsibilities: [`${options.adapter} stop gate`],
     fallbackSummary: `${options.adapter} stop gate`,
@@ -185,6 +196,7 @@ async function refreshHookPresence(
     readonly cwd: string;
     readonly actorId: string;
     readonly hookPaths: readonly string[];
+    readonly hookResources: readonly string[];
     readonly mutatingTool: boolean;
     readonly fallbackResponsibilities: readonly string[];
     readonly fallbackSummary: string;
@@ -192,7 +204,7 @@ async function refreshHookPresence(
   }
 ): Promise<void> {
   const activeWork = await readActiveWorkState(store, input.actorId);
-  if (activeWork === null && !input.hookPaths.some(isSpecificPath)) {
+  if (activeWork === null && !input.hookPaths.some(isSpecificPath) && input.hookResources.length === 0) {
     return;
   }
 
@@ -204,6 +216,7 @@ async function refreshHookPresence(
         cwd: input.cwd,
         activePaths: [],
         observedPaths: activePaths.filter(isSpecificPath),
+        activeResources: [],
         responsibilities: [],
         mergeObservedPaths: true,
         now: input.now
@@ -215,20 +228,23 @@ async function refreshHookPresence(
       actorId: input.actorId,
       cwd: input.cwd,
       activePaths,
+      activeResources: input.hookResources,
       responsibilities: [],
       mergeActivePaths: true,
+      mergeActiveResources: true,
       now: input.now
     });
     return;
   }
 
-  await createOrRefreshSessionBinding(store, {
-    adapter: input.adapter,
-    sessionId: input.sessionId,
+  await refreshActorPresence(store, {
+    actorId: input.actorId,
     cwd: input.cwd,
     activePaths,
+    activeResources: input.hookResources,
     responsibilities: [activeWork.title],
     summary: activeWork.title,
+    mergeActiveResources: true,
     now: input.now
   });
 }
@@ -260,6 +276,7 @@ async function resolveOrCreateHookActorId(
   bootstrap: {
     readonly activePaths: readonly string[];
     readonly observedPaths: readonly string[];
+    readonly activeResources: readonly string[];
     readonly responsibilities: readonly string[];
     readonly summary: string;
     readonly now: string;
@@ -278,6 +295,7 @@ async function resolveOrCreateHookActorId(
       cwd: lookup.cwd,
       activePaths: bootstrap.activePaths,
       observedPaths: bootstrap.observedPaths,
+      activeResources: bootstrap.activeResources,
       responsibilities: bootstrap.responsibilities,
       summary: bootstrap.summary,
       now: bootstrap.now
@@ -385,38 +403,58 @@ function booleanField(payload: PayloadObject, key: string): boolean {
 
 function shouldNudgeForTool(payload: PayloadObject): boolean {
   const toolName = stringFieldOptional(payload, "tool_name") ?? stringFieldOptional(payload, "toolName") ?? "";
-  return /(write|edit|apply|patch|shell|command|delete|move|rename)/i.test(toolName);
+  return /(bash|write|edit|apply|patch|shell|command|delete|move|rename)/i.test(toolName);
 }
 
 async function buildRelatedOwnerNudge(
   store: WorkspaceStore,
   actorId: string,
   paths: readonly string[],
+  resources: readonly string[],
   now: string
 ): Promise<string | null> {
-  const matches = await findActivePathOwners(store, {
+  const pathMatches = await findActivePathOwners(store, {
     actorId,
     paths,
     now,
     staleAfterMs: 3_600_000
   });
-  if (matches.length === 0) {
+  const resourceMatches = await findActiveResourceOwners(store, {
+    actorId,
+    resources,
+    now,
+    staleAfterMs: 3_600_000
+  });
+  if (pathMatches.length === 0 && resourceMatches.length === 0) {
     return null;
   }
 
-  return renderRelatedOwnerNudge(actorId, matches.slice(0, 3));
+  return renderRelatedOwnerNudge(actorId, pathMatches.slice(0, 3), resourceMatches.slice(0, 3));
 }
 
-function renderRelatedOwnerNudge(actorId: string, matches: readonly ActivePathOwnerMatch[]): string {
-  const firstPath = matches[0]?.queriedPath ?? "<path>";
+function renderRelatedOwnerNudge(
+  actorId: string,
+  pathMatches: readonly ActivePathOwnerMatch[],
+  resourceMatches: readonly ActiveResourceOwnerMatch[]
+): string {
+  const firstResource = resourceMatches[0]?.queriedResource;
+  const firstPath = pathMatches[0]?.queriedPath;
+  const firstTargetActorId = resourceMatches[0]?.actor.actorId ?? pathMatches[0]?.actor.actorId ?? "<target-actor-id>";
+  const routeArg = firstResource !== undefined
+    ? `--resource ${firstResource}`
+    : `--path ${firstPath ?? "<path>"}`;
   return [
-    "AgentQ related active actor detected for this tool path.",
-    ...matches.map(
+    "AgentQ related active actor detected for this tool path or resource.",
+    ...pathMatches.map(
       (match) =>
         `- ${match.actor.actorId} owns ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
     ),
+    ...resourceMatches.map(
+      (match) =>
+        `- ${match.actor.actorId} uses ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
+    ),
     "If this changes their contract or unblocks their work, ask before local-only resolution:",
-    `agentq question --actor ${actorId} --to ${matches[0]?.actor.actorId ?? "<target-actor-id>"} --path ${firstPath} --question "<decision needed>" --expect "<answer with evidence>"`
+    `agentq question --actor ${actorId} --to ${firstTargetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
   ].join("\n");
 }
 
@@ -430,6 +468,92 @@ function extractActivePaths(payload: PayloadObject, cwd: string): string[] {
     .slice(0, 8);
 
   return paths.length === 0 ? ["."] : paths;
+}
+
+function extractActiveResources(payload: PayloadObject, cwd: string): string[] {
+  const commands = new Set<string>();
+  collectCommandCandidates(payload, commands);
+  const resources = new Set<string>();
+
+  for (const command of commands) {
+    for (const resource of inferCommandResources(command, cwd)) {
+      resources.add(resource);
+    }
+  }
+
+  return [...resources].slice(0, 8);
+}
+
+function collectCommandCandidates(value: unknown, commands: Set<string>, key = ""): void {
+  if (typeof value === "string") {
+    if (/^(command|cmd|script|shell_command)$/i.test(key)) {
+      commands.add(value);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectCommandCandidates(item, commands, key);
+    }
+    return;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  for (const [childKey, childValue] of Object.entries(value)) {
+    collectCommandCandidates(childValue, commands, childKey);
+  }
+}
+
+function inferCommandResources(command: string, cwd: string): string[] {
+  const normalizedCommand = command.replace(/\\/g, "/");
+  const lower = normalizedCommand.toLowerCase();
+  const resources = new Set<string>();
+
+  if (lower.includes("projectdd/ddsetup.bat") || /\bddsetup\.bat\b/i.test(normalizedCommand)) {
+    resources.add("setup-watcher:ProjectDD/DDSetup");
+  }
+  if (lower.includes("projectshe/shesetup.bat") || /\bshesetup\.bat\b/i.test(normalizedCommand)) {
+    resources.add("setup-watcher:ProjectSHE/SHESetup");
+  }
+  if (lower.includes("projectdd/ddweaver")) {
+    resources.add("codegen:ProjectDD/DDWeaver");
+  }
+
+  const unityProjectPath = extractUnityProjectPath(normalizedCommand, cwd);
+  if (unityProjectPath !== null) {
+    resources.add(`unity:${unityProjectPath}`);
+  } else if (/\bunity(?:\.exe)?\b/i.test(normalizedCommand)) {
+    for (const projectPath of [
+      "ProjectDD/DDUnity",
+      "ProjectSHE",
+      "Shared/Superlazy.Unity.TestHost",
+      "ProjectDD/DDUnityTestHost"
+    ]) {
+      if (lower.includes(projectPath.toLowerCase())) {
+        resources.add(`unity:${projectPath}`);
+      }
+    }
+  }
+
+  return [...resources];
+}
+
+function extractUnityProjectPath(command: string, cwd: string): string | null {
+  if (!/\bunity(?:\.exe)?\b/i.test(command)) {
+    return null;
+  }
+
+  const match = /-projectPath\s+(?:"([^"]+)"|'([^']+)'|(\S+))/i.exec(command);
+  const rawPath = match?.[1] ?? match?.[2] ?? match?.[3];
+  if (rawPath === undefined) {
+    return null;
+  }
+
+  return normalizePathCandidate(rawPath, cwd);
 }
 
 function collectPathCandidates(value: unknown, candidates: Set<string>, key = ""): void {

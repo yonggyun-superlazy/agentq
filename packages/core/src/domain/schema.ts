@@ -27,6 +27,7 @@ export const PresenceSchema = z
     workspaceRoot: NonEmptyStringSchema,
     activePaths: NonEmptyStringArraySchema,
     observedPaths: NonEmptyStringArraySchema.optional(),
+    activeResources: NonEmptyStringArraySchema.optional(),
     responsibilities: NonEmptyStringArraySchema,
     summary: NonEmptyStringSchema,
     lastSeen: NonEmptyStringSchema
@@ -39,19 +40,20 @@ const BaseMessageSchema = z
     createdBy: SafeIdSchema,
     summary: NonEmptyStringSchema,
     paths: NonEmptyStringArraySchema,
+    resources: NonEmptyStringArraySchema.optional(),
     contracts: NonEmptyStringArraySchema,
     passCriteria: NonEmptyStringArraySchema
   })
   .strict();
 
-function requirePathOrContract(
-  value: { paths: readonly string[]; contracts: readonly string[] },
+function requireRoutingSurface(
+  value: { paths: readonly string[]; resources?: readonly string[] | undefined; contracts: readonly string[] },
   ctx: z.RefinementCtx
 ): void {
-  if (value.paths.length === 0 && value.contracts.length === 0) {
+  if (value.paths.length === 0 && (value.resources ?? []).length === 0 && value.contracts.length === 0) {
     ctx.addIssue({
       code: "custom",
-      message: "message requires at least one path or contract"
+      message: "message requires at least one path, resource, or contract"
     });
   }
 }
@@ -62,7 +64,7 @@ export const BlockerMessageSchema = BaseMessageSchema.extend({
   brokenContract: NonEmptyStringSchema
 })
   .strict()
-  .superRefine(requirePathOrContract);
+  .superRefine(requireRoutingSurface);
 
 export const QuestionMessageSchema = BaseMessageSchema.extend({
   kind: z.literal("question"),
@@ -71,7 +73,7 @@ export const QuestionMessageSchema = BaseMessageSchema.extend({
 })
   .strict()
   .superRefine((value, ctx) => {
-    requirePathOrContract(value, ctx);
+    requireRoutingSurface(value, ctx);
 
     if (value.passCriteria.length === 0 && value.expectedAnswer === undefined) {
       ctx.addIssue({
@@ -88,7 +90,7 @@ export const MessageSchema = z.discriminatedUnion("kind", [
 
 export const RoutingEvidenceSchema = z
   .object({
-    kind: z.enum(["explicit", "contract", "path", "thread", "recent"]),
+    kind: z.enum(["explicit", "contract", "path", "resource", "thread", "recent"]),
     detail: NonEmptyStringSchema
   })
   .strict();

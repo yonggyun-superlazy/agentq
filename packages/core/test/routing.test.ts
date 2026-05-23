@@ -58,6 +58,30 @@ describe("blocker routing", () => {
     );
   });
 
+  it("routes to actors matched by active resource occupancy", async () => {
+    const store = await createStore();
+    const setupActor = await enterActor(
+      store,
+      "claude-code",
+      "session-setup",
+      ["ProjectDD"],
+      ["DD setup watcher"],
+      ["setup-watcher:ProjectDD/DDSetup"]
+    );
+
+    const plan = await createRoutedBlocker(store, {
+      message: question("AQ-resource", [], [], ["setup-watcher:ProjectDD/DDSetup"]),
+      now: "2026-05-18T00:00:10.000Z",
+      staleAfterMs: 60_000
+    });
+
+    expect(plan.recipients.map((recipient) => recipient.actorId)).toEqual([setupActor.actorId]);
+    expect(plan.recipients[0]?.evidence).toContainEqual({
+      kind: "resource",
+      detail: "setup-watcher:ProjectDD/DDSetup"
+    });
+  });
+
   it("matches recursive path patterns on segment boundaries", async () => {
     const store = await createStore();
     await enterActor(store, "codex", "session-1", ["src/**"], ["source"]);
@@ -213,13 +237,15 @@ async function enterActor(
   adapter: "codex" | "claude-code" | "copilot-cli",
   sessionId: string,
   activePaths: readonly string[],
-  responsibilities: readonly string[]
+  responsibilities: readonly string[],
+  activeResources: readonly string[] = []
 ): Promise<{ actorId: string }> {
   return await createOrRefreshSessionBinding(store, {
     adapter,
     sessionId,
     cwd: store.workspaceRoot,
     activePaths,
+    ...(activeResources.length === 0 ? {} : { activeResources }),
     responsibilities,
     summary: responsibilities[0] ?? "session",
     now: "2026-05-18T00:00:00.000Z"
@@ -240,13 +266,19 @@ function blocker(id: string, paths: readonly string[], contracts: readonly strin
   };
 }
 
-function question(id: string, paths: readonly string[], contracts: readonly string[]): Message {
+function question(
+  id: string,
+  paths: readonly string[],
+  contracts: readonly string[],
+  resources: readonly string[] = []
+): Message {
   return {
     id,
     kind: "question",
     createdBy: "codex@workspace",
     summary: "A question needs a responsible actor",
     paths: [...paths],
+    ...(resources.length === 0 ? {} : { resources: [...resources] }),
     contracts: [...contracts],
     passCriteria: ["responsible actor answers"],
     question: "Who owns this instruction update?",

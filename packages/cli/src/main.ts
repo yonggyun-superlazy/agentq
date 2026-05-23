@@ -15,6 +15,7 @@ import {
   ensureWorkspaceStore,
   EventSchema,
   findActivePathOwners,
+  findActiveResourceOwners,
   foldMessageState,
   closeWork,
   applyMarkerInstall,
@@ -46,6 +47,7 @@ import {
   writeOnceYaml,
   type AgentKind,
   type ActivePathOwnerMatch,
+  type ActiveResourceOwnerMatch,
   type FoldedMessageState,
   type FoldedRequest,
   type Message,
@@ -80,7 +82,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "status", summary: "Summarize workspace AgentQ health" },
   { name: "uninstall", summary: "Remove AgentQ-owned integration markers and hook gates" },
   { name: "actors", summary: "List workspace actors by recent presence" },
-  { name: "owners", summary: "Find active actors responsible for paths" },
+  { name: "owners", summary: "Find active actors responsible for paths or resources" },
   { name: "enter", summary: "Register actor presence and responsibilities" },
   { name: "work", summary: "Manage one explicit actor's internal work stack" },
   { name: "block", summary: "Create a required-response blocker" },
@@ -146,7 +148,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq work start --actor <id> --title <title> [--path <path>...]",
+      "  agentq work start --actor <id> --title <title> [--path <path>...] [--resource <resource>...]",
       "  agentq work status --actor <id>",
       "  agentq work touch --actor <id> --path <path>...",
       "  agentq work evidence --actor <id> --evidence \"...\"",
@@ -160,10 +162,23 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq enter --actor <id> [--paths <path>...] [--responsibility <text>...] [--summary <text>]",
-      "  agentq enter --as <codex|claude-code|copilot-cli|custom> [--session <id>] [--paths <path>...] [--responsibility <text>...]",
+      "  agentq enter --actor <id> [--paths <path>...] [--resource <resource>...] [--responsibility <text>...] [--summary <text>]",
+      "  agentq enter --as <codex|claude-code|copilot-cli|custom> [--session <id>] [--paths <path>...] [--resource <resource>...] [--responsibility <text>...]",
       "",
       "Use --actor with the hook-provided actor id to refresh that exact actor. Use --as only to create or refresh a manual session binding."
+    ].join("\n");
+  }
+
+  if (command.name === "owners") {
+    return [
+      "agentq owners",
+      command.summary,
+      "",
+      "Usage:",
+      "  agentq owners --path <path>... [--resource <resource>...] [--actor <id>] [--stale-ms <milliseconds>]",
+      "  agentq owners --resource <resource>... [--actor <id>] [--stale-ms <milliseconds>]",
+      "",
+      "Use resources for soft-exclusive tools such as setup-watcher:ProjectDD/DDSetup or unity:ProjectDD/DDUnity."
     ].join("\n");
   }
 
@@ -173,9 +188,9 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq block --actor <id> --summary \"...\" [--to <id>...] [--id <id>] [--path <path>...] [--contract <name>...] [--pass \"...\"]",
+      "  agentq block --actor <id> --summary \"...\" [--to <id>...] [--id <id>] [--path <path>...] [--resource <resource>...] [--contract <name>...] [--pass \"...\"]",
       "",
-      "If --to is omitted, AgentQ routes to active actors matched by path or contract.",
+      "If --to is omitted, AgentQ routes to active actors matched by path, resource, or contract.",
       "After routing, AgentQ records pending delivery without starting headless agent processes."
     ].join("\n");
   }
@@ -186,7 +201,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --path <path>... [--contract <name>...] [--expect \"...\"] [--pass \"...\"]",
+      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --path <path>... [--resource <resource>...] [--contract <name>...] [--expect \"...\"] [--pass \"...\"]",
+      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --resource <resource>... [--expect \"...\"] [--pass \"...\"]",
       "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --contract <name>... [--expect \"...\"] [--pass \"...\"]",
       "",
       "Questions are required requests. The sender remains blocked until routed actors answer.",
@@ -516,6 +532,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   if (subcommand === "start") {
     const workId = optionValue(args, "id");
     const goal = optionValue(args, "goal");
+    const activeResources = optionValues(args, "resource");
     const state = await startWork(store, {
       actorId,
       title: requiredOption(args, "title"),
@@ -529,6 +546,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       actorId,
       cwd: runtime.cwd,
       activePaths: state.paths,
+      ...(activeResources.length === 0 ? {} : { activeResources }),
       responsibilities: [state.title],
       summary: state.title,
       now: runtime.now()
@@ -699,14 +717,21 @@ async function ownersCommand(argv: readonly string[], runtime: CommandRuntime): 
   }
 
   const paths = optionValues(args, "path");
-  if (paths.length === 0) {
-    throw new Error("owners requires --path <path>.");
+  const resources = optionValues(args, "resource");
+  if (paths.length === 0 && resources.length === 0) {
+    throw new Error("owners requires --path <path> or --resource <resource>.");
   }
 
   const store = await openStore(runtime);
   const actorId = optionValue(args, "actor");
-  const matches = await findActivePathOwners(store, {
+  const pathMatches = await findActivePathOwners(store, {
     paths,
+    now: runtime.now(),
+    staleAfterMs,
+    ...(actorId === undefined ? {} : { actorId })
+  });
+  const resourceMatches = await findActiveResourceOwners(store, {
+    resources,
     now: runtime.now(),
     staleAfterMs,
     ...(actorId === undefined ? {} : { actorId })
@@ -714,7 +739,7 @@ async function ownersCommand(argv: readonly string[], runtime: CommandRuntime): 
 
   return {
     code: 0,
-    stdout: renderOwners(paths, matches),
+    stdout: renderOwners(paths, resources, pathMatches, resourceMatches),
     stderr: ""
   };
 }
@@ -747,6 +772,7 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 async function enterCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
   const paths = optionValues(args, "paths");
+  const activeResources = optionValues(args, "resource");
   const responsibilities = optionValues(args, "responsibility");
   const store = await openStore(runtime);
   const actorId = optionValue(args, "actor");
@@ -756,6 +782,7 @@ async function enterCommand(argv: readonly string[], runtime: CommandRuntime): P
       actorId,
       cwd: runtime.cwd,
       activePaths: paths,
+      ...(activeResources.length === 0 ? {} : { activeResources, mergeActiveResources: true }),
       responsibilities,
       now: runtime.now(),
       ...(summary === undefined ? {} : { summary })
@@ -777,6 +804,7 @@ async function enterCommand(argv: readonly string[], runtime: CommandRuntime): P
     sessionId,
     cwd: runtime.cwd,
     activePaths: paths.length > 0 ? paths : ["."],
+    ...(activeResources.length === 0 ? {} : { activeResources }),
     responsibilities: responsibilities.length > 0 ? responsibilities : [summary],
     summary,
     now: runtime.now()
@@ -800,6 +828,7 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
   const to = optionValues(args, "to");
   const summary = requiredOption(args, "summary");
   const paths = optionValues(args, "path");
+  const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
   const message: Message = {
     id,
@@ -807,6 +836,7 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
     createdBy: requiredOption(args, "actor"),
     summary,
     paths: paths.length > 0 ? paths : ["."],
+    ...(resources.length === 0 ? {} : { resources }),
     contracts,
     passCriteria: optionValues(args, "pass").length > 0 ? optionValues(args, "pass") : ["recipient responds"],
     observed: optionValue(args, "observed") ?? summary,
@@ -837,9 +867,10 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
   const to = optionValues(args, "to");
   const question = requiredOption(args, "question");
   const paths = optionValues(args, "path");
+  const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
-  if (paths.length === 0 && contracts.length === 0) {
-    throw new Error("question requires --path or --contract so recipients can judge relevance.");
+  if (paths.length === 0 && resources.length === 0 && contracts.length === 0) {
+    throw new Error("question requires --path, --resource, or --contract so recipients can judge relevance.");
   }
   const expectedAnswer = optionValue(args, "expect");
   const passCriteria = optionValues(args, "pass");
@@ -849,6 +880,7 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
     createdBy: requiredOption(args, "actor"),
     summary: optionValue(args, "summary") ?? question,
     paths,
+    ...(resources.length === 0 ? {} : { resources }),
     contracts,
     passCriteria: passCriteria.length > 0
       ? passCriteria
@@ -913,6 +945,7 @@ function renderInboxRequest(
     `  from: ${message.createdBy}`,
     `  summary: ${message.summary}`,
     `  paths: ${joinList(message.paths)}`,
+    `  resources: ${joinList(message.resources ?? [])}`,
     `  contracts: ${joinList(message.contracts)}`
   ];
 
@@ -1451,7 +1484,7 @@ function statusRecommendations(input: {
   }
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
-    lines.push("No recent inter-agent messages; run `agentq owners --path <path>` before editing shared surfaces and ask/block when another active owner overlaps.");
+    lines.push("No recent inter-agent messages; run `agentq owners --path <path>` or `agentq owners --resource <resource>` before editing shared surfaces or using exclusive tools, then ask/block when another active owner overlaps.");
   }
 
   if (input.staleOpenWorkCount > 0) {
@@ -1461,21 +1494,33 @@ function statusRecommendations(input: {
   return lines;
 }
 
-function renderOwners(paths: readonly string[], matches: readonly ActivePathOwnerMatch[]): string {
+function renderOwners(
+  paths: readonly string[],
+  resources: readonly string[],
+  pathMatches: readonly ActivePathOwnerMatch[],
+  resourceMatches: readonly ActiveResourceOwnerMatch[]
+): string {
   const lines = [
-    `owners for ${paths.join(", ")}:`
+    `owners for ${[...paths, ...resources.map((resource) => `resource:${resource}`)].join(", ")}:`
   ];
 
-  if (matches.length === 0) {
+  if (pathMatches.length === 0 && resourceMatches.length === 0) {
     lines.push("  none");
     return `${lines.join("\n")}\n`;
   }
 
-  lines.push(...matches.map(renderOwnerMatch));
+  lines.push(...pathMatches.map(renderOwnerMatch));
+  lines.push(...resourceMatches.map(renderResourceOwnerMatch));
+  const firstPath = pathMatches[0]?.queriedPath;
+  const firstResource = resourceMatches[0]?.queriedResource;
+  const targetActorId = pathMatches[0]?.actor.actorId ?? resourceMatches[0]?.actor.actorId ?? "<target-actor-id>";
+  const routeArg = firstPath !== undefined
+    ? `--path ${firstPath}`
+    : `--resource ${firstResource ?? resources[0] ?? "<resource>"}`;
   lines.push(
     "",
-    "Use a required question when this path may affect the owner:",
-    `  agentq question --actor <your-actor-id> --to ${matches[0]?.actor.actorId ?? "<target-actor-id>"} --path ${matches[0]?.queriedPath ?? paths[0] ?? "<path>"} --question "<decision needed>" --expect "<answer with evidence>"`
+    "Use a required question when this may affect the owner:",
+    `  agentq question --actor <your-actor-id> --to ${targetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
   );
   return `${lines.join("\n")}\n`;
 }
@@ -1489,6 +1534,15 @@ function renderOwnerMatch(match: ActivePathOwnerMatch): string {
   ].join(" | ");
 }
 
+function renderResourceOwnerMatch(match: ActiveResourceOwnerMatch): string {
+  return [
+    `  ${match.actor.actorId}`,
+    `owns-resource: ${match.activeResource}`,
+    `matched: ${match.queriedResource}`,
+    `responsibilities: ${formatList(match.actor.responsibilities)}`
+  ].join(" | ");
+}
+
 function renderStatusActorLine(detail: WorkspaceStatusActor): string {
   const actor = detail.summary.actor;
   return [
@@ -1496,6 +1550,7 @@ function renderStatusActorLine(detail: WorkspaceStatusActor): string {
     `age ${detail.summary.ageMs === null ? "unknown" : formatDuration(detail.summary.ageMs)}`,
     `paths: ${formatList(actor.activePaths)}`,
     ...(actor.observedPaths === undefined ? [] : [`observing: ${formatList(actor.observedPaths)}`]),
+    ...(actor.activeResources === undefined ? [] : [`resources: ${formatList(actor.activeResources)}`]),
     `responsibilities: ${formatList(actor.responsibilities)}`
   ].join(" | ");
 }
@@ -1535,6 +1590,7 @@ function renderActorPresence(summary: ActorStatusSummary): string {
     `  lastSeen: ${actor.lastSeen}`,
     `  paths: ${actor.activePaths.join(", ")}`,
     ...(actor.observedPaths === undefined ? [] : [`  observing: ${actor.observedPaths.join(", ")}`]),
+    ...(actor.activeResources === undefined ? [] : [`  resources: ${actor.activeResources.join(", ")}`]),
     `  responsibilities: ${actor.responsibilities.join(", ")}`
   ];
   const warning = routingScopeWarning(actor);
