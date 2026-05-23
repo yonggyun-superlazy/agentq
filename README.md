@@ -35,7 +35,7 @@ agentq respond AQ-... --actor <codex> --status answered --evidence "Preserve rou
 agentq done-check --actor <claude>   # passes
 ```
 
-Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md). The before/after collision transcript is [`fixtures/demo/before-after/expected.md`](fixtures/demo/before-after/expected.md), and the soft-exclusive resource transcript is [`fixtures/demo/resource/expected.md`](fixtures/demo/resource/expected.md).
+Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md). The before/after collision transcript is [`fixtures/demo/before-after/expected.md`](fixtures/demo/before-after/expected.md), the soft-exclusive resource transcript is [`fixtures/demo/resource/expected.md`](fixtures/demo/resource/expected.md), and the instruction behavior transcript is [`fixtures/instruction-quality/expected.md`](fixtures/instruction-quality/expected.md).
 
 ## Quickstart
 
@@ -89,7 +89,7 @@ Use [`docs/prompts/work-stack.md`](docs/prompts/work-stack.md) as the handoff pr
 
 ## Product focus
 
-AgentQ is being validated as a narrow shared-workspace coordination layer, not a general messaging app. See [`docs/focused-product-validation.md`](docs/focused-product-validation.md) for the collision demo, resource-first UX, non-polluting smoke/demo, stale-window observation, and instruction quality test plan. Resource naming lives in [`docs/resources.md`](docs/resources.md), and agent behavior checks live in [`docs/instruction-quality-checklist.md`](docs/instruction-quality-checklist.md).
+AgentQ is being validated as a narrow shared-workspace coordination layer, not a general messaging app. See [`docs/product-roadmap.md`](docs/product-roadmap.md) for the progress table used in briefings. See [`docs/focused-product-validation.md`](docs/focused-product-validation.md) for the collision demo, resource-first UX, non-polluting smoke/demo, stale-window observation, and instruction quality test plan. Resource naming lives in [`docs/resources.md`](docs/resources.md), and agent behavior checks live in [`docs/instruction-quality-checklist.md`](docs/instruction-quality-checklist.md).
 
 ## Install trust
 
