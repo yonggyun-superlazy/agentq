@@ -10,7 +10,7 @@ await mkdir(workspace, { recursive: true });
 
 const runtime: CommandRuntime = {
   cwd: workspace,
-  env: { ...process.env, XDG_STATE_HOME: stateRoot },
+  env: { ...process.env, LOCALAPPDATA: stateRoot, XDG_STATE_HOME: stateRoot },
   now: () => "2026-05-18T00:00:00.000Z"
 };
 
@@ -23,7 +23,7 @@ const codex = await runAndRecord([
   "--session",
   "codex-demo",
   "--paths",
-  "packages/core/src/**",
+  "src/protocol.ts",
   "--responsibility",
   "protocol schema"
 ]);
@@ -36,37 +36,47 @@ const claude = await runAndRecord([
   "--session",
   "claude-demo",
   "--paths",
-  "README.md",
+  "src/consumer.ts",
   "--responsibility",
-  "public docs"
+  "protocol consumer"
 ]);
 const claudeActor = claude.stdout.trim().replace(/ registered$/, "");
 
 await runAndRecord([
-  "block",
+  "owners",
+  "--actor",
+  claudeActor,
+  "--path",
+  "src/protocol.ts"
+]);
+await runAndRecord([
+  "question",
   "--id",
   "AQ-0001",
   "--actor",
-  codexActor,
-  "--to",
   claudeActor,
+  "--to",
+  codexActor,
   "--path",
-  "README.md",
-  "--summary",
-  "README promises config that protocol forbids"
+  "src/protocol.ts",
+  "--question",
+  "I need to change src/protocol.ts. Are you actively changing the protocol schema?",
+  "--expect",
+  "Answer with active edits or clear-to-edit evidence."
 ]);
-await runAndRecord(["inbox", "--actor", claudeActor]);
+await runAndRecord(["done-check", "--actor", claudeActor], 2);
+await runAndRecord(["inbox", "--actor", codexActor]);
 await runAndRecord([
   "respond",
   "AQ-0001",
   "--actor",
-  claudeActor,
+  codexActor,
   "--status",
-  "resolved",
+  "answered",
   "--evidence",
-  "README now says no config and no repo .agentq"
+  "No active schema edit; preserve RequiredRequest routing evidence fields."
 ]);
-await runAndRecord(["done-check", "--actor", codexActor]);
+await runAndRecord(["done-check", "--actor", claudeActor]);
 
 const actual = `${transcript.join("\n\n")}\n`
   .replaceAll(codexActor, "<codex>")
@@ -80,14 +90,14 @@ if (!normalizeNewlines(expected).includes(normalizeNewlines(actual).trim())) {
   throw new Error(`Demo transcript drifted.\n\nActual:\n${actual}`);
 }
 
-async function runAndRecord(argv: readonly string[]) {
+async function runAndRecord(argv: readonly string[], expectedCode = 0) {
   transcript.push(`$ agentq ${argv.join(" ")}`);
   const result = await runCommand(argv, runtime);
   const output = `${result.stdout}${result.stderr}`.trim();
   if (output.length > 0) {
     transcript.push(output);
   }
-  if (result.code !== 0) {
+  if (result.code !== expectedCode) {
     throw new Error(`Command failed: agentq ${argv.join(" ")}\n${output}`);
   }
 

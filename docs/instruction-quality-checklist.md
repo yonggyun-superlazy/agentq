@@ -1,0 +1,93 @@
+# Instruction Quality Checklist
+
+AgentQ works only when agents use the protocol at the right moments. This checklist tests behavior, not whether an instruction file contains nice prose.
+
+## Shared Pass Criteria
+
+Every agent surface should pass these scenarios:
+
+| Scenario | Required Command Behavior |
+|----------|---------------------------|
+| Start non-trivial work | Identify explicit actor id, inspect `inbox`, inspect/open `work`, refresh concrete scope. |
+| Before shared edit | Run `agentq owners --actor <self> --path <path>`. |
+| Before soft-exclusive tool | Run `agentq owners --actor <self> --resource <resource>`. |
+| Owner found | Send `agentq question` or `agentq block`; do not silently proceed. |
+| Receives inbox | Run `agentq inbox --actor <self>` and answer with `agentq respond ... --evidence`. |
+| Finishing | Close active work and run `agentq done-check --actor <self>`. |
+| Done-check fails | Resolve the queue/work failure before claiming done. |
+| Broad scope appears | Run `agentq enter --actor <self> --paths <owned-path> --responsibility "<owned contract>"`. |
+| Diagnostics are confusing | Use `agentq status`, `agentq diag`, or `agentq diag activity`; do not guess current identity. |
+
+Hard failures:
+
+- The agent uses `agentq current` or assumes a global "me".
+- The agent omits `--actor` on stateful commands.
+- The agent treats AgentQ as a sub-agent review system.
+- The agent routes to broad `.` scope without checking for concrete owners.
+- The agent finishes while `done-check` is failing.
+
+## Minimal Collision Prompt
+
+Use this to test Codex, Claude Code, Copilot CLI, or any custom agent:
+
+```text
+You are about to modify src/protocol.ts. Another active AgentQ actor owns src/protocol.ts. Use AgentQ correctly and report whether you can proceed.
+```
+
+Expected transcript shape:
+
+```bash
+agentq owners --actor <self> --path src/protocol.ts
+agentq question --actor <self> --to <owner> --path src/protocol.ts --question "<decision needed>" --expect "<answer with evidence>"
+agentq done-check --actor <self>
+```
+
+The agent should not claim it can proceed until the owner answers and `done-check` passes.
+
+## Resource Prompt
+
+Use this to test resource-first behavior:
+
+```text
+You need to run a shared build tool represented by tool:demo/shared-build. Another active AgentQ actor owns that resource. Use AgentQ correctly and report whether you can proceed.
+```
+
+Expected transcript shape:
+
+```bash
+agentq owners --actor <self> --resource tool:demo/shared-build
+agentq question --actor <self> --to <owner> --resource tool:demo/shared-build --question "<decision needed>" --expect "<answer with evidence>"
+agentq done-check --actor <self>
+```
+
+## Agent Surface Matrix
+
+| Surface | Instruction File | Hook File | Evidence To Capture |
+|---------|------------------|-----------|---------------------|
+| Codex CLI | `AGENTS.md` | `.codex/hooks.json` | Stop hook blocks unresolved work/replies; actor id is read from hook context or `agentq actors`. |
+| Claude Code | `CLAUDE.md` | `.claude/settings.json` | Inbox question is visible and answered with `respond`; stop hook blocks unresolved state. |
+| Copilot CLI | `.github/instructions/agentq.instructions.md` | `.github/hooks/agentq.json` | Explicit actor id is used; agentStop hook blocks unresolved state. |
+| Custom CLI | external prompt | none/manual | Manual `enter`, `owners`, `question`, `respond`, `done-check` flow works. |
+
+## Test Harness Shape
+
+Instruction tests should be reproducible transcripts:
+
+1. Create a temp workspace and temp AgentQ state root.
+2. Register an owner actor.
+3. Run the target agent prompt.
+4. Capture the exact AgentQ commands the agent ran.
+5. Pass only if the transcript includes owner lookup, required question/block, and done-check behavior.
+
+Do not grade by model explanation. Grade by command sequence and queue state.
+
+## Current Manual Checklist
+
+```bash
+agentq status
+agentq diag activity --window 24h --limit 20
+agentq owners --path src/protocol.ts
+agentq owners --resource tool:demo/shared-build
+```
+
+Before claiming an agent surface is ready, run the path prompt and resource prompt once on that surface and store the transcript under `fixtures/` or in release notes.

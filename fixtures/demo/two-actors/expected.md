@@ -1,40 +1,54 @@
-# Two-Actor Handshake Demo
+# Two-Actor Collision Demo
 
 ```text
-$ agentq enter --as codex --session codex-demo --paths packages/core/src/** --responsibility protocol schema
+$ agentq enter --as codex --session codex-demo --paths src/protocol.ts --responsibility protocol schema
 
 <codex> registered
 
-$ agentq enter --as claude-code --session claude-demo --paths README.md --responsibility public docs
+$ agentq enter --as claude-code --session claude-demo --paths src/consumer.ts --responsibility protocol consumer
 
 <claude> registered
 
-$ agentq block --id AQ-0001 --actor <codex> --to <claude> --path README.md --summary README promises config that protocol forbids
+$ agentq owners --actor <claude> --path src/protocol.ts
 
-AQ-0001 routed to <claude>
+owners for src/protocol.ts:
+  <codex> | owns: src/protocol.ts | matched: src/protocol.ts | responsibilities: protocol schema
+
+Use a required question when this may affect the owner:
+  agentq question --actor <your-actor-id> --to <codex> --path src/protocol.ts --question "<decision needed>" --expect "<answer with evidence>"
+
+$ agentq question --id AQ-0001 --actor <claude> --to <codex> --path src/protocol.ts --question I need to change src/protocol.ts. Are you actively changing the protocol schema? --expect Answer with active edits or clear-to-edit evidence.
+
+AQ-0001 routed to <codex>
 delivery:
-  <claude>: record_only
+  <codex>: record_only
 
-$ agentq inbox --actor <claude>
+$ agentq done-check --actor <claude>
+
+AgentQ done-check failed for <claude>.
+- outbound_pending: AQ-0001 for <codex> (I need to change src/protocol.ts. Are you actively changing the protocol schema?)
+Resolve required replies before final response.
+
+$ agentq inbox --actor <codex>
 
 AQ-0001
-  kind: blocker
-  from: <codex>
-  summary: README promises config that protocol forbids
-  paths: README.md
+  kind: question
+  from: <claude>
+  summary: I need to change src/protocol.ts. Are you actively changing the protocol schema?
+  paths: src/protocol.ts
   resources: (none)
   contracts: (none)
-  observed: README promises config that protocol forbids
-  broken: required handoff must be answered
-  pass: recipient responds
-  routing: explicit:explicit recipient <claude>
-  respond: agentq respond AQ-0001 --actor <claude> --status resolved --evidence "..."
+  question: I need to change src/protocol.ts. Are you actively changing the protocol schema?
+  expected: Answer with active edits or clear-to-edit evidence.
+  pass: Answer with active edits or clear-to-edit evidence.
+  routing: explicit:explicit recipient <codex>
+  respond: agentq respond AQ-0001 --actor <codex> --status answered --evidence "..."
 
-$ agentq respond AQ-0001 --actor <claude> --status resolved --evidence README now says no config and no repo .agentq
+$ agentq respond AQ-0001 --actor <codex> --status answered --evidence No active schema edit; preserve RequiredRequest routing evidence fields.
 
-AQ-0001 resolved
+AQ-0001 answered
 
-$ agentq done-check --actor <codex>
+$ agentq done-check --actor <claude>
 
 ok: no required replies or active work remain open
 ```

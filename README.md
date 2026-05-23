@@ -44,7 +44,7 @@ agentq respond "$MSG_ID" --actor "$CLAUDE_ACTOR" --status resolved --evidence "R
 agentq done-check --actor "$CODEX_ACTOR"
 ```
 
-Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md).
+Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md). The before/after collision transcript is [`fixtures/demo/before-after/expected.md`](fixtures/demo/before-after/expected.md).
 
 ## Delivery Inspection
 
@@ -81,6 +81,10 @@ node packages/cli/dist/main.js doctor
 ## Agent prompt
 
 Use [`docs/prompts/work-stack.md`](docs/prompts/work-stack.md) as the handoff prompt for agents that need explicit work-stack discipline. It keeps the actor id, required replies, active work frames, evidence, and done-check in one copyable instruction surface.
+
+## Product focus
+
+AgentQ is being validated as a narrow shared-workspace coordination layer, not a general messaging app. See [`docs/focused-product-validation.md`](docs/focused-product-validation.md) for the collision demo, resource-first UX, non-polluting smoke/demo, stale-window observation, and instruction quality test plan. Resource naming lives in [`docs/resources.md`](docs/resources.md), and agent behavior checks live in [`docs/instruction-quality-checklist.md`](docs/instruction-quality-checklist.md).
 
 ## Install trust
 
