@@ -858,12 +858,11 @@ function renderNextAction(input: NextActionInput): string {
     const item = input.resolvedOutbound[0];
     if (item !== undefined) {
       lines.push(
-        "Action: use the answered evidence before continuing.",
+        "Action: continue current task with the answered evidence below.",
         `Reply: ${item.messageId} ${item.status} by ${item.to}`,
         `Summary: ${item.summary}`,
         ...item.evidence.map((evidence) => `Evidence: ${evidence}`),
-        "Then:",
-        `  agentq next --actor ${input.actorId}`
+        "This is informational; it does not need to be cleared."
       );
       return `${lines.join("\n")}\n`;
     }

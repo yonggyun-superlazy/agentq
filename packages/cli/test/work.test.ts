@@ -564,7 +564,7 @@ describe("CLI work stack", () => {
 
     await expect(runCommand(["next", "--actor", sender], runtime)).resolves.toMatchObject({
       code: 0,
-      stdout: expect.stringContaining("Action: use the answered evidence before continuing.")
+      stdout: expect.stringContaining("Action: continue current task with the answered evidence below.")
     });
     await expect(runCommand(["next", "--actor", sender], runtime)).resolves.toMatchObject({
       stdout: expect.stringContaining("Badges read from event payload.")
