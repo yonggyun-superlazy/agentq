@@ -77,7 +77,8 @@ export function planScopeContinuation(result: ScopeCheckResult): string {
   return [
     `AgentQ scope-check failed for ${result.actorId}.`,
     ...result.weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
-    `Refresh this exact actor before claiming done: agentq enter --actor ${result.actorId} --paths <owned-path> [--resource <resource>] --responsibility "<owned contract>"`
+    `Run: agentq next --actor ${result.actorId}`,
+    "It will print the exact scope refresh command for this actor."
   ].join("\n");
 }
 

@@ -9,7 +9,8 @@ $ agentq scope-check --actor <target>
 AgentQ scope-check failed for <target>.
 - broad_path: .
 - generic_responsibility: copilot session
-Refresh this exact actor before claiming done: agentq enter --actor <target> --paths <owned-path> [--resource <resource>] --responsibility "<owned contract>"
+Run: agentq next --actor <target>
+It will print the exact scope refresh command for this actor.
 $ agentq enter --actor <target> --paths src/consumer.ts --responsibility protocol consumer change --summary Modify protocol consumer safely
 <target> refreshed
 $ agentq inbox --actor <target>
@@ -44,12 +45,13 @@ $ agentq question --id AQ-instruction-path --actor <target> --path src/protocol.
 AQ-instruction-path routed to <owner>
 delivery:
   <owner>: record_only
-next: run `agentq done-check --actor <your-actor-id>` before finishing; answered evidence will be shown there once resolved.
+next: run `agentq next --actor <target>` before finishing; answered evidence will be shown there once resolved.
 $ agentq done-check --actor <target>
 AgentQ done-check failed for <target>.
 - outbound_pending: AQ-instruction-path for <owner> (I need to update the protocol consumer. What protocol fields must I preserve?)
-  next: wait for <owner> to respond; rerun agentq done-check --actor <target> to see answered evidence.
-Resolve required replies before final response.
+  next: agentq next --actor <target>
+  note: wait for <owner> to respond, or continue only non-overlapping work.
+Follow `agentq next` before final response.
 $ agentq inbox --actor <owner>
 AQ-instruction-path
   kind: question

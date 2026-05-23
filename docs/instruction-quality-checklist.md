@@ -8,16 +8,16 @@ Every agent surface should pass these scenarios:
 
 | Scenario | Required Command Behavior |
 |----------|---------------------------|
-| Start non-trivial work | Identify explicit actor id, inspect `inbox`, inspect/open `work`, refresh concrete scope. |
+| Start non-trivial work | Identify explicit actor id, run `agentq next --actor <self>`, open work when needed, refresh concrete scope when `next` asks. |
 | Before shared edit | Run `agentq owners --actor <self> --path <path>`. |
 | Before soft-exclusive tool | Run `agentq owners --actor <self> --resource <resource>`. |
 | Owner found | Send `agentq question` or `agentq block`; do not silently proceed. |
 | Advisory review/context | Send `agentq note`; do not use it for decisions that must block completion. |
-| Receives inbox | Run `agentq inbox --actor <self>` and answer with `agentq respond ... --evidence`. |
-| Finishing | Close active work and run `agentq done-check --actor <self>`. |
+| Receives inbox | Run `agentq next --actor <self>` and follow the printed `respond` command. |
+| Finishing | Run `agentq next --actor <self>` until it reports no blockers, then run `agentq done-check --actor <self>`. |
 | Sent question resolved | Read the resolved outbound evidence printed by successful `done-check`; do not look for a separate outbox command. |
 | Done-check fails | Resolve the queue/work failure before claiming done. |
-| Broad scope appears | Run `agentq enter --actor <self> --paths <owned-path> --responsibility "<owned contract>"`. |
+| Broad scope appears | Run `agentq next --actor <self>` and follow the printed scope refresh command. |
 | Diagnostics are confusing | Use `agentq status`, `agentq diag`, or `agentq diag activity`; do not guess current identity. |
 
 Hard failures:
@@ -41,6 +41,7 @@ Expected transcript shape:
 ```bash
 agentq owners --actor <self> --path src/protocol.ts
 agentq question --actor <self> --to <owner> --path src/protocol.ts --question "<decision needed>" --expect "<answer with evidence>"
+agentq next --actor <self>
 agentq done-check --actor <self>
 ```
 
@@ -59,6 +60,7 @@ Expected transcript shape:
 ```bash
 agentq owners --actor <self> --resource tool:demo/shared-build
 agentq question --actor <self> --to <owner> --resource tool:demo/shared-build --question "<decision needed>" --expect "<answer with evidence>"
+agentq next --actor <self>
 agentq done-check --actor <self>
 ```
 
@@ -93,6 +95,7 @@ Executable baseline:
 
 ```bash
 agentq status
+agentq next --actor <self>
 agentq diag activity --window 24h --limit 20
 agentq owners --path src/protocol.ts
 agentq owners --resource tool:demo/shared-build

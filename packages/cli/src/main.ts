@@ -1172,7 +1172,7 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
 
   return {
     code: 0,
-    stdout: renderRoutedDelivery(id, plan.recipients.map((recipient) => recipient.actorId), delivery),
+    stdout: renderRoutedDelivery(id, message.createdBy, plan.recipients.map((recipient) => recipient.actorId), delivery),
     stderr: ""
   };
 }
@@ -1218,7 +1218,7 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
 
   return {
     code: 0,
-    stdout: renderRoutedDelivery(id, plan.recipients.map((recipient) => recipient.actorId), delivery),
+    stdout: renderRoutedDelivery(id, message.createdBy, plan.recipients.map((recipient) => recipient.actorId), delivery),
     stderr: ""
   };
 }
@@ -1258,32 +1258,34 @@ async function noteCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 
   return {
     code: 0,
-    stdout: renderNonBlockingDelivery(id, plan.recipients.map((recipient) => recipient.actorId)),
+    stdout: renderNonBlockingDelivery(id, message.createdBy, plan.recipients.map((recipient) => recipient.actorId)),
     stderr: ""
   };
 }
 
 function renderRoutedDelivery(
   messageId: string,
+  senderActorId: string,
   recipientActorIds: readonly string[],
   delivery: DeliveryReport
 ): string {
   return [
     `${messageId} routed to ${recipientActorIds.join(", ")}`,
     renderDeliveryReport(delivery),
-    "next: run `agentq done-check --actor <your-actor-id>` before finishing; answered evidence will be shown there once resolved."
+    `next: run \`agentq next --actor ${senderActorId}\` before finishing; answered evidence will be shown there once resolved.`
   ].join("\n") + "\n";
 }
 
 function renderNonBlockingDelivery(
   messageId: string,
+  senderActorId: string,
   recipientActorIds: readonly string[]
 ): string {
   return [
     `${messageId} noted to ${recipientActorIds.join(", ")}`,
     "delivery:",
     ...recipientActorIds.map((actorId) => `  ${actorId}: inbox_note non_blocking`),
-    "next: no reply is required; check `agentq done-check --actor <your-actor-id>` normally before finishing."
+    `next: no reply is required; run \`agentq next --actor ${senderActorId}\` before finishing.`
   ].join("\n") + "\n";
 }
 
@@ -2087,11 +2089,11 @@ function statusRecommendations(input: {
   const lines: string[] = [];
 
   if (input.pendingInboxCount > 0) {
-    lines.push("Required inbox items are pending; run `agentq inbox --actor <id>` for the affected actor and answer with `agentq respond ... --evidence \"...\"`.");
+    lines.push("Required inbox items are pending; run `agentq next --actor <id>` for the affected actor.");
   }
 
   if (input.weakActiveCount > 0) {
-    lines.push("Refresh broad active actors with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.");
+    lines.push("Broad active actors need scope refresh; run `agentq next --actor <id>` for each affected actor.");
   }
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
@@ -2099,11 +2101,11 @@ function statusRecommendations(input: {
   }
 
   if (input.staleOpenWorkCount > 0) {
-    lines.push("Stale open work remains; close it with `agentq work close --status abandoned|superseded --evidence \"...\"` only with evidence from the responsible actor or current owner.");
+    lines.push("Stale open work remains; inspect the responsible actor with `agentq next --actor <id>` and close or abandon only with ownership evidence.");
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
-    lines.push("Open work without context evidence remains; record the current frame, observed basis, touched paths/resources, and next pass check before it reaches the stop gate.");
+    lines.push("Open work without context evidence remains; run `agentq next --actor <id>` before it reaches the stop gate.");
   }
 
   return lines;
@@ -2118,26 +2120,26 @@ function statusNextAction(input: {
   readonly recentMessageCount: number;
 }): string {
   if (input.pendingInboxCount > 0) {
-    return "Resolve pending inbox first: `agentq inbox --actor <id>` then `agentq respond ... --evidence \"...\"`.";
+    return "Resolve pending inbox first with `agentq next --actor <id>` for the affected actor.";
   }
 
   if (input.weakActiveCount > 0) {
-    return "Refresh broad active scopes with `agentq enter --actor <id> --paths <owned-path> --responsibility \"<owned contract>\"`.";
+    return "Refresh broad active scopes with `agentq next --actor <id>` for each affected actor.";
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
-    return "Record collaboration context on open work before any final answer: `agentq work evidence --actor <id> --evidence \"Context: current frame; observed basis; touched paths/resources; next pass check\"`.";
+    return "Record collaboration context on open work through `agentq next --actor <id>` before any final answer.";
   }
 
   if (input.staleOpenWorkCount > 0) {
-    return "Review stale open work and close only with ownership evidence: `agentq work close --status abandoned|superseded ...`.";
+    return "Review stale open work through `agentq next --actor <id>` and close only with ownership evidence.";
   }
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
     return "Before shared edits, run `agentq owners --path <path>` or `--resource <resource>` and route a question/block on overlap.";
   }
 
-  return "No urgent AgentQ action; keep using explicit `--actor`, `owners`, `work evidence`, and `done-check`.";
+  return "No urgent AgentQ action; use `agentq next --actor <id>` before final, and `agentq owners ...` before shared edits.";
 }
 
 function renderOwners(
@@ -2332,7 +2334,7 @@ function routingScopeWarning(actor: Presence): string | null {
     return null;
   }
 
-  return `broad; refresh this actor with agentq enter --actor ${actor.actorId} --paths <path> --responsibility "<owned area>"`;
+  return `broad; run agentq next --actor ${actor.actorId} for the exact scope refresh command`;
 }
 
 function formatList(values: readonly string[]): string {

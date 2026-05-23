@@ -99,13 +99,14 @@ describe("AgentQ marker installer", () => {
     expect(agentsBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(agentsBlock).toContain("After `work start`, record context evidence");
-    expect(claudeBlock).toContain("enter --actor <id> --paths <path>");
+    expect(claudeBlock).toContain("let `next` show exact inbox/work/scope commands");
     expect(agentsBlock).toContain("routes, not locks");
     expect(claudeBlock).toContain("routes, not locks");
     expect(scopedBlock).toContain("classify overlap");
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
-    expect(scopedBlock).toContain("agentq work start/status/evidence/close");
+    expect(scopedBlock).toContain("agentq work start --actor <id>");
+    expect(scopedBlock).toContain("Let `next` print exact inbox/work/scope commands");
     expect(scopedBlock).toContain("immediately record context evidence after start");
     expect(scopedBlock).toContain("create `agentq block`");
     expect(Buffer.byteLength(agentsBlock, "utf8")).toBeLessThan(

@@ -50,10 +50,10 @@ const ROOT_MARKER_BODY = [
   "",
   "See `.github/instructions/agentq.instructions.md`.",
   "Primary: `agentq next --actor <id>` before finish or when ambiguous.",
-  "Use hook id; `enter --actor <id> --paths <path> --responsibility \"<contract>\"` before work.",
+  "Use hook id; let `next` show exact inbox/work/scope commands.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
   "After `work start`, record context evidence: frame, basis, paths/resources, next check.",
-  "Before done: final evidence, then `done-check`.",
+  "Before done: run `next`, final evidence, then `done-check`.",
   "External failures: `block` with evidence."
 ].join("\n");
 
@@ -64,9 +64,9 @@ const SCOPED_MARKER_BODY = [
   "",
   "- Use the hook actor id; every command must pass `--actor <id>`.",
   "- Primary command: `agentq next --actor <id>` before finish, after questions, and whenever AgentQ state is ambiguous.",
-  "- Track work: `agentq work start/status/evidence/close --actor <id>`; immediately record context evidence after start: current frame, observed basis, touched paths/resources, next pass check.",
-  "- Refresh scope: `agentq enter --actor <id> --paths <path> [--resource <resource>] --responsibility \"<contract>\"`.",
-  "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
+  "- Let `next` print exact inbox/work/scope commands instead of guessing the lower-level sequence.",
+  "- Track work with `agentq work start --actor <id>`; immediately record context evidence after start: current frame, observed basis, touched paths/resources, next pass check.",
+  "- Run `agentq next --actor <id>` and then `agentq done-check --actor <id>` before done.",
   "- Shared edit/tool: `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Use `question` to classify overlap, `note` for context.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
   "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",

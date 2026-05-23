@@ -66,8 +66,8 @@ export function planStopContinuation(
     ),
     ...result.blocking.flatMap((item) => doneCheckNextLines(result.actorId, item)),
     stopHookActive
-      ? "Stop hook is already active; resolve these exact required replies before trying to finish again."
-      : "Resolve required replies before final response."
+      ? "Stop hook is already active; follow `agentq next` before trying to finish again."
+      : "Follow `agentq next` before final response."
   ].join("\n");
 
   return {
@@ -78,18 +78,22 @@ export function planStopContinuation(
 }
 
 function doneCheckNextLines(actorId: string, item: DoneCheckBlockingItem): string[] {
+  const nextLine = `  next: agentq next --actor ${actorId}`;
+
   if (item.kind === "inbound_pending") {
-    return [`  next: agentq inbox --actor ${actorId}`];
+    return [nextLine];
   }
 
   if (item.kind === "outbound_pending") {
     return [
-      `  next: wait for ${item.actorId} to respond; rerun agentq done-check --actor ${actorId} to see answered evidence.`
+      nextLine,
+      `  note: wait for ${item.actorId} to respond, or continue only non-overlapping work.`
     ];
   }
 
   return [
-    `  next: agentq follow-up ${item.messageId} --actor ${actorId} --to ${item.actorId} --evidence "...", or accept with agentq accept-blocked ${item.messageId} --actor ${actorId} --to ${item.actorId} --evidence "..."`
+    nextLine,
+    `  note: the blocked reply needs follow-up or explicit acceptance.`
   ];
 }
 

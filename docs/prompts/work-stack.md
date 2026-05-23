@@ -115,8 +115,8 @@ Before claiming done, close the active work and then run done-check:
 
 ```bash
 agentq next --actor <agentq-actor-id>
-agentq work close --actor <agentq-actor-id> --summary "<closed frame>"
-agentq next --actor <agentq-actor-id>
+# Follow the printed action until it reports no required replies, active work,
+# or scope blockers remain.
 agentq done-check --actor <agentq-actor-id>
 ```
 

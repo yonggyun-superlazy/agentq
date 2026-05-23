@@ -119,10 +119,10 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - After `agentq work start`, immediately record context evidence: current frame, observed basis, touched paths/resources, and next pass check. Do not leave active work at evidence `0` until the stop hook.
 - Use `agentq diag` for the OS-local hook diagnostic ring log when scope/resource inference looks noisy. The ring keeps up to 10,000 recent hook events. `agentq diag activity` groups recent hooks by actor and includes declared paths, resources, open-work title, and evidence count.
 - Use `agentq owners --path <path>` before editing shared surfaces and `agentq owners --resource <resource>` before touching soft-exclusive tools such as `setup-watcher:ProjectDD/DDSetup` or `unity:ProjectDD/DDUnity`. Owner presence is a routing signal, not a lock; ask the owner to classify overlap instead of waiting silently from scope alone. Pre-tool hooks also emit a non-blocking owner nudge when a mutating tool path or inferred resource overlaps another active actor.
-- After a required question is answered, rerun `agentq done-check --actor <id>`; it prints the resolved outbound evidence inline before reporting success.
+- After a required question is answered, run `agentq next --actor <id>`; it prints the resolved outbound evidence inline before final `done-check`.
 - Use `agentq note` for advisory review/context that should appear in another actor's inbox without blocking either side. Do not use notes for decisions that must be answered; those remain `question`/`block`.
 - Use `agentq actors` to inspect active/stale actor presence before routing blockers. Active means recent AgentQ presence, not a guaranteed live OS process; the default stale window is 1 hour.
-- Use `agentq scope-check --actor <id>` before finishing. It fails broad `.` paths and generic hook responsibilities so agents refresh concrete ownership.
+- Use `agentq next --actor <id>` before finishing. It fails broad `.` paths and generic hook responsibilities by pointing the actor to the exact scope refresh command.
 - Close stale work with evidence instead of deleting it: `agentq work close --actor <id> --status abandoned|superseded --summary "..." --evidence "..."`.
 - Out-of-scope build, test, or generated-artifact failures should become required AgentQ blockers with observable evidence, not chat-only notes.
 - No `agentq.config.yaml`.

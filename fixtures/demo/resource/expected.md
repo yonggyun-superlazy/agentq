@@ -21,14 +21,15 @@ $ agentq question --id AQ-resource-demo --actor <caller> --resource setup-watche
 AQ-resource-demo routed to <owner>
 delivery:
   <owner>: record_only
-next: run `agentq done-check --actor <your-actor-id>` before finishing; answered evidence will be shown there once resolved.
+next: run `agentq next --actor <caller>` before finishing; answered evidence will be shown there once resolved.
 
 $ agentq done-check --actor <caller>
 
 AgentQ done-check failed for <caller>.
 - outbound_pending: AQ-resource-demo for <owner> (I need to run DD setup validation. Are you currently holding the DD setup watcher?)
-  next: wait for <owner> to respond; rerun agentq done-check --actor <caller> to see answered evidence.
-Resolve required replies before final response.
+  next: agentq next --actor <caller>
+  note: wait for <owner> to respond, or continue only non-overlapping work.
+Follow `agentq next` before final response.
 
 $ agentq inbox --actor <owner>
 

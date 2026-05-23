@@ -54,7 +54,7 @@ describe("CLI work stack", () => {
 
     await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("0 evidence")
+      stderr: expect.stringContaining(`agentq next --actor ${actorId}`)
     });
     await expect(runCommand([
       "work",
@@ -379,11 +379,11 @@ describe("CLI work stack", () => {
 
     await expect(runCommand(["scope-check", "--actor", actorId], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("scope-check failed")
+      stderr: expect.stringContaining(`agentq next --actor ${actorId}`)
     });
     await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("scope-check failed")
+      stderr: expect.stringContaining(`agentq next --actor ${actorId}`)
     });
 
     await runCommand([
@@ -759,7 +759,7 @@ describe("CLI work stack", () => {
       code: 0,
       stderr: ""
     });
-    expect(result.stdout).toContain("routing: broad; refresh this actor with agentq enter --actor");
+    expect(result.stdout).toContain("routing: broad; run agentq next --actor");
   });
 
   it("summarizes workspace queue health in the status view", async () => {
@@ -833,6 +833,7 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("open work: 1");
     expect(result.stdout).toContain("zero-evidence open work: 1");
     expect(result.stdout).toContain("Open work without context evidence remains");
+    expect(result.stdout).toContain("agentq next --actor <id>");
     expect(result.stdout).toContain("recent messages 24h: 1");
     expect(result.stdout).toContain("weak-scope actors: 0");
     expect(result.stdout).toContain("AW-status");

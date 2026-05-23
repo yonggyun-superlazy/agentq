@@ -24,14 +24,15 @@ $ agentq question --id AQ-0001 --actor <claude> --to <codex> --path src/protocol
 AQ-0001 routed to <codex>
 delivery:
   <codex>: record_only
-next: run `agentq done-check --actor <your-actor-id>` before finishing; answered evidence will be shown there once resolved.
+next: run `agentq next --actor <claude>` before finishing; answered evidence will be shown there once resolved.
 
 $ agentq done-check --actor <claude>
 
 AgentQ done-check failed for <claude>.
 - outbound_pending: AQ-0001 for <codex> (I need to change src/protocol.ts. Are you actively changing the protocol schema?)
-  next: wait for <codex> to respond; rerun agentq done-check --actor <claude> to see answered evidence.
-Resolve required replies before final response.
+  next: agentq next --actor <claude>
+  note: wait for <codex> to respond, or continue only non-overlapping work.
+Follow `agentq next` before final response.
 
 $ agentq inbox --actor <codex>
 
