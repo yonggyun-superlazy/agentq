@@ -11,13 +11,13 @@ Every AgentQ progress briefing should include this table or an updated equivalen
 | Area | Status | Evidence | Next Check |
 |------|--------|----------|------------|
 | Core queue and done gate | Shipped | `question`, `block`, `respond`, `done-check`, work stack tests | Keep regression tests green. |
-| Actor presence and scope | Shipped, noisy history remains | `status`, `actors`, `scope-check`; broad active actor count visible | Reduce broad active actors during dogfood. |
+| Actor presence and scope | Shipped, noisy history remains | `status`, `actors`, `scope-check`; broad active actor count visible; `work start` rejects missing or broad `--path` | Watch for remaining broad actors created by hook-only sessions. |
 | Path owner matching | Shipped | Absolute workspace paths and comma-separated legacy path values are tested | Watch dogfood `owners --path` misses. |
 | Resource coordination | Shipped baseline | `enter --resource`, `owners --resource`, hook inference, resource demo transcript | Add more real non-Superlazy resource examples. |
 | Non-polluting demos | Shipped baseline | demo scripts and package smoke use temp stores | Add explicit no-real-store-pollution assertion. |
 | Hook diagnostics | Shipped baseline | `diag`, `diag activity`, ignored meta command logging | Improve attribution when resource inference looks wrong. |
-| Instruction quality | Shipped baseline | checklist and executable protocol fixture | Capture real Codex, Claude Code, Copilot CLI transcripts. |
-| Cross-CLI proof | Partial | hooks installed for Codex, Claude Code, Copilot CLI | Run real per-CLI transcript checks. |
+| Instruction quality | Shipped baseline | checklist, executable protocol fixture, and cross-CLI inbox probe | Add a Codex-specific fixture and keep real CLI probes small. |
+| Cross-CLI proof | Partial | Claude Code and Copilot CLI both answered required inbox probes; Claude hook events observed | Verify Copilot hook events and stop gate activation separately. |
 | Public release readiness | Partial | package smoke, metadata, install/uninstall, README | Confirm npm ownership and publishing path. |
 | Stale policy | Observing | 1h default, `diag activity` gap data | Keep collecting live gap data before changing default. |
 
@@ -81,7 +81,7 @@ Done:
 
 Next:
 
-- Add real Codex/Claude/Copilot transcripts as fixtures or release evidence.
+- Add a Codex-specific transcript and keep the cross-CLI inbox probe fixture current.
 
 ### 4. Cross-CLI Dogfood
 
@@ -90,13 +90,15 @@ Goal: prove the same protocol works across Codex CLI, Claude Code, and Copilot C
 Current state:
 
 - Hook files are installed for all three.
-- Current live dogfood is still Codex-heavy.
+- Claude Code and Copilot CLI both answered required inbox probes in a temporary workspace.
+- Claude Code hook events were observed during the probe.
+- Copilot CLI command execution worked, but Copilot hook events were not observed in `diag`.
 
 Next:
 
-- Run one path-owner scenario in Claude Code.
-- Run one resource-owner scenario in Copilot CLI if the local CLI supports the needed hook surface.
-- Record exact transcripts under `fixtures/`.
+- Run a dedicated Copilot hook-surface test and prove `agentStop`/pre-tool events appear in `diag`.
+- Run one resource-owner scenario in Copilot CLI after hook-surface proof.
+- Keep exact transcripts under `fixtures/`.
 
 ### 5. Public Release Readiness
 

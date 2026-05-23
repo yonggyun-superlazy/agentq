@@ -151,7 +151,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq work start --actor <id> --title <title> [--path <path>...] [--resource <resource>...]",
+      "  agentq work start --actor <id> --title <title> --path <path>... [--resource <resource>...]",
       "  agentq work status --actor <id>",
       "  agentq work touch --actor <id> --path <path>...",
       "  agentq work evidence --actor <id> --evidence \"...\"",
@@ -536,7 +536,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
         "Manage one explicit actor's internal work stack",
         "",
         "Usage:",
-        "  agentq work start --actor <id> --title <title> [--path <path>...]",
+        "  agentq work start --actor <id> --title <title> --path <path>...",
         "  agentq work status --actor <id>",
         "  agentq work touch --actor <id> --path <path>...",
         "  agentq work evidence --actor <id> --evidence \"...\"",
@@ -554,10 +554,11 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     const workId = optionValue(args, "id");
     const goal = optionValue(args, "goal");
     const activeResources = optionValues(args, "resource");
+    const paths = requiredSpecificPathOptions(args, "path", "work start");
     const state = await startWork(store, {
       actorId,
       title: requiredOption(args, "title"),
-      paths: pathOptionValues(args, "path").length > 0 ? pathOptionValues(args, "path") : ["."],
+      paths,
       now: runtime.now(),
       ...(workId === undefined ? {} : { workId }),
       ...(goal === undefined ? {} : { goal }),
@@ -1345,6 +1346,25 @@ function pathOptionValues(args: ParsedArgs, name: string): string[] {
     .flatMap((value) => value.split(","))
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+}
+
+function requiredSpecificPathOptions(args: ParsedArgs, name: string, commandName: string): string[] {
+  const paths = pathOptionValues(args, name);
+  if (paths.length === 0) {
+    throw new Error(`${commandName} requires --${name} <specific-path>; broad "." work is not routeable.`);
+  }
+
+  const broadPaths = paths.filter(isBroadPathOption);
+  if (broadPaths.length > 0) {
+    throw new Error(`${commandName} requires specific --${name} values; broad "." work is not routeable.`);
+  }
+
+  return paths;
+}
+
+function isBroadPathOption(value: string): boolean {
+  const normalized = value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized === "." || normalized === "";
 }
 
 function renderInstallPlan(

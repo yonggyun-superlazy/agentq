@@ -241,6 +241,13 @@ Manual test matrix:
 | Copilot CLI | `.github/instructions/agentq.instructions.md` | `.github/hooks/agentq.json` | Agent stop gate and explicit actor id usage. |
 | Custom CLI | user prompt | manual commands | `enter`, `owners`, `question`, `done-check` flow. |
 
+Current manual evidence:
+
+- Cross-CLI inbox probe: [`../fixtures/cross-cli/2026-05-23-inbox-probe.md`](../fixtures/cross-cli/2026-05-23-inbox-probe.md).
+- Claude Code answered a required inbox item and passed `done-check` with an explicit actor id.
+- Copilot CLI answered a required inbox item and passed `done-check` with an explicit actor id using `--experimental`.
+- Copilot hook events were not observed in `diag` during that probe, so Copilot hook activation remains a separate validation item.
+
 Pass criteria:
 
 - The agent does not rely on `agentq current` or any implicit "me".

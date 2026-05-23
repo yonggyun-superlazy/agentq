@@ -92,6 +92,55 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("rejects broad work start paths", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-broad-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "work-broad",
+      "--paths",
+      "AgentQ",
+      "--responsibility",
+      "work stack"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--title",
+      "Broad work"
+    ], runtime)).rejects.toThrow(/work start requires --path <specific-path>/);
+    await expect(runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--title",
+      "Broad work",
+      "--path",
+      "."
+    ], runtime)).rejects.toThrow(/broad/);
+    await expect(runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--title",
+      "Broad work",
+      "--path",
+      "./"
+    ], runtime)).rejects.toThrow(/broad/);
+  });
+
   it("lets the sender supersede an outbound request without impersonating the receiver", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-supersede-"));
     const runtime = {
