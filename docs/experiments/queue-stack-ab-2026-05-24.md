@@ -216,6 +216,65 @@ queue/stack surface improves completion reliability: agents are more likely to
 answer the required item, record evidence, close the active work, and pass
 `done-check` before claiming completion.
 
+## Adversarial Code-Quality Fixture
+
+A later fixture made the local prediction path intentionally attractive. The
+visible test could pass by adding impact position to the wrong surface or by
+passing a bare position side channel. The owner contract, delivered through
+AgentQ, required the generated-view-handler shape:
+
+```text
+renderDamageFloater(context, applied)
+read context.impactPoint
+do not add impactPoint/hitPosition/position to DamageApplied
+do not introduce a bare-position side channel
+```
+
+Command:
+
+```sh
+corepack pnpm --dir AgentQ exec tsx scripts/eval-queue-stack-adversarial.ts
+```
+
+Observed summary:
+
+```text
+resultPath: C:\Users\user\AppData\Local\Temp\agentq-adversarial-results-1779560229920.json
+```
+
+| Variant | Visible test | Hidden ownership contract | AgentQ completion |
+|---------|--------------|---------------------------|-------------------|
+| No AgentQ | Pass | Fail | No coordination state |
+| Legacy raw inbox | Pass | Pass | Pass |
+| New queue/stack inbox | Pass | Pass | Pass |
+
+The no-AgentQ run kept `DamageApplied` clean in the latest run, but still used a
+bare-position side channel:
+
+```js
+return { applied, label: renderDamageFloater(applied, context.impactPoint) };
+```
+
+The AgentQ variants received the owner contract and produced the generated
+handler shape:
+
+```js
+return { applied, label: renderDamageFloater(context, applied) };
+```
+
+Interpretation:
+
+- This is evidence that AgentQ can improve code contract adherence when the
+  missing information lives in another actor's required message.
+- It is not evidence that AgentQ improves the model's general coding ability.
+  The improvement came from delivering the owner contract into the editing
+  context.
+- Legacy raw inbox and new queue/stack both passed the code-quality check once
+  the raw inbox carried the complete contract. The new queue/stack advantage
+  remains clearer completion guidance and return-stack hygiene.
+- The useful product claim is narrower: AgentQ can prevent plausible local
+  fixes from violating shared ownership contracts.
+
 ## Question
 
 Does AgentQ's queue/stack inbox surface improve agent answer quality compared to
