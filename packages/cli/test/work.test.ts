@@ -566,6 +566,63 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("agentq question --actor <your-actor-id>");
   });
 
+  it("finds and routes owners from absolute workspace paths", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-absolute-owners-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "src/consumer.ts",
+      "--responsibility",
+      "consumer"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const readmePath = path.join(workspace, "AgentQ", "README.md");
+    const docsPath = path.join(workspace, "AgentQ", "docs");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      `${readmePath},${docsPath}`,
+      "--responsibility",
+      "AgentQ public docs"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    const owners = await runCommand([
+      "owners",
+      "--actor",
+      sender,
+      "--path",
+      readmePath
+    ], runtime);
+    const question = await runCommand([
+      "question",
+      "--id",
+      "AQ-absolute-owner",
+      "--actor",
+      sender,
+      "--path",
+      "AgentQ/docs/focused-product-validation.md",
+      "--question",
+      "Can I change the focused validation doc?",
+      "--expect",
+      "Answer with active doc ownership evidence."
+    ], runtime);
+
+    expect(owners.stdout).toContain(receiver);
+    expect(question.stdout).toContain(`AQ-absolute-owner routed to ${receiver}`);
+  });
+
   it("refreshes exact actor presence when work starts", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-refresh-"));
     const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };

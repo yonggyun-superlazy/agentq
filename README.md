@@ -2,53 +2,72 @@
 
 The handshake between coding agents.
 
-Required-response queues and completion gates for agents sharing one workspace.
+AgentQ is a required-response queue and completion gate for independent coding agents sharing one workspace.
+Required-response queues and completion gates are the core primitive: when an agent needs an answer, AgentQ records the question and keeps both sides from claiming done until the answer is resolved.
 
-## Coordination, not orchestration
+When multiple agents edit the same repo, one stale write or unasked ownership question can erase another agent's work. AgentQ gives those agents a local handshake: declare scope, find active owners, ask required questions, answer with evidence, and block "done" until the queue is clear.
 
-AgentQ does not create a boss agent, assign tasks, run a dashboard, or merge work. It gives independent coding agents a local protocol for the moment when one agent finds a blocker that another agent must answer before either side can honestly finish.
+## How It Works
+
+- `enter`: declare the files or resources an actor is responsible for.
+- `owners`: find active actors on a path or soft-exclusive resource.
+- `question` / `block`: create a required request when another actor must answer.
+- `respond`: resolve the request with evidence.
+- `done-check`: fail if required replies or active work remain open.
+
+## Before And After
+
+Without AgentQ, two agents can write from stale local context and silently lose each other's changes:
 
 ```text
-Claude Code edits the UI contract.
-Codex changes the shared parser.
-Copilot updates project instructions.
-
-One agent finds a blocker.
-AgentQ routes it to the responsible actor.
-The receiver must resolve, answer, reject, or provide blocked evidence.
-The sender cannot pass done-check while the required reply is open.
-An agent also cannot pass done-check while its own active work frame is still open.
+Codex adds routingEvidence to src/protocol.ts.
+Claude writes consumerView from an older copy.
+Result: routingEvidence disappears.
 ```
+
+With AgentQ, the second agent finds the owner and cannot finish until the required answer arrives:
+
+```text
+agentq owners --actor <claude> --path src/protocol.ts
+agentq question --actor <claude> --to <codex> --path src/protocol.ts --question "Can I change this?"
+agentq done-check --actor <claude>   # fails while the answer is pending
+agentq respond AQ-... --actor <codex> --status answered --evidence "Preserve routingEvidence."
+agentq done-check --actor <claude>   # passes
+```
+
+Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md). The before/after collision transcript is [`fixtures/demo/before-after/expected.md`](fixtures/demo/before-after/expected.md), and the soft-exclusive resource transcript is [`fixtures/demo/resource/expected.md`](fixtures/demo/resource/expected.md).
 
 ## Quickstart
 
+From a source checkout:
+
 ```bash
 pnpm install
-pnpm test
-pnpm typecheck
-pnpm lint:md-snippets
-pnpm demo:test
-pnpm --filter agentq build
+pnpm build
+pnpm package:smoke
+node packages/cli/dist/main.js install --dry-run
+node packages/cli/dist/main.js doctor
 ```
 
-The current build proves the public command surface, package layout, OS-local queue core, reversible instruction marker install, and local hook gate install. The first runnable demo is simulated, so it does not require Claude Code, Codex, or Copilot to be installed.
+The runnable demos are simulated in a temporary workspace, so they do not require Claude Code, Codex, Copilot, Unity, or a project-specific repo.
 
 ```bash
-agentq() { node packages/cli/dist/main.js "$@"; }
-MSG_ID="AQ-$(date +%s)"
-CODEX_ACTOR=$(agentq enter --as codex --session codex-demo --paths "packages/core/src/**" --responsibility "protocol schema" | sed 's/ registered$//')
-CLAUDE_ACTOR=$(agentq enter --as claude-code --session claude-demo --paths "README.md" --responsibility "public docs" | sed 's/ registered$//')
-agentq block --id "$MSG_ID" --actor "$CODEX_ACTOR" --to "$CLAUDE_ACTOR" --path README.md --summary "README promises config that protocol forbids"
-agentq inbox --actor "$CLAUDE_ACTOR"
-agentq respond "$MSG_ID" --actor "$CLAUDE_ACTOR" --status resolved --evidence "README now says no config and no repo .agentq"
-agentq done-check --actor "$CODEX_ACTOR"
+pnpm demo:test
 ```
 
-Scripted fixed-id transcript: [`fixtures/demo/two-actors/expected.md`](fixtures/demo/two-actors/expected.md). The before/after collision transcript is [`fixtures/demo/before-after/expected.md`](fixtures/demo/before-after/expected.md).
+## Local Install
+
+`agentq install --dry-run` is the default inspection mode. It prints touched files, marker blocks, hook commands, and the uninstall command. Run `install --yes` for real hook gates only from an installed `agentq` binary that is on `PATH`.
+
+```bash
+agentq install --dry-run
+agentq install --yes
+agentq doctor
+```
 
 ## Delivery Inspection
 
-AgentQ does not assign work or create a boss agent. When `question` or `block` routes a request, AgentQ writes the durable queue item, checks the recipient session binding, and records pending delivery without starting another agent process.
+When `question` or `block` routes a request, AgentQ writes the durable queue item, checks the recipient session binding, and records pending delivery. `agentq wake` lets you inspect those pending delivery targets:
 
 `agentq wake` is inspection-only. It finds actors with pending required requests and prints the inbox command the visible target agent should run. It does not call `codex exec resume`, `claude -p --resume`, Copilot non-interactive resume, or any other headless resume path.
 
@@ -63,20 +82,6 @@ Headless resume is intentionally not part of AgentQ delivery:
 - Hidden resume turns can edit files or answer queues without updating the visible TUI.
 - Existing unmanaged TUI processes do not expose a reliable cross-CLI wake channel.
 - Future managed TUI or remote-control transports must prove visible delivery before they become AgentQ delivery targets.
-
-## Local Install
-
-From a source checkout:
-
-```bash
-pnpm install
-pnpm build
-pnpm package:smoke
-node packages/cli/dist/main.js install --dry-run
-node packages/cli/dist/main.js doctor
-```
-
-`agentq install --dry-run` is the default inspection mode. Hook files contain `agentq hook ...` commands, so run `install --yes` for real hook gates only from an installed `agentq` binary that is on `PATH`.
 
 ## Agent prompt
 
@@ -102,6 +107,10 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - No `agentq.config.yaml`.
 - No default repo `.agentq/`.
 - No `--store` escape hatch.
+
+## Scope
+
+Coordination, not orchestration: AgentQ does not create a boss agent, assign tasks, run a dashboard, merge work, lock files, or run hidden headless agent turns. It gives independent agents a local protocol for the moment when one agent needs an answer from another before either side can honestly finish.
 
 ## Supported agents
 

@@ -11,7 +11,7 @@
     "test": "vitest run",
     "typecheck": "tsc -b packages/core packages/cli packages/mcp",
     "lint:md-snippets": "tsx scripts/lint-md-snippets.ts",
-    "demo:test": "tsx scripts/demo-two-actors.ts && tsx scripts/demo-before-after.ts",
+    "demo:test": "tsx scripts/demo-two-actors.ts && tsx scripts/demo-before-after.ts && tsx scripts/demo-resource.ts",
     "package:smoke": "tsx scripts/package-smoke.ts"
   },
   "devDependencies": {

@@ -160,6 +160,35 @@ describe("blocker routing", () => {
     ).rejects.toBeInstanceOf(NoRecipientError);
   });
 
+  it("routes workspace absolute paths and comma-separated legacy active path values", async () => {
+    const store = await createStore();
+    const readmePath = path.join(store.workspaceRoot, "AgentQ", "README.md");
+    const docsPath = path.join(store.workspaceRoot, "AgentQ", "docs");
+    const receiver = await enterActor(
+      store,
+      "claude-code",
+      "session-absolute",
+      [`${readmePath},${docsPath}`],
+      ["AgentQ public docs"]
+    );
+
+    const readmePlan = await createRoutedBlocker(store, {
+      message: blocker("AQ-absolute", [readmePath], []),
+      now: "2026-05-18T00:00:10.000Z",
+      staleAfterMs: 60_000
+    });
+    const docsPlan = await createRoutedBlocker(store, {
+      message: blocker("AQ-docs", ["AgentQ/docs/focused-product-validation.md"], []),
+      now: "2026-05-18T00:00:10.000Z",
+      staleAfterMs: 60_000
+    });
+
+    expect(readmePlan.recipients.map((recipient) => recipient.actorId)).toEqual([receiver.actorId]);
+    expect(docsPlan.recipients.map((recipient) => recipient.actorId)).toEqual([receiver.actorId]);
+    expect(readmePlan.recipients[0]?.evidence).toContainEqual({ kind: "path", detail: readmePath });
+    expect(docsPlan.recipients[0]?.evidence).toContainEqual({ kind: "path", detail: docsPath });
+  });
+
   it("excludes stale actors from new blockers but keeps existing requests blocking", async () => {
     const store = await createStore();
     const staleActor = await enterActor(store, "codex", "session-1", ["packages/core/src/**"], [

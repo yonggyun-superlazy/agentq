@@ -557,7 +557,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     const state = await startWork(store, {
       actorId,
       title: requiredOption(args, "title"),
-      paths: optionValues(args, "path").length > 0 ? optionValues(args, "path") : ["."],
+      paths: pathOptionValues(args, "path").length > 0 ? pathOptionValues(args, "path") : ["."],
       now: runtime.now(),
       ...(workId === undefined ? {} : { workId }),
       ...(goal === undefined ? {} : { goal }),
@@ -591,7 +591,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   if (subcommand === "touch") {
     const state = await appendActiveWorkTouch(store, {
       actorId,
-      paths: optionValues(args, "path"),
+      paths: pathOptionValues(args, "path"),
       now: runtime.now()
     });
     if (state === null) {
@@ -737,7 +737,7 @@ async function ownersCommand(argv: readonly string[], runtime: CommandRuntime): 
     throw new Error("owners --stale-ms must be a non-negative number.");
   }
 
-  const paths = optionValues(args, "path");
+  const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   if (paths.length === 0 && resources.length === 0) {
     throw new Error("owners requires --path <path> or --resource <resource>.");
@@ -846,7 +846,7 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
 
 async function enterCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
-  const paths = optionValues(args, "paths");
+  const paths = pathOptionValues(args, "paths");
   const activeResources = optionValues(args, "resource");
   const responsibilities = optionValues(args, "responsibility");
   const store = await openStore(runtime);
@@ -902,7 +902,7 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
   const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
   const to = optionValues(args, "to");
   const summary = requiredOption(args, "summary");
-  const paths = optionValues(args, "path");
+  const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
   const message: Message = {
@@ -941,7 +941,7 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
   const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
   const to = optionValues(args, "to");
   const question = requiredOption(args, "question");
-  const paths = optionValues(args, "path");
+  const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
   if (paths.length === 0 && resources.length === 0 && contracts.length === 0) {
@@ -1338,6 +1338,13 @@ function optionValue(args: ParsedArgs, name: string): string | undefined {
 
 function optionValues(args: ParsedArgs, name: string): string[] {
   return [...(args.options.get(name) ?? [])];
+}
+
+function pathOptionValues(args: ParsedArgs, name: string): string[] {
+  return optionValues(args, name)
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 }
 
 function renderInstallPlan(

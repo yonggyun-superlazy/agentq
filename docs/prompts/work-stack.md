@@ -48,6 +48,19 @@ If `owners` or a pre-tool hook nudge shows another active owner and the edit can
 change their contract or unblock their work, create a required question/block
 instead of resolving it only in your local chat.
 
+Before using a soft-exclusive tool such as a setup watcher, Unity project, shared
+build service, package manager, or process diagnostic, check the named resource:
+
+```bash
+agentq owners --actor <agentq-actor-id> --resource <resource>
+```
+
+If a resource owner appears, ask a required question before running the tool:
+
+```bash
+agentq question --actor <agentq-actor-id> --to <target-actor-id> --resource <resource> --question "<tool/resource decision needed>" --expect "<clear-to-run or blocker evidence>"
+```
+
 `agentq actors` marks actors stale from recent AgentQ presence, not from OS
 process state. The default stale window is 1 hour so long-running CLI reasoning
 or user-input waits do not disappear after a short pause. A stale actor may still

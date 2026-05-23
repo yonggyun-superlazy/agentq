@@ -26,6 +26,8 @@ import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
 export type HookAdapter = "codex" | "claude-code" | "copilot-cli";
 export type HookRuntimeEvent = "session-start" | "pre-tool" | "stop";
 
+const UNITY_EXECUTABLE_PATTERN = /(^|[\/\s"';&|])unity(?:\.exe)?(?=$|[\s"';&|])/i;
+
 export interface HookHandlerOptions {
   readonly adapter: HookAdapter;
   readonly event: HookRuntimeEvent;
@@ -596,7 +598,7 @@ function inferCommandResources(command: string, cwd: string): string[] {
   const unityProjectPath = extractUnityProjectPath(normalizedCommand, cwd);
   if (unityProjectPath !== null) {
     resources.add(`unity:${unityProjectPath}`);
-  } else if (/\bunity(?:\.exe)?\b/i.test(normalizedCommand)) {
+  } else if (UNITY_EXECUTABLE_PATTERN.test(normalizedCommand)) {
     for (const projectPath of [
       "ProjectDD/DDUnity",
       "ProjectSHE",
@@ -613,7 +615,10 @@ function inferCommandResources(command: string, cwd: string): string[] {
 }
 
 function isAgentQMetaCommand(command: string): boolean {
-  return /(^|[\s"';&|])agentq(?:\.cmd|\.ps1|\.bat|\.exe)?\s+(accept-blocked|actors|block|diag|doctor|done-check|enter|follow-up|hook|inbox|install|owners|question|respond|scope-check|status|supersede|uninstall|wake|work)\b/i.test(command);
+  const normalizedCommand = command.replace(/\\/g, "/");
+  const subcommands = "accept-blocked|actors|block|diag|doctor|done-check|enter|follow-up|hook|inbox|install|owners|question|respond|scope-check|status|supersede|uninstall|wake|work";
+  return new RegExp(`(^|[\\s"';&|])agentq(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?\\s+(${subcommands})\\b`, "i").test(normalizedCommand) ||
+    new RegExp(`(^|[\\s"';&|])(?:node(?:\\.exe)?|tsx(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?)\\s+[^\\s"';&|]*agentq[^\\s"';&|]*/packages/cli/(?:dist/main\\.js|src/main\\.ts)\\s+(${subcommands})\\b`, "i").test(normalizedCommand);
 }
 
 function summarizeCommand(command: string): string {
@@ -622,7 +627,7 @@ function summarizeCommand(command: string): string {
 }
 
 function extractUnityProjectPath(command: string, cwd: string): string | null {
-  if (!/\bunity(?:\.exe)?\b/i.test(command)) {
+  if (!UNITY_EXECUTABLE_PATTERN.test(command)) {
     return null;
   }
 

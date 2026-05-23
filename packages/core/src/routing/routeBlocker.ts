@@ -86,7 +86,7 @@ export async function planRequiredRequestRoutes(
   addExplicitRoutes(routeMap, activePresences, explicitTo);
   if (explicitTo.length === 0) {
     addContractRoutes(routeMap, activePresences, input.message.contracts);
-    addPathRoutes(routeMap, activePresences, input.message.paths);
+    addPathRoutes(routeMap, activePresences, input.message.paths, store.workspaceRoot);
     addResourceRoutes(routeMap, activePresences, input.message.resources ?? []);
     addKnownActorRoutes(routeMap, activePresences, input.threadActorIds ?? [], "thread");
     addKnownActorRoutes(routeMap, activePresences, input.recentActorIds ?? [], "recent");
@@ -144,7 +144,9 @@ export async function findActivePathOwners(
   store: WorkspaceStore,
   input: ActivePathOwnerQuery
 ): Promise<ActivePathOwnerMatch[]> {
-  const queriedPaths = input.paths.filter((candidate) => normalizePath(candidate) !== ".");
+  const queriedPaths = expandPathCandidates(input.paths).filter((candidate) =>
+    normalizePath(candidate, store.workspaceRoot) !== "."
+  );
   if (queriedPaths.length === 0) {
     return [];
   }
@@ -157,9 +159,9 @@ export async function findActivePathOwners(
       continue;
     }
 
-    for (const activePath of actor.activePaths) {
+    for (const activePath of expandPathCandidates(actor.activePaths)) {
       for (const queriedPath of queriedPaths) {
-        if (pathPatternsOverlap(activePath, queriedPath)) {
+        if (pathPatternsOverlap(activePath, queriedPath, store.workspaceRoot)) {
           matches.push({ actor, activePath, queriedPath });
         }
       }
@@ -304,11 +306,13 @@ function addContractRoutes(
 function addPathRoutes(
   routeMap: Map<string, RoutingEvidence[]>,
   presences: readonly Presence[],
-  messagePaths: readonly string[]
+  messagePaths: readonly string[],
+  workspaceRoot: string
 ): void {
+  const queriedPaths = expandPathCandidates(messagePaths);
   for (const presence of presences) {
-    for (const activePath of presence.activePaths) {
-      if (messagePaths.some((messagePath) => pathPatternOverlaps(activePath, messagePath))) {
+    for (const activePath of expandPathCandidates(presence.activePaths)) {
+      if (queriedPaths.some((messagePath) => pathPatternOverlaps(activePath, messagePath, workspaceRoot))) {
         addEvidence(routeMap, presence.actorId, {
           kind: "path",
           detail: activePath
@@ -382,9 +386,9 @@ function normalizeResource(value: string): string {
   return value.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
-function pathPatternOverlaps(activePattern: string, messagePath: string): boolean {
-  const active = normalizePath(activePattern);
-  const message = normalizePath(messagePath);
+function pathPatternOverlaps(activePattern: string, messagePath: string, workspaceRoot: string): boolean {
+  const active = normalizePath(activePattern, workspaceRoot);
+  const message = normalizePath(messagePath, workspaceRoot);
 
   if (active === ".") {
     return false;
@@ -407,12 +411,41 @@ function pathPatternOverlaps(activePattern: string, messagePath: string): boolea
   return message.startsWith(`${active}/`);
 }
 
-function pathPatternsOverlap(leftPattern: string, rightPattern: string): boolean {
-  return pathPatternOverlaps(leftPattern, rightPattern) || pathPatternOverlaps(rightPattern, leftPattern);
+function pathPatternsOverlap(leftPattern: string, rightPattern: string, workspaceRoot: string): boolean {
+  return pathPatternOverlaps(leftPattern, rightPattern, workspaceRoot) ||
+    pathPatternOverlaps(rightPattern, leftPattern, workspaceRoot);
 }
 
-function normalizePath(value: string): string {
-  return value.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+function normalizePath(value: string, workspaceRoot: string): string {
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, "");
+  const withSlashes = trimmed.replace(/\\/g, "/");
+  const relative = relativizeWorkspacePath(withSlashes, workspaceRoot);
+  return relative.replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
+}
+
+function expandPathCandidates(values: readonly string[]): string[] {
+  return values
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function relativizeWorkspacePath(value: string, workspaceRoot: string): string {
+  const root = workspaceRoot.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  if (root.length === 0) {
+    return value;
+  }
+
+  const caseInsensitive = process.platform === "win32" || /^[A-Za-z]:\//.test(value) || /^[A-Za-z]:\//.test(root);
+  const comparableValue = caseInsensitive ? value.toLowerCase() : value;
+  const comparableRoot = caseInsensitive ? root.toLowerCase() : root;
+
+  if (comparableValue === comparableRoot) {
+    return ".";
+  }
+
+  const prefix = `${comparableRoot}/`;
+  return comparableValue.startsWith(prefix) ? value.slice(root.length + 1) : value;
 }
 
 function uniqueOwnerMatches(matches: readonly ActivePathOwnerMatch[]): ActivePathOwnerMatch[] {

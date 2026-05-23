@@ -76,7 +76,7 @@ Public artifact:
 - Keep the current simulated transcript.
 - Keep the before/after transcript in [`../fixtures/demo/before-after/expected.md`](../fixtures/demo/before-after/expected.md). It shows a stale write losing `routingEvidence` before AgentQ, then `owners -> question -> done-check fail/pass` preserving both fields after AgentQ.
 - Keep the two-actor collision transcript in [`../fixtures/demo/two-actors/expected.md`](../fixtures/demo/two-actors/expected.md). It does not require Codex, Claude Code, Copilot, Unity, or a project-specific repo.
-- Add one resource demo transcript using a synthetic resource such as `tool:demo/shared-build`.
+- Keep the resource coordination transcript in [`../fixtures/demo/resource/expected.md`](../fixtures/demo/resource/expected.md). It uses `setup-watcher:ProjectDD/DDSetup` in a temporary workspace to show that AgentQ coordinates soft-exclusive tools, not only files.
 
 ### 2. Resource-First UX
 
@@ -129,12 +129,12 @@ Design rules:
 - Resource questions should ask for fast coordination, not permission from a boss.
 - Hook inference should be conservative. False negatives are better than false owner pollution.
 
-Open implementation checks:
+Current implementation checks:
 
-- Add docs for resource id naming: `<domain>:<workspace-relative-name>`.
-- Add examples for custom resources that do not depend on Superlazy.
-- Keep inferred resources visible in `agentq diag`.
-- Use `agentq diag activity` to observe whether resource owners stay fresh during long tool runs.
+- Resource id naming is documented as `<domain>:<workspace-relative-name>` in [`resources.md`](resources.md).
+- Custom resources that do not depend on Superlazy are documented in [`resources.md`](resources.md).
+- Inferred resources are visible in `agentq diag`.
+- `agentq diag activity` shows resource owners and hook gaps so stale policy can be based on observed behavior.
 
 ### 3. Non-Polluting Smoke And Demo
 
