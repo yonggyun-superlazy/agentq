@@ -18,6 +18,11 @@ AgentQ state feels ambiguous. It checks required inbox, outbound replies, the
 live work stack, scope, answered evidence, and optional notes, then prints one
 next action with the exact lower-level command only when needed.
 
+When you are specifically answering messages, `agentq inbox --actor
+<agentq-actor-id>` shows a resolve queue: required replies first, optional notes
+second, why each item matters, and the active return stack to resume after the
+reply.
+
 At the start of non-trivial work, identify your actor id from the session
 context or `agentq actors`, then run `agentq next --actor <agentq-actor-id>`
 before opening new work.

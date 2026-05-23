@@ -14,10 +14,10 @@ Every AgentQ progress briefing should include this table or an updated equivalen
 | Actor presence and scope | Shipped, noisy history remains | `status`, `actors`, `scope-check`; broad active actor count visible; `work start` rejects missing or broad `--path` | Watch for remaining broad actors created by hook-only sessions. |
 | Path owner matching | Shipped | Absolute workspace paths and comma-separated legacy path values are tested | Watch dogfood `owners --path` misses. |
 | Resource coordination | Shipped baseline | `enter --resource`, `owners --resource`, hook inference, resource demo transcript | Add more real non-Superlazy resource examples. |
-| Contextual next-step UX | Shipped baseline | `owners`, routed delivery, `inbox`, stack-aware `work status`, `status`, and successful `done-check` print next actions without adding outbox/current commands | Watch dogfood cases where agents still ask what command to run next. |
+| Contextual next-step UX | Shipped baseline | `owners`, routed delivery, queue/stack-aware `inbox`, stack-aware `work status`, `status`, and successful `done-check` print next actions without adding outbox/current commands | Watch dogfood cases where agents still ask what command to run next. |
 | Non-polluting demos | Shipped baseline | demo scripts and package smoke use temp stores | Add explicit no-real-store-pollution assertion. |
 | Hook diagnostics | Shipped | `diag`, `diag activity`, 10,000-event ring, ignored meta command logging, declared scope and open-work evidence counts in activity output, heartbeat refresh for already-specific actors on pathless tools | Watch for tool payloads that still only infer `paths:.`. |
-| Instruction quality | Shipped baseline | checklist, executable protocol fixture, and cross-CLI inbox probe | Add a Codex-specific fixture and keep real CLI probes small. |
+| Instruction quality | Shipped baseline | checklist, executable protocol fixture, queue/stack A/B fixture, and cross-CLI inbox probe | Add a Codex-specific fixture and keep real CLI probes small. |
 | Cross-CLI proof | Partial | Claude Code and Copilot CLI both answered required inbox probes; Copilot hook events observed with prompt-mode repo-hook opt-in | Verify Copilot stop gate blocking with a pending inbox/work item. |
 | Public release readiness | Partial | package smoke, metadata, install/uninstall, README | Confirm npm ownership and publishing path. |
 | Stale policy | Observing | 1h default, `diag activity` gap data, evidence-based `work close --status abandoned|superseded` cleanup | Keep collecting live gap data before changing default. |
@@ -36,6 +36,7 @@ The strongest product wedge is not chat. It is the combination of:
 - hook-based reminders that stay local and visible
 - diagnostics that explain why an actor is or is not routeable
 - contextual next-step output so agents do not memorize extra interfaces
+- queue/stack A/B fixtures so agent answer quality can be compared with the guidance enabled and disabled
 
 ## Roadmap Lanes
 
@@ -80,10 +81,12 @@ Done:
 - Checklist: [`instruction-quality-checklist.md`](instruction-quality-checklist.md).
 - Work-stack prompt: [`prompts/work-stack.md`](prompts/work-stack.md).
 - Executable baseline transcript: [`../fixtures/instruction-quality/expected.md`](../fixtures/instruction-quality/expected.md).
+- Queue/stack A/B review fixture: [`../fixtures/eval/agent-behavior/queue-stack-ab.md`](../fixtures/eval/agent-behavior/queue-stack-ab.md).
 
 Next:
 
 - Add a Codex-specific transcript and keep the cross-CLI inbox probe fixture current.
+- Use the A/B fixture with live Codex, Claude Code, and Copilot sessions, then record which surface produces fewer missed required replies and fewer lost return frames.
 
 ### 4. Cross-CLI Dogfood
 

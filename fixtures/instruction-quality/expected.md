@@ -53,11 +53,16 @@ AgentQ done-check failed for <target>.
   note: wait for <owner> to respond, or continue only non-overlapping work.
 Follow `agentq next` before final response.
 $ agentq inbox --actor <owner>
-AQ-instruction-path
-  kind: question
-  required: yes
+Resolve queue for <owner>
+Required: 1
+Optional: 0
+Return stack: none
+
+Required replies:
+- AQ-instruction-path [required] I need to update the protocol consumer. What protocol fields must I preserve?
+  why: required reply blocks done-check
   from: <target>
-  summary: I need to update the protocol consumer. What protocol fields must I preserve?
+  related: no active work stack
   paths: src/protocol.ts
   resources: (none)
   contracts: (none)
@@ -67,6 +72,8 @@ AQ-instruction-path
   routing: path:src/protocol.ts
   respond: agentq respond AQ-instruction-path --actor <owner> --status answered --evidence "..."
   next: answer with the requested decision/evidence so both actors can pass done-check.
+
+After resolving useful items, run: agentq next --actor <owner>
 $ agentq respond AQ-instruction-path --actor <owner> --status answered --evidence Preserve routingEvidence and keep RequiredRequest routing evidence visible.
 AQ-instruction-path answered
 $ agentq work evidence --actor <target> --evidence Owner answered protocol field contract; consumer update can preserve routingEvidence.

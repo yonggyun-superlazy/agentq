@@ -336,7 +336,7 @@ async function openHookStore(cwd: string, env: NodeJS.ProcessEnv | undefined): P
 }
 
 function sessionStartOutput(adapter: HookAdapter, actorId: string): object {
-  const context = `Internal coordination actor id: ${actorId}. For file/code edits, handoffs, active work, or ambiguous coordination state, run: agentq next --actor ${actorId}. For short read-only answers, do not run coordination commands before answering. Keep coordination names and commands out of user-facing answers.`;
+  const context = `Internal shared-work id: ${actorId}. For file/code edits, handoffs, active work, or unclear shared-work state, run: agentq next --actor ${actorId}. For short read-only answers, do not run shared-work commands before answering. Keep internal command names and identifiers out of user-facing answers.`;
 
   if (adapter === "copilot-cli") {
     return { additionalContext: context };

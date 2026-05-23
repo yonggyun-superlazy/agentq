@@ -795,7 +795,8 @@ async function nextCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       doneResult,
       workResult,
       scopeResult,
-      resolvedOutbound
+      resolvedOutbound,
+      queueStackUx: queueStackUxEnabled(runtime.env)
     }),
     stderr: ""
   };
@@ -808,6 +809,7 @@ interface NextActionInput {
   readonly workResult: Awaited<ReturnType<typeof runWorkDoneCheck>>;
   readonly scopeResult: Awaited<ReturnType<typeof runScopeCheck>>;
   readonly resolvedOutbound: readonly ResolvedOutboundItem[];
+  readonly queueStackUx: boolean;
 }
 
 function renderNextAction(input: NextActionInput): string {
@@ -818,7 +820,12 @@ function renderNextAction(input: NextActionInput): string {
   if (requiredInbox.length > 0) {
     const item = requiredInbox[0];
     if (item !== undefined) {
-      return renderNextRequiredInbox(input.actorId, item, requiredInbox.length);
+      return renderNextRequiredInbox(
+        input.actorId,
+        item,
+        requiredInbox.length,
+        input.queueStackUx ? input.workResult.activeStack ?? [] : []
+      );
     }
   }
 
@@ -901,7 +908,8 @@ function renderNextAction(input: NextActionInput): string {
 function renderNextRequiredInbox(
   actorId: string,
   item: Awaited<ReturnType<typeof listInboxItems>>[number],
-  totalRequired: number
+  totalRequired: number,
+  activeStack: readonly WorkState[]
 ): string {
   const message = item.state.message;
   const status = message.kind === "question" ? "answered" : "resolved";
@@ -913,6 +921,7 @@ function renderNextRequiredInbox(
     ...renderNextMessageBody(message),
     "Run:",
     `  agentq respond ${message.id} --actor ${actorId} --status ${status} --evidence "<answer with evidence>"`,
+    ...renderReturnStackLines(activeStack),
     "Then:",
     `  agentq next --actor ${actorId}`
   ];
@@ -1298,15 +1307,150 @@ async function inboxCommand(argv: readonly string[], runtime: CommandRuntime): P
   const args = parseArgs(argv);
   const actorId = requiredOption(args, "actor");
   const store = await openStore(runtime);
-  const openRequests = await listInboxItems(store, actorId);
+  const [openRequests, activeStack] = await Promise.all([
+    listInboxItems(store, actorId),
+    readActiveWorkStack(store, actorId)
+  ]);
+  const useQueueStackUx = queueStackUxEnabled(runtime.env);
 
   return {
     code: 0,
     stdout: openRequests.length === 0
       ? "inbox empty\n"
-      : `${openRequests.map((item) => renderInboxRequest(actorId, item.state, item.request)).join("\n\n")}\n`,
+      : useQueueStackUx
+        ? renderResolveQueueInbox(actorId, openRequests, activeStack)
+        : `${openRequests.map((item) => renderInboxRequest(actorId, item.state, item.request)).join("\n\n")}\n`,
     stderr: ""
   };
+}
+
+function queueStackUxEnabled(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.AGENTQ_QUEUE_STACK_UX;
+  if (raw === undefined) {
+    return true;
+  }
+
+  return !["0", "false", "off", "legacy"].includes(raw.trim().toLowerCase());
+}
+
+function renderResolveQueueInbox(
+  actorId: string,
+  openRequests: Awaited<ReturnType<typeof listInboxItems>>,
+  activeStack: readonly WorkState[]
+): string {
+  const required = openRequests.filter((item) => item.request.blocksReceiverDone);
+  const optional = openRequests.filter((item) => !item.request.blocksReceiverDone);
+  const lines = [
+    `Resolve queue for ${actorId}`,
+    `Required: ${required.length}`,
+    `Optional: ${optional.length}`,
+    ...renderReturnStackLines(activeStack)
+  ];
+
+  if (required.length > 0) {
+    lines.push("", "Required replies:");
+    for (const item of required) {
+      lines.push(...renderResolveQueueItem(actorId, item.state, item.request, activeStack));
+    }
+  }
+
+  if (optional.length > 0) {
+    lines.push("", "Optional notes:");
+    for (const item of optional) {
+      lines.push(...renderResolveQueueItem(actorId, item.state, item.request, activeStack));
+    }
+  }
+
+  lines.push("", `After resolving useful items, run: agentq next --actor ${actorId}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function renderReturnStackLines(activeStack: readonly WorkState[]): string[] {
+  const current = activeStack[activeStack.length - 1];
+  if (current === undefined) {
+    return ["Return stack: none"];
+  }
+
+  return [
+    "Return stack:",
+    `  current: ${current.workId} - ${current.title}`,
+    ...renderWorkStackLines(activeStack, "  lineage")
+  ];
+}
+
+function renderResolveQueueItem(
+  actorId: string,
+  state: FoldedMessageState,
+  request: FoldedRequest,
+  activeStack: readonly WorkState[]
+): string[] {
+  const message = state.message;
+  const required = request.request.required;
+  const responseStatus = message.kind === "question" ? "answered" : "resolved";
+  const action = required ? "respond" : "ack";
+  const lines = [
+    `- ${message.id} [${required ? "required" : "optional"}] ${message.summary}`,
+    `  why: ${required ? "required reply blocks done-check" : "optional context; done-check can pass without this ack"}`,
+    `  from: ${message.createdBy}`,
+    `  related: ${describeInboxRelation(message, activeStack)}`,
+    `  paths: ${joinList(message.paths)}`,
+    `  resources: ${joinList(message.resources ?? [])}`,
+    `  contracts: ${joinList(message.contracts)}`,
+    ...renderResolveQueueMessageBody(message),
+    required ? `  pass: ${joinList(message.passCriteria)}` : "",
+    `  routing: ${request.request.routingEvidence.map((evidence) => `${evidence.kind}:${evidence.detail}`).join("; ")}`,
+    `  ${action}: agentq respond ${message.id} --actor ${actorId} --status ${responseStatus} --evidence "..."`,
+    `  next: ${inboxItemNext(message.kind, required)}`
+  ];
+
+  return lines.filter((line) => line.length > 0);
+}
+
+function renderResolveQueueMessageBody(message: Message): string[] {
+  if (message.kind === "question") {
+    return [
+      `  question: ${message.question}`,
+      ...(message.expectedAnswer === undefined ? [] : [`  expected: ${message.expectedAnswer}`])
+    ];
+  }
+
+  if (message.kind === "note") {
+    return [`  note: ${message.body}`];
+  }
+
+  return [
+    `  observed: ${message.observed}`,
+    `  broken: ${message.brokenContract}`
+  ];
+}
+
+function describeInboxRelation(message: Message, activeStack: readonly WorkState[]): string {
+  const current = activeStack[activeStack.length - 1];
+  if (current === undefined) {
+    return "no active work stack";
+  }
+
+  const activePaths = [...current.paths, ...current.touchedPaths];
+  const overlap = message.paths.find((messagePath) => activePaths.some((activePath) => pathsOverlap(activePath, messagePath)));
+  if (overlap !== undefined) {
+    return `current stack path overlap: ${overlap}`;
+  }
+
+  return `current stack ${current.workId}; classify whether this changes your frame before editing`;
+}
+
+function pathsOverlap(left: string, right: string): boolean {
+  const normalizedLeft = normalizeComparablePath(left);
+  const normalizedRight = normalizeComparablePath(right);
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.startsWith(`${normalizedRight}/`) ||
+    normalizedRight.startsWith(`${normalizedLeft}/`)
+  );
+}
+
+function normalizeComparablePath(value: string): string {
+  return value.replace(/\\/g, "/").replace(/\/+$/g, "").toLowerCase();
 }
 
 function renderInboxRequest(

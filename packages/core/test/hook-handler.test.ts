@@ -37,9 +37,9 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:00.000Z"
     });
-    expect(start.stdout).toContain("Internal coordination actor id:");
+    expect(start.stdout).toContain("Internal shared-work id:");
     expect(start.stdout).toContain("For short read-only answers");
-    expect(start.stdout).toContain("do not run coordination commands before answering");
+    expect(start.stdout).toContain("do not run shared-work commands before answering");
     const actorId = actorIdFromContext(start.stdout);
 
     const store = await resolveWorkspaceStore(workspace, { env });
@@ -651,7 +651,7 @@ describe("AgentQ hook handler", () => {
 });
 
 function actorIdFromContext(stdout: string): string {
-  const match = stdout.match(/Internal coordination actor id: ([^.]+)\./);
+  const match = stdout.match(/Internal shared-work id: ([^.]+)\./);
   if (match?.[1] === undefined) {
     throw new Error(`No actor id in hook output: ${stdout}`);
   }

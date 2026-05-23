@@ -25,6 +25,7 @@ const scenarios: ScenarioResult[] = [];
 
 scenarios.push(await runRequiredPathHandshake());
 scenarios.push(await runNonBlockingNote());
+scenarios.push(await runQueueStackAbFixture());
 scenarios.push(runStaticTranscriptRules());
 scenarios.push(await runCrossCliFixtureCoverage());
 
@@ -171,7 +172,7 @@ async function runNonBlockingNote(): Promise<ScenarioResult> {
   assertIncludes(done.stdout, "ok: no required replies or active work remain open", "note should not block sender done-check");
 
   const inbox = await runAndRecord(["inbox", "--actor", receiverActor]);
-  assertIncludes(inbox.stdout, "kind: note", "receiver inbox should show note kind");
+  assertIncludes(inbox.stdout, "[optional] Advisory review context", "receiver inbox should show optional note");
   assertIncludes(inbox.stdout, "ack:", "receiver inbox should show ack command");
 
   return {
@@ -180,6 +181,103 @@ async function runNonBlockingNote(): Promise<ScenarioResult> {
     evidence: [
       "note reached the recipient inbox with an ack command",
       "sender done-check still passed because no decision was required"
+    ]
+  };
+}
+
+async function runQueueStackAbFixture(): Promise<ScenarioResult> {
+  const receiver = await runAndRecord([
+    "enter",
+    "--as",
+    "claude-code",
+    "--session",
+    "eval-queue-stack-receiver",
+    "--paths",
+    "src/runtime/eventBus.ts",
+    "--responsibility",
+    "event bus owner"
+  ]);
+  const receiverActor = actorFromEnter(receiver.stdout);
+
+  const sender = await runAndRecord([
+    "enter",
+    "--as",
+    "codex",
+    "--session",
+    "eval-queue-stack-sender",
+    "--paths",
+    "src/ui/statusPanel.ts",
+    "--responsibility",
+    "status panel view"
+  ]);
+  const senderActor = actorFromEnter(sender.stdout);
+
+  await runAndRecord([
+    "work",
+    "start",
+    "--actor",
+    receiverActor,
+    "--id",
+    "AW-eval-queue-stack",
+    "--title",
+    "Repair event bus ownership",
+    "--path",
+    "src/runtime/eventBus.ts"
+  ]);
+  const owners = await runAndRecord([
+    "owners",
+    "--actor",
+    senderActor,
+    "--path",
+    "src/runtime/eventBus.ts"
+  ]);
+  assertIncludes(owners.stdout, receiverActor, "queue/stack sender should find receiver before asking");
+  await runAndRecord([
+    "question",
+    "--id",
+    "AQ-eval-queue-stack",
+    "--actor",
+    senderActor,
+    "--to",
+    receiverActor,
+    "--path",
+    "src/runtime/eventBus.ts",
+    "--question",
+    "Can statusPanel read badge state from eventBus?",
+    "--expect",
+    "Answer with the owning source and safe read surface."
+  ]);
+
+  const enhanced = await runAndRecord(["inbox", "--actor", receiverActor]);
+  assertIncludes(enhanced.stdout, "Resolve queue for", "enhanced inbox should name the resolve queue");
+  assertIncludes(enhanced.stdout, "Return stack:", "enhanced inbox should show where to return after answering");
+  assertIncludes(enhanced.stdout, "why: required reply blocks done-check", "enhanced inbox should explain required pressure");
+  assertIncludes(enhanced.stdout, "related: current stack path overlap", "enhanced inbox should explain relation to work");
+
+  const legacy = await runCommand(["inbox", "--actor", receiverActor], {
+    ...runtime,
+    env: { ...runtime.env, AGENTQ_QUEUE_STACK_UX: "0" }
+  });
+  if (legacy.code !== 0) {
+    throw new Error(`Legacy inbox probe failed:\n${legacy.stdout}${legacy.stderr}`);
+  }
+  assertIncludes(legacy.stdout, "AQ-eval-queue-stack\n  kind: question", "legacy inbox should stay available for A/B review");
+
+  const manualFixture = await readFile(
+    new URL("../fixtures/eval/agent-behavior/queue-stack-ab.md", import.meta.url),
+    "utf8"
+  );
+  assertIncludes(manualFixture, "Variant A", "manual A/B fixture should contain the legacy prompt");
+  assertIncludes(manualFixture, "Variant B", "manual A/B fixture should contain the queue-stack prompt");
+  assertIncludes(manualFixture, "AGENTQ_QUEUE_STACK_UX=0", "manual A/B fixture should name the off switch");
+
+  return {
+    name: "queue-stack A/B fixture",
+    result: "pass",
+    evidence: [
+      "enhanced inbox injected resolve queue, return stack, required pressure, and relation hints",
+      "legacy inbox remains reachable with AGENTQ_QUEUE_STACK_UX=0 for manual answer-quality comparison",
+      "manual A/B fixture is present for user-scored transcript review"
     ]
   };
 }

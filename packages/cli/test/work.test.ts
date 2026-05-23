@@ -496,6 +496,88 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("renders inbox as a resolve queue with return stack and supports the legacy A/B toggle", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-inbox-queue-stack-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "packages/ui/src/statusPanel.ts",
+      "--responsibility",
+      "status panel view"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "packages/runtime/src/eventBus.ts",
+      "--responsibility",
+      "event bus owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      receiver,
+      "--id",
+      "AW-inbox-stack",
+      "--title",
+      "Handle runtime event ownership",
+      "--path",
+      "packages/runtime/src/eventBus.ts"
+    ], runtime);
+    await runCommand([
+      "question",
+      "--id",
+      "AQ-inbox-stack",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "packages/runtime/src/eventBus.ts",
+      "--question",
+      "Which state source owns badges?",
+      "--expect",
+      "Answer with owner evidence"
+    ], runtime);
+
+    const enhanced = await runCommand(["inbox", "--actor", receiver], runtime);
+    expect(enhanced.stdout).toContain(`Resolve queue for ${receiver}`);
+    expect(enhanced.stdout).toContain("Required: 1");
+    expect(enhanced.stdout).toContain("Optional: 0");
+    expect(enhanced.stdout).toContain("Return stack:");
+    expect(enhanced.stdout).toContain("current: AW-inbox-stack - Handle runtime event ownership");
+    expect(enhanced.stdout).toContain("why: required reply blocks done-check");
+    expect(enhanced.stdout).toContain("related: current stack path overlap: packages/runtime/src/eventBus.ts");
+    expect(enhanced.stdout).toContain("respond: agentq respond AQ-inbox-stack");
+
+    await expect(runCommand(["next", "--actor", receiver], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("current: AW-inbox-stack - Handle runtime event ownership")
+    });
+
+    const legacyRuntime = {
+      ...runtime,
+      env: { ...runtime.env, AGENTQ_QUEUE_STACK_UX: "0" }
+    };
+    const legacy = await runCommand(["inbox", "--actor", receiver], legacyRuntime);
+    expect(legacy.stdout).toContain("AQ-inbox-stack\n  kind: question");
+    expect(legacy.stdout).not.toContain("Resolve queue for");
+    expect(legacy.stdout).not.toContain("Return stack:");
+  });
+
   it("renders one next action for required inbox and answered outbound replies", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-next-question-"));
     const runtime = {

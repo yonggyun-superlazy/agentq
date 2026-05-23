@@ -100,7 +100,7 @@ describe("AgentQ marker installer", () => {
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(agentsBlock).toContain("Short read-only answers");
     expect(claudeBlock).toContain("tracked work");
-    expect(agentsBlock).toContain("Keep coordination names");
+    expect(agentsBlock).toContain("Keep internal command names");
     expect(agentsBlock).not.toContain("done-check");
     expect(claudeBlock).not.toContain("agentq next");
     expect(agentsBlock).toContain("routes, not locks");

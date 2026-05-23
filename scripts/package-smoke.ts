@@ -66,7 +66,7 @@ const sessionStart = runAgentq(
     source: "startup"
   })
 );
-assert(sessionStart.includes("Internal coordination actor id:"), "SessionStart hook did not return actor context");
+assert(sessionStart.includes("Internal shared-work id:"), "SessionStart hook did not return actor context");
 const actorId = actorIdFromHookOutput(sessionStart);
 
 const unscopedStop = runAgentq(
@@ -314,7 +314,7 @@ function assertJsonOutput(command: string, output: string): void {
   const parsed = JSON.parse(output) as unknown;
   assert(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed), `${command} returned non-object JSON`);
   if (command.endsWith(" session-start")) {
-    assert(output.includes("Internal coordination actor id:"), `${command} did not return actor context`);
+    assert(output.includes("Internal shared-work id:"), `${command} did not return actor context`);
   }
 }
 
@@ -374,7 +374,7 @@ function assertPublishablePackageMetadata(
 }
 
 function actorIdFromHookOutput(output: string): string {
-  const match = output.match(/Internal coordination actor id:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
+  const match = output.match(/Internal shared-work id:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
   assert(match?.[1] !== undefined, `missing actor id in hook output: ${output}`);
   return match[1];
 }

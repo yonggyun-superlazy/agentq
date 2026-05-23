@@ -36,11 +36,16 @@ Follow `agentq next` before final response.
 
 $ agentq inbox --actor <codex>
 
-AQ-0001
-  kind: question
-  required: yes
+Resolve queue for <codex>
+Required: 1
+Optional: 0
+Return stack: none
+
+Required replies:
+- AQ-0001 [required] I need to change src/protocol.ts. Are you actively changing the protocol schema?
+  why: required reply blocks done-check
   from: <claude>
-  summary: I need to change src/protocol.ts. Are you actively changing the protocol schema?
+  related: no active work stack
   paths: src/protocol.ts
   resources: (none)
   contracts: (none)
@@ -50,6 +55,8 @@ AQ-0001
   routing: explicit:explicit recipient <codex>
   respond: agentq respond AQ-0001 --actor <codex> --status answered --evidence "..."
   next: answer with the requested decision/evidence so both actors can pass done-check.
+
+After resolving useful items, run: agentq next --actor <codex>
 
 $ agentq respond AQ-0001 --actor <codex> --status answered --evidence No active schema edit; preserve RequiredRequest routing evidence fields.
 

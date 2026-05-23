@@ -46,24 +46,24 @@ interface MarkerEdit {
 }
 
 const ROOT_MARKER_BODY = [
-  "# Coordination",
+  "# Shared Work",
   "",
   "See `.github/instructions/agentq.instructions.md`.",
-  "Use coordination only for file edits, handoffs, active work, or ambiguity.",
-  "Short read-only answers do not need pre-answer coordination calls.",
+  "Use shared-work commands only for file edits, handoffs, active work, or ambiguity.",
+  "Short read-only answers do not need pre-answer shared-work calls.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "Before done on tracked work, refresh coordination state, preserve the live stack, and record final evidence.",
-  "Keep coordination names/commands out of user-facing answers."
+  "Before done on tracked work, refresh shared state, preserve the live stack, and record final evidence.",
+  "Keep internal command names and identifiers out of user-facing answers."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
-  "# Coordination",
+  "# Shared Work",
   "",
   "AgentQ handles required-response queues.",
   "",
-  "- Use the hook actor id with `--actor <id>`.",
-  "- Run `agentq next --actor <id>` for file edits, handoffs, active work, AgentQ questions, or ambiguous state.",
-  "- Short read-only answers do not need pre-answer coordination calls.",
+  "- Use the hook-provided id with `--actor <id>`.",
+  "- Run `agentq next --actor <id>` for file edits, handoffs, active work, AgentQ questions, or ambiguous shared state.",
+  "- Short read-only answers do not need pre-answer shared-work calls.",
   "- Let `next` print exact commands.",
   "- Fileless judgment: `--resource conversation:current-request`.",
   "- Track the live work stack with `agentq work start --actor <id>`; then evidence: frame, basis, paths/resources, next check.",
@@ -72,7 +72,7 @@ const SCOPED_MARKER_BODY = [
   "- Required replies block done-check; answer with `agentq respond ...`.",
   "- External build/test/generated failures: create `agentq block` with evidence.",
   "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",
-  "- Keep coordination names/commands out of user-facing answers unless exact details are requested.",
+  "- Keep internal command names and identifiers out of user-facing answers unless exact details are requested.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 

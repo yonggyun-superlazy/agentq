@@ -33,11 +33,16 @@ Follow `agentq next` before final response.
 
 $ agentq inbox --actor <owner>
 
-AQ-resource-demo
-  kind: question
-  required: yes
+Resolve queue for <owner>
+Required: 1
+Optional: 0
+Return stack: none
+
+Required replies:
+- AQ-resource-demo [required] I need to run DD setup validation. Are you currently holding the DD setup watcher?
+  why: required reply blocks done-check
   from: <caller>
-  summary: I need to run DD setup validation. Are you currently holding the DD setup watcher?
+  related: no active work stack
   paths: (none)
   resources: setup-watcher:ProjectDD/DDSetup
   contracts: (none)
@@ -47,6 +52,8 @@ AQ-resource-demo
   routing: resource:setup-watcher:ProjectDD/DDSetup
   respond: agentq respond AQ-resource-demo --actor <owner> --status answered --evidence "..."
   next: answer with the requested decision/evidence so both actors can pass done-check.
+
+After resolving useful items, run: agentq next --actor <owner>
 
 $ agentq respond AQ-resource-demo --actor <owner> --status answered --evidence DD setup watcher is idle; safe to run validation now.
 
