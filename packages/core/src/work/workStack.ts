@@ -13,6 +13,9 @@ import {
   type WorkEvent
 } from "./schema.js";
 
+export type WorkTerminalStatus = "closed" | "abandoned" | "superseded";
+export type WorkStatus = "open" | WorkTerminalStatus;
+
 export interface WorkState {
   readonly workId: string;
   readonly actorId: string;
@@ -22,7 +25,7 @@ export interface WorkState {
   readonly paths: readonly string[];
   readonly touchedPaths: readonly string[];
   readonly evidence: readonly string[];
-  readonly status: "open" | "closed";
+  readonly status: WorkStatus;
   readonly startedAt: string;
   readonly updatedAt: string;
   readonly closedAt: string | null;
@@ -62,6 +65,7 @@ export interface AppendWorkEvidenceInput {
 export interface CloseWorkInput {
   readonly actorId: string;
   readonly workId?: string;
+  readonly status?: WorkTerminalStatus;
   readonly summary: string;
   readonly evidence: readonly string[];
   readonly now: string;
@@ -155,6 +159,7 @@ export async function closeWork(store: WorkspaceStore, input: CloseWorkInput): P
     id: createWorkEventId(),
     workId,
     actorId: input.actorId,
+    status: input.status ?? "closed",
     summary: input.summary,
     evidence: closeEvidence,
     at: input.now
@@ -179,7 +184,7 @@ export async function runWorkDoneCheck(
   actorId: string
 ): Promise<WorkCheckResult> {
   const activeWork = await readActiveWorkState(store, actorId);
-  if (activeWork === null || activeWork.status === "closed") {
+  if (activeWork === null || activeWork.status !== "open") {
     return { ok: true, actorId };
   }
 
@@ -241,7 +246,7 @@ export async function readWorkState(store: WorkspaceStore, workId: string): Prom
     }
 
     if (event.kind === "work_closed") {
-      status = "closed";
+      status = event.status ?? "closed";
       closedAt = event.at;
       closeSummary = event.summary;
       evidence.push(...event.evidence);

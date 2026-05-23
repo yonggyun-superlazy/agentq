@@ -88,6 +88,15 @@ agentq scope-check --actor <agentq-actor-id>
 agentq done-check --actor <agentq-actor-id>
 ```
 
+The close command requires prior `work evidence` or inline
+`--evidence "<observable evidence>"`. If an older frame is no longer the live
+path, close it as a terminal audit record instead of deleting it:
+
+```bash
+agentq work close --actor <agentq-actor-id> --status abandoned --summary "<why this frame is no longer active>" --evidence "<observable stale/superseded evidence>"
+agentq work close --actor <agentq-actor-id> --status superseded --summary "<replacement frame>" --evidence "<replacement evidence>"
+```
+
 If `done-check` fails, resolve the required inbox item or active work item first. Do not create repo `.agentq/` or `agentq.config.yaml`; AgentQ runtime state is OS-local.
 If `scope-check` fails, refresh the exact hook actor with a specific owned path
 and responsibility; broad `.` paths and hook-only responsibilities are not
@@ -96,6 +105,10 @@ enough evidence for routing.
 When a design or ownership answer is needed from another active actor, ask a
 required question. The sender stays blocked until the receiver answers with
 evidence:
+
+Do not infer "do not proceed" from ownership presence alone. Ownership is a
+routing signal, not a lock. Ask the active owner to classify whether your next
+edit/tool run overlaps, blocks, or is clear.
 
 ```bash
 agentq question --actor <your-actor-id> --to <target-actor-id> --path <path> --question "<decision needed>" --expect "<what answer must cover>"

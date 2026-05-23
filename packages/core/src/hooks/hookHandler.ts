@@ -511,6 +511,7 @@ function renderRelatedOwnerNudge(
       (match) =>
         `- ${match.actor.actorId} uses ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
     ),
+    "Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.",
     "If this changes their contract or unblocks their work, ask before local-only resolution:",
     `agentq question --actor ${actorId} --to ${firstTargetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
   ].join("\n");

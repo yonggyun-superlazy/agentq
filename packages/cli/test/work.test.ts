@@ -92,6 +92,62 @@ describe("CLI work stack", () => {
     });
   });
 
+  it("closes stale work with an explicit terminal status and evidence", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-terminal-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "terminal-work",
+      "--paths",
+      "AgentQ/packages/core/src/work/workStack.ts",
+      "--responsibility",
+      "work lifecycle"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-terminal",
+      "--title",
+      "Old stale work",
+      "--path",
+      "AgentQ/packages/core/src/work/workStack.ts"
+    ], runtime);
+
+    const result = await runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--status",
+      "abandoned",
+      "--summary",
+      "Later frame replaced this work",
+      "--evidence",
+      "Current owner verified no remaining action."
+    ], runtime);
+
+    expect(result).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(result.stdout).toContain("closed: AW-terminal");
+    expect(result.stdout).toContain("status: abandoned");
+    await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
+      code: 0
+    });
+  });
+
   it("rejects broad work start paths", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-broad-"));
     const runtime = {
@@ -561,6 +617,7 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("broad/generic active actors: 0");
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
+    expect(result.stdout).toContain("zero-evidence open work: 1");
     expect(result.stdout).toContain("recent messages 24h: 1");
     expect(result.stdout).toContain("weak-scope actors: 0");
     expect(result.stdout).toContain("AW-status");
@@ -612,6 +669,7 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain(`owners for AgentQ/packages/cli/src/main.ts:`);
     expect(result.stdout).toContain(receiver);
     expect(result.stdout).not.toContain(`  ${sender} |`);
+    expect(result.stdout).toContain("Ownership is a routing signal, not a lock");
     expect(result.stdout).toContain("agentq question --actor <your-actor-id>");
   });
 

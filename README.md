@@ -99,10 +99,11 @@ AgentQ is being validated as a narrow shared-workspace coordination layer, not a
 - Mutate only with `--yes`.
 - Keep runtime queue state outside the repository in an OS-local workspace store.
 - Use `agentq status` for a one-screen health summary: doctor result, active/stale actors, pending inboxes, open work, and weak-scope counts.
-- Use `agentq diag` for the OS-local hook diagnostic ring log when scope/resource inference looks noisy.
-- Use `agentq owners --path <path>` before editing shared surfaces and `agentq owners --resource <resource>` before touching soft-exclusive tools such as `setup-watcher:ProjectDD/DDSetup` or `unity:ProjectDD/DDUnity`. Pre-tool hooks also emit a non-blocking owner nudge when a mutating tool path or inferred resource overlaps another active actor.
+- Use `agentq diag` for the OS-local hook diagnostic ring log when scope/resource inference looks noisy. `agentq diag activity` groups recent hooks by actor and includes declared paths, resources, open-work title, and evidence count.
+- Use `agentq owners --path <path>` before editing shared surfaces and `agentq owners --resource <resource>` before touching soft-exclusive tools such as `setup-watcher:ProjectDD/DDSetup` or `unity:ProjectDD/DDUnity`. Owner presence is a routing signal, not a lock; ask the owner to classify overlap instead of waiting silently from scope alone. Pre-tool hooks also emit a non-blocking owner nudge when a mutating tool path or inferred resource overlaps another active actor.
 - Use `agentq actors` to inspect active/stale actor presence before routing blockers. Active means recent AgentQ presence, not a guaranteed live OS process; the default stale window is 1 hour.
 - Use `agentq scope-check --actor <id>` before finishing. It fails broad `.` paths and generic hook responsibilities so agents refresh concrete ownership.
+- Close stale work with evidence instead of deleting it: `agentq work close --actor <id> --status abandoned|superseded --summary "..." --evidence "..."`.
 - Out-of-scope build, test, or generated-artifact failures should become required AgentQ blockers with observable evidence, not chat-only notes.
 - No `agentq.config.yaml`.
 - No default repo `.agentq/`.

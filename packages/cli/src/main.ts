@@ -55,7 +55,8 @@ import {
   type Message,
   type Presence,
   type ResponseStatus,
-  type WorkState
+  type WorkState,
+  type WorkTerminalStatus
 } from "@agentq/core";
 import { deliverRoutedRequests, renderDeliveryReport, runWakeCommand, type DeliveryReport } from "./wake.js";
 
@@ -540,7 +541,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
         "  agentq work status --actor <id>",
         "  agentq work touch --actor <id> --path <path>...",
         "  agentq work evidence --actor <id> --evidence \"...\"",
-        "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"]"
+        "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"] [--status closed|abandoned|superseded]"
       ].join("\n") + "\n",
       stderr: ""
     };
@@ -624,10 +625,12 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   }
 
   if (subcommand === "close") {
+    const status = parseWorkTerminalStatus(optionValue(args, "status"));
     const state = await closeWork(store, {
       actorId,
       summary: requiredOption(args, "summary"),
       evidence: optionValues(args, "evidence"),
+      ...(status === undefined ? {} : { status }),
       now: runtime.now()
     });
     return {
@@ -1451,6 +1454,10 @@ interface DiagnosticActivityRow {
   readonly lastSeenAgeMs: number | null;
   readonly pendingInboxCount: number;
   readonly hasOpenWork: boolean;
+  readonly openWorkEvidenceCount: number | null;
+  readonly openWorkTitle: string | null;
+  readonly paths: readonly string[];
+  readonly observedPaths: readonly string[];
   readonly resources: readonly string[];
   readonly summary: string | null;
 }
@@ -1491,6 +1498,9 @@ function renderWorkspaceStatus(
   const staleOpenWorkCount = details.filter(
     (detail) => detail.activeWork !== null && detail.summary.status === "stale"
   ).length;
+  const zeroEvidenceOpenWorkCount = details.filter(
+    (detail) => detail.activeWork !== null && detail.activeWork.evidence.length === 0
+  ).length;
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
   const routeableActiveCount = activeDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = activeCount - routeableActiveCount;
@@ -1502,7 +1512,8 @@ function renderWorkspaceStatus(
     routeableActiveCount,
     weakActiveCount,
     recentMessageCount: recentMessages.length,
-    staleOpenWorkCount
+    staleOpenWorkCount,
+    zeroEvidenceOpenWorkCount
   });
 
   const lines = [
@@ -1516,6 +1527,7 @@ function renderWorkspaceStatus(
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
     `stale open work: ${staleOpenWorkCount}`,
+    `zero-evidence open work: ${zeroEvidenceOpenWorkCount}`,
     `weak-scope actors: ${weakScopeActorCount}`,
     `recent messages 24h: ${recentMessages.length}${recentMessages[0] === undefined ? "" : ` (latest ${recentMessages[0].updatedAt})`}`
   ];
@@ -1657,6 +1669,10 @@ async function buildDiagnosticActivityRows(
           : Math.max(0, nowMs - lastSeenMs),
         pendingInboxCount: pendingInbox.length,
         hasOpenWork: activeWork !== null,
+        openWorkEvidenceCount: activeWork?.evidence.length ?? null,
+        openWorkTitle: activeWork?.title ?? null,
+        paths: actor?.activePaths ?? [],
+        observedPaths: actor?.observedPaths ?? [],
         resources: actor?.activeResources ?? [],
         summary: actor?.summary ?? null
       };
@@ -1675,6 +1691,7 @@ function statusRecommendations(input: {
   readonly weakActiveCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
+  readonly zeroEvidenceOpenWorkCount: number;
 }): string[] {
   const lines: string[] = [];
 
@@ -1687,7 +1704,11 @@ function statusRecommendations(input: {
   }
 
   if (input.staleOpenWorkCount > 0) {
-    lines.push("Stale open work remains; close, supersede, or re-route it only with evidence from the responsible actor or current owner.");
+    lines.push("Stale open work remains; close it with `agentq work close --status abandoned|superseded --evidence \"...\"` only with evidence from the responsible actor or current owner.");
+  }
+
+  if (input.zeroEvidenceOpenWorkCount > 0) {
+    lines.push("Open work without evidence remains; record observable evidence before it reaches the stop gate.");
   }
 
   return lines;
@@ -1719,6 +1740,7 @@ function renderOwners(
   lines.push(
     "",
     "Use a required question when this may affect the owner:",
+    "  Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.",
     `  agentq question --actor <your-actor-id> --to ${targetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
   );
   return `${lines.join("\n")}\n`;
@@ -1798,6 +1820,10 @@ function renderDiagnosticActivity(
         `lastSeen:${formatNullableDuration(row.lastSeenAgeMs)}`,
         `inbox:${row.pendingInboxCount}`,
         `work:${row.hasOpenWork ? "open" : "none"}`,
+        row.openWorkEvidenceCount === null ? undefined : `evidence:${row.openWorkEvidenceCount}`,
+        row.openWorkTitle === null ? undefined : `workTitle:${row.openWorkTitle}`,
+        `paths:${formatList(row.paths)}`,
+        row.observedPaths.length === 0 ? undefined : `observing:${formatList(row.observedPaths)}`,
         `resources:${formatList(row.resources)}`,
         row.summary === null ? undefined : `summary:${row.summary}`
       ].filter((part): part is string => part !== undefined).join(" | ")
@@ -1829,6 +1855,7 @@ function renderStatusWorkLines(detail: WorkspaceStatusActor): string[] {
       `  ${detail.activeWork.workId}`,
       `actor: ${detail.summary.actor.actorId}`,
       `actorStatus: ${detail.summary.status}`,
+      `status: ${detail.activeWork.status}`,
       `title: ${detail.activeWork.title}`,
       `evidence: ${detail.activeWork.evidence.length}`
     ].join(" | ")
@@ -1899,6 +1926,18 @@ function parseDurationOption(value: string, label: string): number {
   }
 
   return ms;
+}
+
+function parseWorkTerminalStatus(value: string | undefined): WorkTerminalStatus | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === "closed" || value === "abandoned" || value === "superseded") {
+    return value;
+  }
+
+  throw new Error("work close --status must be one of closed, abandoned, or superseded.");
 }
 
 function percentile(values: readonly number[], ratio: number): number | null {

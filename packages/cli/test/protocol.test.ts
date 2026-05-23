@@ -213,6 +213,18 @@ describe("CLI required-response protocol", () => {
       actorId,
       event: "stop"
     });
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-diag",
+      "--title",
+      "Diagnose activity output",
+      "--path",
+      "README.md"
+    ], runtime);
 
     await expect(runCommand(["diag", "activity", "--window", "1h"], runtime)).resolves.toMatchObject({
       code: 0,
@@ -225,6 +237,10 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("maxGap:4m");
     expect(result.stdout).toContain("p95Gap:4m");
     expect(result.stdout).toContain("avgGap:2m");
+    expect(result.stdout).toContain("work:open");
+    expect(result.stdout).toContain("evidence:0");
+    expect(result.stdout).toContain("workTitle:Diagnose activity output");
+    expect(result.stdout).toContain("paths:README.md");
   });
 
   it.each(["typo", "superseded"])(

@@ -28,6 +28,7 @@ owners for src/protocol.ts:
   <owner> | owns: src/protocol.ts | matched: src/protocol.ts | responsibilities: protocol schema
 
 Use a required question when this may affect the owner:
+  Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.
   agentq question --actor <your-actor-id> --to <owner> --path src/protocol.ts --question "<decision needed>" --expect "<answer with evidence>"
 $ agentq question --id AQ-instruction-path --actor <target> --path src/protocol.ts --question I need to update the protocol consumer. What protocol fields must I preserve? --expect Answer with active protocol edits or clear-to-edit evidence.
 AQ-instruction-path routed to <owner>

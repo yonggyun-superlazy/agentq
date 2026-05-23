@@ -100,8 +100,8 @@ describe("AgentQ marker installer", () => {
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(agentsBlock).toContain("Out-of-scope build/test failures are AgentQ blockers");
     expect(claudeBlock).toContain("Out-of-scope build/test failures are AgentQ blockers");
-    expect(agentsBlock).toContain("if an owner appears, create `question`/`block`");
-    expect(scopedBlock).toContain("if an owner appears, create `question`/`block`");
+    expect(agentsBlock).toContain("routes, not locks");
+    expect(scopedBlock).toContain("classify overlap");
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
     expect(scopedBlock).toContain("agentq work start/status/evidence/close");

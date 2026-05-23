@@ -12,6 +12,7 @@ owners for resource:setup-watcher:ProjectDD/DDSetup:
   <owner> | owns-resource: setup-watcher:ProjectDD/DDSetup | matched: setup-watcher:projectdd/ddsetup | responsibilities: DD setup watcher and generated data validation
 
 Use a required question when this may affect the owner:
+  Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.
   agentq question --actor <your-actor-id> --to <owner> --resource setup-watcher:projectdd/ddsetup --question "<decision needed>" --expect "<answer with evidence>"
 
 $ agentq question --id AQ-resource-demo --actor <caller> --resource setup-watcher:ProjectDD/DDSetup --question I need to run DD setup validation. Are you currently holding the DD setup watcher? --expect Answer with active setup constraints or clear-to-run evidence.

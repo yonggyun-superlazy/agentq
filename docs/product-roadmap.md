@@ -15,11 +15,11 @@ Every AgentQ progress briefing should include this table or an updated equivalen
 | Path owner matching | Shipped | Absolute workspace paths and comma-separated legacy path values are tested | Watch dogfood `owners --path` misses. |
 | Resource coordination | Shipped baseline | `enter --resource`, `owners --resource`, hook inference, resource demo transcript | Add more real non-Superlazy resource examples. |
 | Non-polluting demos | Shipped baseline | demo scripts and package smoke use temp stores | Add explicit no-real-store-pollution assertion. |
-| Hook diagnostics | Shipped baseline | `diag`, `diag activity`, ignored meta command logging | Improve attribution when resource inference looks wrong. |
+| Hook diagnostics | Shipped | `diag`, `diag activity`, ignored meta command logging, declared scope and open-work evidence counts in activity output | Watch for tool payloads that still only infer `paths:.`. |
 | Instruction quality | Shipped baseline | checklist, executable protocol fixture, and cross-CLI inbox probe | Add a Codex-specific fixture and keep real CLI probes small. |
 | Cross-CLI proof | Partial | Claude Code and Copilot CLI both answered required inbox probes; Copilot hook events observed with prompt-mode repo-hook opt-in | Verify Copilot stop gate blocking with a pending inbox/work item. |
 | Public release readiness | Partial | package smoke, metadata, install/uninstall, README | Confirm npm ownership and publishing path. |
-| Stale policy | Observing | 1h default, `diag activity` gap data | Keep collecting live gap data before changing default. |
+| Stale policy | Observing | 1h default, `diag activity` gap data, evidence-based `work close --status abandoned|superseded` cleanup | Keep collecting live gap data before changing default. |
 
 ## Current Product Thesis
 

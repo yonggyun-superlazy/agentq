@@ -3,6 +3,7 @@ import { SafeIdSchema } from "../domain/schema.js";
 
 const NonEmptyStringSchema = z.string().min(1);
 const NonEmptyStringArraySchema = z.array(NonEmptyStringSchema).min(1);
+export const WorkTerminalStatusSchema = z.enum(["closed", "abandoned", "superseded"]);
 
 const BaseWorkEventSchema = z
   .object({
@@ -33,6 +34,7 @@ export const WorkEvidenceEventSchema = BaseWorkEventSchema.extend({
 
 export const WorkClosedEventSchema = BaseWorkEventSchema.extend({
   kind: z.literal("work_closed"),
+  status: WorkTerminalStatusSchema.optional(),
   summary: NonEmptyStringSchema,
   evidence: z.array(NonEmptyStringSchema)
 }).strict();

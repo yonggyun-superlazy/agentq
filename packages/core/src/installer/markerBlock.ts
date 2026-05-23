@@ -50,7 +50,7 @@ const ROOT_MARKER_BODY = [
   "",
   "Procedure: `.github/instructions/agentq.instructions.md`.",
   "Use the hook actor id, keep scope concrete, and run `scope-check`/`done-check` before done.",
-  "Before shared edits/exclusive tools: run `owners`; if an owner appears, create `question`/`block` before proceeding.",
+  "Before shared edits/tools: `owners` routes, not locks. Ask `question` to classify overlap.",
   "Out-of-scope build/test failures are AgentQ blockers, not chat-only notes."
 ].join("\n");
 
@@ -64,7 +64,7 @@ const SCOPED_MARKER_BODY = [
   "- Track complex work with `agentq work start/status/evidence/close --actor <id>`.",
   "- Refresh scope: `agentq enter --actor <id> --paths <path> [--resource <resource>] --responsibility \"<contract>\"`.",
   "- Run `agentq scope-check --actor <id>` and `agentq done-check --actor <id>` before done.",
-  "- Before shared edits/exclusive tools, run `agentq owners --path <path>` / `--resource <resource>`; if an owner appears, create `question`/`block` before proceeding.",
+  "- Before shared edits/exclusive tools, run `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Ask `question` to classify overlap.",
   "- Required replies block done-check; answer with `agentq respond ... --status answered|resolved|blocked|not_mine|invalid`.",
   "- If build/test/generated failures are outside active work, create `agentq block` with path/contract and evidence before reporting done.",
   "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",

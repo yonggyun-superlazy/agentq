@@ -15,6 +15,7 @@ owners for src/protocol.ts:
   <codex> | owns: src/protocol.ts | matched: src/protocol.ts | responsibilities: protocol schema
 
 Use a required question when this may affect the owner:
+  Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.
   agentq question --actor <your-actor-id> --to <codex> --path src/protocol.ts --question "<decision needed>" --expect "<answer with evidence>"
 
 $ agentq question --id AQ-0001 --actor <claude> --to <codex> --path src/protocol.ts --question I need to change src/protocol.ts. Are you actively changing the protocol schema? --expect Answer with active edits or clear-to-edit evidence.

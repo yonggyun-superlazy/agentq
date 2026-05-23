@@ -122,6 +122,33 @@ describe("AgentQ work stack", () => {
       })
     ).rejects.toThrow("requires evidence");
   });
+
+  it("can terminally close stale work as abandoned with evidence", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await startWork(store, {
+      actorId,
+      workId: "AW-abandoned",
+      title: "Old stale frame",
+      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    const abandoned = await closeWork(store, {
+      actorId,
+      status: "abandoned",
+      summary: "Superseded by later implementation frame",
+      evidence: ["Current owner verified this stale frame has no remaining changes to land."],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+
+    expect(abandoned).toMatchObject({
+      status: "abandoned",
+      closeSummary: "Superseded by later implementation frame"
+    });
+    await expect(runWorkDoneCheck(store, actorId)).resolves.toEqual({ ok: true, actorId });
+  });
 });
 
 async function createStore() {

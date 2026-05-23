@@ -360,6 +360,7 @@ describe("AgentQ hook handler", () => {
     };
     expect(output.hookSpecificOutput?.additionalContext).toContain("related active actor");
     expect(output.hookSpecificOutput?.additionalContext).toContain(owner.actorId);
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Ownership is a routing signal, not a lock");
     expect(output.hookSpecificOutput?.additionalContext).toContain("agentq question --actor");
   });
 
