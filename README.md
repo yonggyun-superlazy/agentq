@@ -187,7 +187,7 @@ The repository is private while the public release surface is being prepared.
 
 - License: MIT.
 - Publishable packages: `agentq` and `@agentq/core`.
-- Release version target: `0.1.1`.
+- Release version target: `0.1.2`.
 - CI runs build, typecheck, tests, README lint, demo transcript, and package smoke on Windows, Ubuntu, and macOS.
 - Package smoke packs the tarballs, installs them globally into a temporary prefix, runs installed hook commands through `PATH`, and verifies uninstall cleanup.
 

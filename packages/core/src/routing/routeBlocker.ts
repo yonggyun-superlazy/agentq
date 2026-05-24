@@ -477,15 +477,34 @@ function relativizeWorkspacePath(value: string, workspaceRoot: string): string {
   }
 
   const caseInsensitive = process.platform === "win32" || /^[A-Za-z]:\//.test(value) || /^[A-Za-z]:\//.test(root);
-  const comparableValue = caseInsensitive ? value.toLowerCase() : value;
-  const comparableRoot = caseInsensitive ? root.toLowerCase() : root;
+  for (const candidateRoot of equivalentAbsolutePathCandidates(root)) {
+    for (const candidateValue of equivalentAbsolutePathCandidates(value)) {
+      const comparableValue = caseInsensitive ? candidateValue.toLowerCase() : candidateValue;
+      const comparableRoot = caseInsensitive ? candidateRoot.toLowerCase() : candidateRoot;
 
-  if (comparableValue === comparableRoot) {
-    return ".";
+      if (comparableValue === comparableRoot) {
+        return ".";
+      }
+
+      const prefix = `${comparableRoot}/`;
+      if (comparableValue.startsWith(prefix)) {
+        return candidateValue.slice(candidateRoot.length + 1);
+      }
+    }
   }
 
-  const prefix = `${comparableRoot}/`;
-  return comparableValue.startsWith(prefix) ? value.slice(root.length + 1) : value;
+  return value;
+}
+
+function equivalentAbsolutePathCandidates(value: string): string[] {
+  const candidates = [value];
+  if (value.startsWith("/private/")) {
+    candidates.push(value.slice("/private".length));
+  } else if (value.startsWith("/var/")) {
+    candidates.push(`/private${value}`);
+  }
+
+  return [...new Set(candidates)];
 }
 
 function uniqueOwnerMatches(matches: readonly ActivePathOwnerMatch[]): ActivePathOwnerMatch[] {
