@@ -91,7 +91,7 @@ describe("AgentQ marker installer", () => {
     }
   });
 
-  it("keeps root markers as pointers to the scoped AgentQ procedure", () => {
+  it("keeps root markers as pointers to the scoped shared-work procedure", () => {
     const [agentsBlock, claudeBlock, scopedBlock] = DEFAULT_MARKER_TARGETS.map((target) =>
       renderMarkerBlock(target)
     );
@@ -100,19 +100,25 @@ describe("AgentQ marker installer", () => {
     expect(claudeBlock).toContain(".github/instructions/agentq.instructions.md");
     expect(agentsBlock).toContain("Short read-only answers");
     expect(claudeBlock).toContain("tracked work");
-    expect(agentsBlock).toContain("Keep internal command names");
+    expect(agentsBlock).toContain("Hide internal system/command names");
     expect(agentsBlock).not.toContain("done-check");
     expect(claudeBlock).not.toContain("agentq next");
     expect(agentsBlock).toContain("routes, not locks");
     expect(claudeBlock).toContain("routes, not locks");
-    expect(scopedBlock).toContain("question` for overlap");
+    expect(scopedBlock).toContain("questions for overlap");
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
-    expect(scopedBlock).toContain("agentq work start --actor <id>");
-    expect(scopedBlock).toContain("Let `next` print exact commands");
-    expect(scopedBlock).toContain("then evidence: frame");
-    expect(scopedBlock).toContain("create `agentq block`");
+    expect(scopedBlock).toContain("Shared work handles required-response queues");
+    expect(scopedBlock).toContain("before the first edit");
+    expect(scopedBlock).toContain("shared-work helper print exact next operations");
+    expect(scopedBlock).toContain("docs/rules/shared-work-commands.md");
+    expect(scopedBlock).toContain("External build/test/generated failures should be recorded with evidence");
     expect(scopedBlock).toContain("Short read-only answers");
+    expect(scopedBlock).toContain("Keep internal system names");
+    expect(scopedBlock).not.toContain("AgentQ handles required-response queues");
+    expect(scopedBlock).not.toContain("agentq next --actor");
+    expect(scopedBlock).not.toContain("agentq work start --actor");
+    expect(scopedBlock).not.toContain("agentq done-check");
     expect(Buffer.byteLength(agentsBlock, "utf8")).toBeLessThan(
       Buffer.byteLength(scopedBlock, "utf8")
     );

@@ -66,7 +66,8 @@ const sessionStart = runAgentq(
     source: "startup"
   })
 );
-assert(sessionStart.includes("Internal shared-work id:"), "SessionStart hook did not return actor context");
+assert(sessionStart.includes("Shared-work id for edits/handoffs only:"), "SessionStart hook did not return actor context");
+assert(sessionStart.includes("agentq next --actor"), "SessionStart hook did not return task-start helper guidance");
 const actorId = actorIdFromHookOutput(sessionStart);
 
 const unscopedStop = runAgentq(
@@ -281,10 +282,12 @@ function installedCommandEnv(): NodeJS.ProcessEnv {
   const pathKey = process.platform === "win32" ? "Path" : "PATH";
   const binDir = process.platform === "win32" ? prefix : path.join(prefix, "bin");
   const existingPath = process.env[pathKey] ?? process.env.PATH ?? "";
+  const nextPath = `${binDir}${path.delimiter}${existingPath}`;
 
   return {
     ...process.env,
-    [pathKey]: `${binDir}${path.delimiter}${existingPath}`
+    [pathKey]: nextPath,
+    PATH: nextPath
   };
 }
 
@@ -314,7 +317,8 @@ function assertJsonOutput(command: string, output: string): void {
   const parsed = JSON.parse(output) as unknown;
   assert(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed), `${command} returned non-object JSON`);
   if (command.endsWith(" session-start")) {
-    assert(output.includes("Internal shared-work id:"), `${command} did not return actor context`);
+    assert(output.includes("Shared-work id for edits/handoffs only:"), `${command} did not return actor context: ${output}`);
+    assert(output.includes("agentq next --actor"), `${command} did not return task-start helper guidance`);
   }
 }
 
@@ -374,7 +378,7 @@ function assertPublishablePackageMetadata(
 }
 
 function actorIdFromHookOutput(output: string): string {
-  const match = output.match(/Internal shared-work id:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
+  const match = output.match(/Shared-work id for edits\/handoffs only:\s*([^.\s]+(?:\.[^.\s]+)*)\./);
   assert(match?.[1] !== undefined, `missing actor id in hook output: ${output}`);
   return match[1];
 }

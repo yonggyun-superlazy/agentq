@@ -49,30 +49,29 @@ const ROOT_MARKER_BODY = [
   "# Shared Work",
   "",
   "See `.github/instructions/agentq.instructions.md`.",
-  "Use shared-work commands only for file edits, handoffs, active work, or ambiguity.",
-  "Short read-only answers do not need pre-answer shared-work calls.",
+  "Use shared work only for edits, handoffs, active work, or ambiguity.",
+  "Short read-only answers can answer directly.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "Before done on tracked work, refresh shared state, preserve the live stack, and record final evidence.",
-  "Keep internal command names and identifiers out of user-facing answers."
+  "Before done on tracked work, refresh state and record final evidence.",
+  "Hide internal system/command names, ids, queue labels, and work-stack labels from user-facing answers."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
   "# Shared Work",
   "",
-  "AgentQ handles required-response queues.",
+  "Shared work handles required-response queues and live work handoffs.",
   "",
-  "- Use the hook-provided id with `--actor <id>`.",
-  "- Run `agentq next --actor <id>` for file edits, handoffs, active work, AgentQ questions, or ambiguous shared state.",
-  "- Short read-only answers do not need pre-answer shared-work calls.",
-  "- Let `next` print exact commands.",
-  "- Fileless judgment: `--resource conversation:current-request`.",
-  "- Track the live work stack with `agentq work start --actor <id>`; then evidence: frame, basis, paths/resources, next check.",
-  "- Before done on tracked work: `agentq next --actor <id>`, then `agentq done-check --actor <id>`.",
-  "- Shared edit/tool: `agentq owners --path <path>` / `--resource <resource>`; owners route, not lock. Use `question` for overlap, `note` for context.",
-  "- Required replies block done-check; answer with `agentq respond ...`.",
-  "- External build/test/generated failures: create `agentq block` with evidence.",
-  "- Broad `.` routing is ignored; use precise paths/contracts or `--to`.",
-  "- Keep internal command names and identifiers out of user-facing answers unless exact details are requested.",
+  "- Use shared work for file edits, handoffs, active work, explicit shared-work questions, or ambiguous shared state.",
+  "- Short read-only answers can answer directly.",
+  "- Use the hook-provided id when shared work is needed.",
+  "- For concrete edits, handoffs, or active work, ask the shared-work helper for the next operation before the first edit.",
+  "- Let the shared-work helper print exact next operations; read `docs/rules/shared-work-commands.md` only when command syntax is needed for execution.",
+  "- Track active work with start context, evidence, final evidence, and scope/done checks.",
+  "- Owners route responsibility; they do not lock files. Use questions for overlap and notes for context.",
+  "- Required replies block completion until answered.",
+  "- External build/test/generated failures should be recorded with evidence.",
+  "- Broad repository-wide routing is ignored; use precise paths, resources, or contracts.",
+  "- Keep internal system names, command names, identifiers, queue labels, and work-stack labels out of user-facing answers unless exact details are requested.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 

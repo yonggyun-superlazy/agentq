@@ -37,9 +37,10 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:00.000Z"
     });
-    expect(start.stdout).toContain("Internal shared-work id:");
-    expect(start.stdout).toContain("For short read-only answers");
-    expect(start.stdout).toContain("do not run shared-work commands before answering");
+    expect(start.stdout).toContain("Shared-work id for edits/handoffs only:");
+    expect(start.stdout).toContain("Short read-only answers");
+    expect(start.stdout).toContain("can answer directly");
+    expect(start.stdout).toContain("Do not mention internal shared-work names");
     const actorId = actorIdFromContext(start.stdout);
 
     const store = await resolveWorkspaceStore(workspace, { env });
@@ -74,6 +75,51 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(stop.stdout)).toMatchObject({ decision: "block" });
   });
 
+  it("supports compact, full, and off SessionStart context modes", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-session-context-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const env = testEnv(tempRoot);
+    const payload = {
+      session_id: "S1",
+      cwd: workspace,
+      hook_event_name: "SessionStart"
+    };
+
+    const compact = await runHookHandler({
+      adapter: "codex",
+      event: "session-start",
+      payload,
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    expect(compact.stdout).toContain("Shared-work id for edits/handoffs only:");
+    expect(compact.stdout).toContain("agentq next --actor");
+    expect(compact.stdout).toContain("Do not mention internal shared-work names");
+
+    const full = await runHookHandler({
+      adapter: "codex",
+      event: "session-start",
+      payload: { ...payload, session_id: "S2" },
+      env: { ...env, AGENTQ_SESSION_START_CONTEXT: "full" },
+      now: "2026-05-18T00:00:01.000Z"
+    });
+    expect(full.stdout).toContain("Internal shared-work id:");
+    expect(full.stdout).toContain("agentq next --actor");
+    expect(full.stdout).toContain("Do not mention internal shared-work names");
+
+    const off = await runHookHandler({
+      adapter: "codex",
+      event: "session-start",
+      payload: { ...payload, session_id: "S3" },
+      env: { ...env, AGENTQ_SESSION_START_CONTEXT: "off" },
+      now: "2026-05-18T00:00:02.000Z"
+    });
+    expect(off.stdout).toContain("Shared-work note:");
+    expect(off.stdout).not.toContain("agentq next --actor");
+    expect(off.stdout).toContain("Do not mention internal shared-work names");
+  });
+
   it("updates active paths from a mutating pre-tool hook before routing blockers", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pre-tool-"));
     const workspace = path.join(tempRoot, "workspace");
@@ -106,6 +152,57 @@ describe("AgentQ hook handler", () => {
     const actorId = actorIdFromSession(session);
     const presence = await readFile(store.layout.actorPresencePath(actorId), "utf8");
     expect(presence).toContain("src/protocol.ts");
+  });
+
+  it("extracts apply_patch file headers and nudges missing work adoption", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-patch-paths-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-patch",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "apply_patch",
+        tool_input: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/protocol.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      readonly hookSpecificOutput?: { readonly additionalContext?: string };
+    };
+    expect(output.hookSpecificOutput?.additionalContext).toContain("no active work frame");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("agentq next --actor");
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const session = await readFile(
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S-patch")),
+      "utf8"
+    );
+    const actorId = actorIdFromSession(session);
+    const presence = await readFile(store.layout.actorPresencePath(actorId), "utf8");
+    expect(presence).toContain("src/protocol.ts");
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      paths: ["src/protocol.ts"],
+      nudge: true
+    });
   });
 
   it("bootstraps a missing session binding from Stop without blocking on scope-only weakness", async () => {
@@ -651,7 +748,7 @@ describe("AgentQ hook handler", () => {
 });
 
 function actorIdFromContext(stdout: string): string {
-  const match = stdout.match(/Internal shared-work id: ([^.]+)\./);
+  const match = stdout.match(/Shared-work id for edits\/handoffs only: ([^.]+)\./);
   if (match?.[1] === undefined) {
     throw new Error(`No actor id in hook output: ${stdout}`);
   }

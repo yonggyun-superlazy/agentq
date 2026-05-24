@@ -22,6 +22,7 @@ import {
   runWorkDoneCheck
 } from "../work/workStack.js";
 import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
+import { actorScopeWeaknesses } from "../state/scopeCheck.js";
 
 export type HookAdapter = "codex" | "claude-code" | "copilot-cli";
 export type HookRuntimeEvent = "session-start" | "pre-tool" | "stop";
@@ -63,7 +64,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
 
     return {
       code: 0,
-      stdout: `${JSON.stringify(sessionStartOutput(options.adapter, binding.actorId))}\n`,
+      stdout: `${JSON.stringify(sessionStartOutput(options.adapter, binding.actorId, options.env))}\n`,
       stderr: ""
     };
   }
@@ -99,8 +100,8 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       fallbackSummary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
-    const ownerNudge = mutatingTool
-      ? await buildRelatedOwnerNudge(store, actorId, hookPaths, hookResources, options.now)
+    const preToolNudge = mutatingTool
+      ? await buildPreToolNudge(store, actorId, hookPaths, hookResources, options.now)
       : null;
     await writeHookDiagnostic(store, {
       actorId,
@@ -111,13 +112,13 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       paths: hookPaths,
       resources: hookResources,
       ignoredCommands: resourceInference.ignoredCommands,
-      nudge: ownerNudge !== null,
+      nudge: preToolNudge !== null,
       at: options.now
     });
 
     return {
       code: 0,
-      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId, ownerNudge))}\n`,
+      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId, preToolNudge))}\n`,
       stderr: ""
     };
   }
@@ -335,8 +336,14 @@ async function openHookStore(cwd: string, env: NodeJS.ProcessEnv | undefined): P
   return store;
 }
 
-function sessionStartOutput(adapter: HookAdapter, actorId: string): object {
-  const context = `Internal shared-work id: ${actorId}. For file/code edits, handoffs, active work, or unclear shared-work state, run: agentq next --actor ${actorId}. For short read-only answers, do not run shared-work commands before answering. Keep internal command names and identifiers out of user-facing answers.`;
+function sessionStartOutput(adapter: HookAdapter, actorId: string, env: NodeJS.ProcessEnv | undefined): object {
+  const mode = (env?.AGENTQ_SESSION_START_CONTEXT ?? "compact").toLowerCase();
+  const context =
+    mode === "off" || mode === "none" || mode === "0"
+      ? "Shared-work note: short read-only answers can answer directly. Use shared-work commands only for edits, handoffs, active work, or unclear shared state. Do not mention internal shared-work names, ids, or commands to users."
+      : mode === "full"
+        ? `Internal shared-work id: ${actorId}. For file/code edits, handoffs, active work, or unclear shared-work state, run: agentq next --actor ${actorId}. For short read-only answers, do not run shared-work commands before answering. Do not mention internal shared-work names, ids, or commands to users.`
+        : `Shared-work id for edits/handoffs only: ${actorId}. Run agentq next --actor ${actorId} before edits, handoffs, active work, or unclear shared state. Short read-only answers can answer directly. Do not mention internal shared-work names, ids, or commands to users.`;
 
   if (adapter === "copilot-cli") {
     return { additionalContext: context };
@@ -465,6 +472,21 @@ async function writeHookDiagnostic(
   });
 }
 
+async function buildPreToolNudge(
+  store: WorkspaceStore,
+  actorId: string,
+  paths: readonly string[],
+  resources: readonly string[],
+  now: string
+): Promise<string | null> {
+  const [ownerNudge, workNudge] = await Promise.all([
+    buildRelatedOwnerNudge(store, actorId, paths, resources, now),
+    buildWorkAdoptionNudge(store, actorId, paths, resources)
+  ]);
+  const nudges = [ownerNudge, workNudge].filter((nudge): nudge is string => nudge !== null);
+  return nudges.length === 0 ? null : nudges.join("\n\n");
+}
+
 async function buildRelatedOwnerNudge(
   store: WorkspaceStore,
   actorId: string,
@@ -489,6 +511,39 @@ async function buildRelatedOwnerNudge(
   }
 
   return renderRelatedOwnerNudge(actorId, pathMatches.slice(0, 3), resourceMatches.slice(0, 3));
+}
+
+async function buildWorkAdoptionNudge(
+  store: WorkspaceStore,
+  actorId: string,
+  paths: readonly string[],
+  resources: readonly string[]
+): Promise<string | null> {
+  if (!paths.some(isSpecificPath) && resources.length === 0) {
+    return null;
+  }
+
+  const activeWork = await readActiveWorkState(store, actorId);
+  if (activeWork !== null) {
+    return null;
+  }
+
+  const presence = await readActorPresence(store, actorId).catch((error: unknown) => {
+    if (isNotFoundError(error)) {
+      return null;
+    }
+
+    throw error;
+  });
+  const weaknesses = presence === null ? [] : actorScopeWeaknesses(presence);
+  return [
+    weaknesses.length === 0
+      ? "AgentQ sees concrete shared-work activity with no active work frame for this actor."
+      : "AgentQ sees concrete shared-work activity while this actor still has weak scope and no active work frame.",
+    ...weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
+    `Run: agentq next --actor ${actorId}`,
+    "It will print the smallest scope/work command before continuing."
+  ].join("\n");
 }
 
 function renderRelatedOwnerNudge(
@@ -644,6 +699,7 @@ function extractUnityProjectPath(command: string, cwd: string): string | null {
 
 function collectPathCandidates(value: unknown, candidates: Set<string>, key = ""): void {
   if (typeof value === "string") {
+    collectPatchPathCandidates(value, candidates);
     if (isPathLikeKey(key) || isPathLikeValue(value)) {
       candidates.add(value);
     }
@@ -667,6 +723,28 @@ function collectPathCandidates(value: unknown, candidates: Set<string>, key = ""
     }
 
     collectPathCandidates(childValue, candidates, childKey);
+  }
+}
+
+function collectPatchPathCandidates(value: string, candidates: Set<string>): void {
+  if (!value.includes("*** ") || !value.includes(" File: ")) {
+    return;
+  }
+
+  const fileHeaderPattern = /^\*\*\* (?:Add|Delete|Update) File: (.+)$/gm;
+  for (const match of value.matchAll(fileHeaderPattern)) {
+    const candidate = match[1]?.trim();
+    if (candidate !== undefined && candidate.length > 0) {
+      candidates.add(candidate);
+    }
+  }
+
+  const moveHeaderPattern = /^\*\*\* Move to: (.+)$/gm;
+  for (const match of value.matchAll(moveHeaderPattern)) {
+    const candidate = match[1]?.trim();
+    if (candidate !== undefined && candidate.length > 0) {
+      candidates.add(candidate);
+    }
   }
 }
 

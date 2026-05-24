@@ -129,6 +129,63 @@ describe("AgentQ doctor", () => {
     );
   });
 
+  it("accepts absolute node wrapper AgentQ hook commands", async () => {
+    const tempRoot = await createTempRoot();
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, ".claude"), { recursive: true });
+    await writeFile(
+      path.join(workspace, ".claude", "settings.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\agentq\\dist\\main.js\" hook claude-code session-start"
+                }
+              ]
+            }
+          ],
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\agentq\\dist\\main.js\" hook claude-code pre-tool"
+                }
+              ]
+            }
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\agentq\\dist\\main.js\" hook claude-code stop"
+                }
+              ]
+            }
+          ]
+        }
+      }),
+      "utf8"
+    );
+
+    const report = await runDoctor(workspace, {
+      platform: "linux",
+      env: { HOME: tempRoot, XDG_STATE_HOME: path.join(tempRoot, "state") }
+    });
+
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        level: "ok",
+        name: "Claude Code hook gate",
+        detail: expect.stringContaining("contains all AgentQ hook entries")
+      })
+    );
+  });
+
   it("does not claim Copilot cloud cross-machine coordination", async () => {
     const tempRoot = await createTempRoot();
     const workspace = path.join(tempRoot, "workspace");

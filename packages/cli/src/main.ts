@@ -1968,6 +1968,7 @@ interface WorkspaceKindBreakdown {
   readonly routeableActive: number;
   readonly weakActive: number;
   readonly activeWork: number;
+  readonly routeableNoWork: number;
   readonly broadPresenceOnly: number;
 }
 
@@ -1993,6 +1994,7 @@ interface DiagnosticActivityRow {
   readonly hasOpenWork: boolean;
   readonly openWorkEvidenceCount: number | null;
   readonly openWorkTitle: string | null;
+  readonly adoption: string;
   readonly paths: readonly string[];
   readonly observedPaths: readonly string[];
   readonly resources: readonly string[];
@@ -2042,6 +2044,7 @@ function renderWorkspaceStatus(
   const routeableActiveCount = activeDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = activeCount - routeableActiveCount;
   const activeWorkActorCount = activeDetails.filter((detail) => detail.activeWork !== null).length;
+  const routeableNoWorkCount = activeDetails.filter(isRouteableNoWorkActor).length;
   const broadPresenceOnlyCount = activeDetails.filter(isBroadPresenceOnlyActor).length;
   const kindBreakdown = buildKindBreakdown(details);
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
@@ -2052,6 +2055,7 @@ function renderWorkspaceStatus(
     pendingInboxCount,
     routeableActiveCount,
     weakActiveCount,
+    routeableNoWorkCount,
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
     zeroEvidenceOpenWorkCount
@@ -2066,6 +2070,7 @@ function renderWorkspaceStatus(
     `routeable active actors: ${routeableActiveCount}`,
     `broad/generic active actors: ${weakActiveCount}`,
     `active work actors: ${activeWorkActorCount}`,
+    `routeable no-work actors: ${routeableNoWorkCount}`,
     `broad presence-only actors: ${broadPresenceOnlyCount}`,
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
@@ -2098,6 +2103,7 @@ function renderWorkspaceStatus(
       `  ${statusNextAction({
         pendingInboxCount,
         weakActiveCount,
+        routeableNoWorkCount,
         zeroEvidenceOpenWorkCount,
         staleOpenWorkCount,
         routeableActiveCount,
@@ -2139,6 +2145,7 @@ function buildKindBreakdown(details: readonly WorkspaceStatusActor[]): Workspace
       routeableActive: existing.routeableActive + (active && detail.weaknesses.length === 0 ? 1 : 0),
       weakActive: existing.weakActive + (weakActive ? 1 : 0),
       activeWork: existing.activeWork + (active && detail.activeWork !== null ? 1 : 0),
+      routeableNoWork: existing.routeableNoWork + (isRouteableNoWorkActor(detail) ? 1 : 0),
       broadPresenceOnly: existing.broadPresenceOnly + (isBroadPresenceOnlyActor(detail) ? 1 : 0)
     });
   }
@@ -2157,8 +2164,17 @@ function emptyKindBreakdown(kind: AgentKind): WorkspaceKindBreakdown {
     routeableActive: 0,
     weakActive: 0,
     activeWork: 0,
+    routeableNoWork: 0,
     broadPresenceOnly: 0
   };
+}
+
+function isRouteableNoWorkActor(detail: WorkspaceStatusActor): boolean {
+  return (
+    detail.summary.status === "active" &&
+    detail.weaknesses.length === 0 &&
+    detail.activeWork === null
+  );
 }
 
 function isBroadPresenceOnlyActor(detail: WorkspaceStatusActor): boolean {
@@ -2178,6 +2194,7 @@ function renderKindBreakdownLine(row: WorkspaceKindBreakdown): string {
     `routeable ${row.routeableActive}`,
     `broad/generic ${row.weakActive}`,
     `active-work ${row.activeWork}`,
+    `routeable-no-work ${row.routeableNoWork}`,
     `broad-presence-only ${row.broadPresenceOnly}`
   ].join(", ");
 }
@@ -2273,6 +2290,7 @@ async function buildDiagnosticActivityRows(
           listPendingInboxItems(store, actor.actorId),
           readActiveWorkState(store, actor.actorId)
         ]);
+      const hasOpenWork = activeWork !== null;
       const lastEventMs = eventTimes[eventTimes.length - 1];
       const lastSeenMs = actor === undefined ? Number.NaN : Date.parse(actor.lastSeen);
 
@@ -2291,9 +2309,10 @@ async function buildDiagnosticActivityRows(
           ? null
           : Math.max(0, nowMs - lastSeenMs),
         pendingInboxCount: pendingInbox.length,
-        hasOpenWork: activeWork !== null,
+        hasOpenWork,
         openWorkEvidenceCount: activeWork?.evidence.length ?? null,
         openWorkTitle: activeWork?.title ?? null,
+        adoption: classifyActivityAdoption(actor, hasOpenWork, actorEvents.length),
         paths: actor?.activePaths ?? [],
         observedPaths: actor?.observedPaths ?? [],
         resources: actor?.activeResources ?? [],
@@ -2313,6 +2332,7 @@ function statusRecommendations(input: {
   readonly pendingInboxCount: number;
   readonly routeableActiveCount: number;
   readonly weakActiveCount: number;
+  readonly routeableNoWorkCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
@@ -2325,6 +2345,10 @@ function statusRecommendations(input: {
 
   if (input.weakActiveCount > 0) {
     lines.push("Broad active actors need scope refresh; run `agentq next --actor <id>` for each affected actor.");
+  }
+
+  if (input.routeableNoWorkCount > 0) {
+    lines.push("Routeable actors without active work may miss stack/evidence benefits; run `agentq next --actor <id>` before the next edit or handoff.");
   }
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
@@ -2345,6 +2369,7 @@ function statusRecommendations(input: {
 function statusNextAction(input: {
   readonly pendingInboxCount: number;
   readonly weakActiveCount: number;
+  readonly routeableNoWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
   readonly staleOpenWorkCount: number;
   readonly routeableActiveCount: number;
@@ -2356,6 +2381,10 @@ function statusNextAction(input: {
 
   if (input.weakActiveCount > 0) {
     return "Refresh broad active scopes with `agentq next --actor <id>` for each affected actor.";
+  }
+
+  if (input.routeableNoWorkCount > 0) {
+    return "Start or confirm active work for routeable actors with `agentq next --actor <id>` before the next edit or handoff.";
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
@@ -2371,6 +2400,27 @@ function statusNextAction(input: {
   }
 
   return "No urgent AgentQ action; use `agentq next --actor <id>` before final, and `agentq owners ...` before shared edits.";
+}
+
+function classifyActivityAdoption(
+  actor: Presence | undefined,
+  hasOpenWork: boolean,
+  eventCount: number
+): string {
+  if (actor === undefined) {
+    return "diagnostic-only";
+  }
+
+  if (hasOpenWork) {
+    return "tracked-work";
+  }
+
+  const weaknesses = actorScopeWeaknesses(actor);
+  if (weaknesses.length === 0) {
+    return "scoped-no-work";
+  }
+
+  return eventCount <= 1 ? "broad-presence-only" : "broad-active";
 }
 
 function renderOwners(
@@ -2487,6 +2537,7 @@ function renderDiagnosticActivity(
         `lastSeen:${formatNullableDuration(row.lastSeenAgeMs)}`,
         `inbox:${row.pendingInboxCount}`,
         `work:${row.hasOpenWork ? "open" : "none"}`,
+        `adoption:${row.adoption}`,
         row.openWorkEvidenceCount === null ? undefined : `evidence:${row.openWorkEvidenceCount}`,
         row.openWorkTitle === null ? undefined : `workTitle:${row.openWorkTitle}`,
         `paths:${formatList(row.paths)}`,

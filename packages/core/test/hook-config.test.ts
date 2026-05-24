@@ -115,6 +115,66 @@ describe("AgentQ hook config installer", () => {
     expect(claudeHooks).not.toContain("\"matcher\": \"*\"");
   });
 
+  it("replaces absolute node wrapper AgentQ hook commands during install", async () => {
+    const workspace = await createWorkspace();
+    await writeJson(path.join(workspace, ".claude", "settings.json"), {
+      hooks: {
+        SessionStart: [
+          {
+            matcher: "startup|resume|clear|compact",
+            hooks: [
+              {
+                type: "command",
+                command: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\agentq\\dist\\main.js\" hook claude-code session-start",
+                statusMessage: "Registering AgentQ session",
+                timeout: 10
+              }
+            ]
+          }
+        ],
+        PreToolUse: [
+          {
+            matcher: "Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write",
+            hooks: [
+              {
+                type: "command",
+                command: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\agentq\\dist\\main.js\" hook claude-code pre-tool",
+                statusMessage: "Updating AgentQ active scope",
+                timeout: 10
+              }
+            ]
+          }
+        ],
+        Stop: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: "\"C:\\Program Files\\nodejs\\node.exe\" \"C:\\Users\\user\\AppData\\Roaming\\npm\\node_modules\\agentq\\dist\\main.js\" hook claude-code stop",
+                statusMessage: "Checking AgentQ required replies",
+                timeout: 10
+              }
+            ]
+          }
+        ]
+      }
+    });
+
+    await expect(planHookConfigInstall(workspace)).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ relativePath: ".claude/settings.json", action: "update" })
+      ])
+    });
+
+    await applyHookConfigInstall(workspace);
+
+    const claudeHooks = await readFile(path.join(workspace, ".claude", "settings.json"), "utf8");
+    expect(claudeHooks).toContain("agentq hook claude-code session-start");
+    expect(claudeHooks).toContain("agentq hook claude-code pre-tool");
+    expect(claudeHooks).toContain("agentq hook claude-code stop");
+    expect(claudeHooks).not.toContain("node_modules\\\\agentq\\\\dist\\\\main.js");
+  });
+
   it("dry-runs and uninstalls only AgentQ-owned hook entries", async () => {
     const workspace = await createWorkspace();
 

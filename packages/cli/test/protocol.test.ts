@@ -259,6 +259,7 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("p95Gap:4m");
     expect(result.stdout).toContain("avgGap:2m");
     expect(result.stdout).toContain("work:open");
+    expect(result.stdout).toContain("adoption:tracked-work");
     expect(result.stdout).toContain("evidence:0");
     expect(result.stdout).toContain("workTitle:Diagnose activity output");
     expect(result.stdout).toContain("paths:README.md");

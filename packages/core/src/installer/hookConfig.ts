@@ -29,6 +29,7 @@ type JsonObject = { [key: string]: JsonValue };
 
 const AGENTQ_COMMAND_PREFIX = "agentq hook ";
 const AGENTQ_PRE_TOOL_MATCHER = "Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write";
+const AGENTQ_HOOK_EVENTS = ["session-start", "pre-tool", "stop"] as const;
 
 const HOOK_TARGETS: readonly HookTarget[] = [
   {
@@ -411,7 +412,7 @@ function removeFlatHookConfig(existing: JsonObject | undefined, adapter: HookAda
 
 function containsAgentQCommand(value: JsonValue, adapter: HookAdapterTarget): boolean {
   if (typeof value === "string") {
-    return value.includes(`${AGENTQ_COMMAND_PREFIX}${adapter} `);
+    return containsAgentQHookCommand(value, adapter);
   }
 
   if (Array.isArray(value)) {
@@ -424,6 +425,27 @@ function containsAgentQCommand(value: JsonValue, adapter: HookAdapterTarget): bo
   }
 
   return Object.values(object).some((item) => containsAgentQCommand(item, adapter));
+}
+
+function containsAgentQHookCommand(value: string, adapter: HookAdapterTarget): boolean {
+  const normalized = value.replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+  const lowerAdapter = adapter.toLowerCase();
+  const eventPattern = AGENTQ_HOOK_EVENTS.map(escapeRegex).join("|");
+  const hookPattern = new RegExp(`\\bhook\\s+${escapeRegex(lowerAdapter)}\\s+(?:${eventPattern})\\b`);
+  if (!hookPattern.test(normalized)) {
+    return false;
+  }
+
+  return (
+    normalized.includes(`${AGENTQ_COMMAND_PREFIX}${lowerAdapter} `) ||
+    normalized.includes("/agentq/dist/main.js") ||
+    normalized.includes("/agentq/packages/cli/dist/main.js") ||
+    normalized.includes("/agentq/packages/cli/src/main.ts")
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function commandAdapterFromAdditions(

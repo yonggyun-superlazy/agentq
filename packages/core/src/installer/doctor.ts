@@ -60,6 +60,8 @@ const HOOK_TARGETS = [
   }
 ] as const;
 
+const HOOK_EVENTS = ["session-start", "pre-tool", "stop"] as const;
+
 export async function runDoctor(
   workspaceRoot: string,
   options: DoctorOptions = {}
@@ -154,7 +156,7 @@ async function checkHookTargets(workspaceRoot: string): Promise<DoctorCheck[]> {
   for (const target of HOOK_TARGETS) {
     const filePath = path.join(workspaceRoot, target.relativePath);
     const content = await readOptionalText(filePath);
-    const missingCommands = target.commands.filter((command) => content?.includes(command) !== true);
+    const missingCommands = target.commands.filter((command) => !contentHasHookCommand(content, command));
     if (content !== undefined && missingCommands.length !== target.commands.length) {
       const disabledCheck = disabledHookCheck(target.adapter, target.relativePath, content);
       if (disabledCheck !== undefined) {
@@ -334,6 +336,46 @@ function disabledHookCheck(
   }
 
   return undefined;
+}
+
+function contentHasHookCommand(content: string | undefined, command: string): boolean {
+  if (content === undefined) {
+    return false;
+  }
+
+  const parsed = /^agentq hook (codex|claude-code|copilot-cli) (session-start|pre-tool|stop)$/.exec(command);
+  if (parsed === null) {
+    return content.includes(command);
+  }
+
+  const adapter = parsed[1] as "codex" | "claude-code" | "copilot-cli";
+  const event = parsed[2] as typeof HOOK_EVENTS[number];
+  return containsAgentQHookCommand(content, adapter, event);
+}
+
+function containsAgentQHookCommand(
+  content: string,
+  adapter: "codex" | "claude-code" | "copilot-cli",
+  event: typeof HOOK_EVENTS[number]
+): boolean {
+  const normalized = content.replace(/\\/g, "/").replace(/\/+/g, "/").toLowerCase();
+  const lowerAdapter = adapter.toLowerCase();
+  const lowerEvent = event.toLowerCase();
+  const hookPattern = new RegExp(`\\bhook\\s+${escapeRegex(lowerAdapter)}\\s+${escapeRegex(lowerEvent)}\\b`);
+  if (!hookPattern.test(normalized)) {
+    return false;
+  }
+
+  return (
+    normalized.includes(`agentq hook ${lowerAdapter} ${lowerEvent}`) ||
+    normalized.includes("/agentq/dist/main.js") ||
+    normalized.includes("/agentq/packages/cli/dist/main.js") ||
+    normalized.includes("/agentq/packages/cli/src/main.ts")
+  );
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function jsonBoolean(content: string, key: string): boolean | undefined {

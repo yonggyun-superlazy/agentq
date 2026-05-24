@@ -977,9 +977,10 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("routeable active actors: 2");
     expect(result.stdout).toContain("broad/generic active actors: 1");
     expect(result.stdout).toContain("active work actors: 1");
+    expect(result.stdout).toContain("routeable no-work actors: 1");
     expect(result.stdout).toContain("broad presence-only actors: 1");
-    expect(result.stdout).toContain("codex: total 1, active 1, stale 0, routeable 1, broad/generic 0, active-work 1, broad-presence-only 0");
-    expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, routeable 1, broad/generic 1, active-work 0, broad-presence-only 1");
+    expect(result.stdout).toContain("codex: total 1, active 1, stale 0, routeable 1, broad/generic 0, active-work 1, routeable-no-work 0, broad-presence-only 0");
+    expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, routeable 1, broad/generic 1, active-work 0, routeable-no-work 1, broad-presence-only 1");
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
     expect(result.stdout).toContain("zero-evidence open work: 1");
