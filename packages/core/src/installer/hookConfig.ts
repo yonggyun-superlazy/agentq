@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -29,7 +30,70 @@ type JsonObject = { [key: string]: JsonValue };
 
 const AGENTQ_COMMAND_PREFIX = "agentq hook ";
 const AGENTQ_PRE_TOOL_MATCHER = "Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write";
+const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
 const AGENTQ_HOOK_EVENTS = ["session-start", "pre-tool", "stop"] as const;
+
+function agentQHookCommand(adapter: HookAdapterTarget, event: (typeof AGENTQ_HOOK_EVENTS)[number]): string {
+  if (adapter !== "claude-code") {
+    return `agentq hook ${adapter} ${event}`;
+  }
+
+  const directNode = windowsDirectNodeCommand();
+  if (directNode !== undefined) {
+    return `${directNode} hook ${adapter} ${event}`;
+  }
+
+  return `agentq hook ${adapter} ${event}`;
+}
+
+function windowsDirectNodeCommand(): string | undefined {
+  if (process.platform !== "win32") {
+    return undefined;
+  }
+
+  const entrypoint = resolveAgentQMainEntrypoint();
+  if (entrypoint === undefined) {
+    return undefined;
+  }
+
+  const nodeExe = process.env.AGENTQ_INSTALL_NODE_EXE ?? process.execPath;
+  return `${quoteCommandArg(nodeExe)} ${quoteCommandArg(entrypoint)}`;
+}
+
+function resolveAgentQMainEntrypoint(): string | undefined {
+  const override = process.env.AGENTQ_INSTALL_AGENTQ_MAIN;
+  if (override !== undefined && override.trim().length > 0) {
+    return override;
+  }
+
+  const currentEntrypoint = process.argv[1];
+  if (currentEntrypoint !== undefined && isAgentQEntrypoint(currentEntrypoint)) {
+    return currentEntrypoint;
+  }
+
+  const appData = process.env.APPDATA;
+  if (appData !== undefined && appData.trim().length > 0) {
+    const npmEntrypoint = path.join(appData, "npm", "node_modules", "agentq", "dist", "main.js");
+    if (existsSync(npmEntrypoint)) {
+      return npmEntrypoint;
+    }
+  }
+
+  return undefined;
+}
+
+function isAgentQEntrypoint(value: string): boolean {
+  const normalized = value.replace(/\\/g, "/").toLowerCase();
+  return (
+    normalized.endsWith("/agentq/dist/main.js") ||
+    normalized.endsWith("/agentq/packages/cli/dist/main.js") ||
+    normalized.endsWith("/agentq/packages/cli/src/main.ts")
+  );
+}
+
+function quoteCommandArg(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
 
 const HOOK_TARGETS: readonly HookTarget[] = [
   {
@@ -95,7 +159,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: "agentq hook claude-code session-start",
+                command: agentQHookCommand("claude-code", "session-start"),
                 statusMessage: "Registering AgentQ session",
                 timeout: 10
               }
@@ -105,11 +169,11 @@ const HOOK_TARGETS: readonly HookTarget[] = [
         {
           event: "PreToolUse",
           group: {
-            matcher: AGENTQ_PRE_TOOL_MATCHER,
+            matcher: CLAUDE_CODE_PRE_TOOL_MATCHER,
             hooks: [
               {
                 type: "command",
-                command: "agentq hook claude-code pre-tool",
+                command: agentQHookCommand("claude-code", "pre-tool"),
                 statusMessage: "Updating AgentQ active scope",
                 timeout: 10
               }
@@ -122,7 +186,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: "agentq hook claude-code stop",
+                command: agentQHookCommand("claude-code", "stop"),
                 statusMessage: "Checking AgentQ required replies",
                 timeout: 10
               }
@@ -451,12 +515,12 @@ function escapeRegex(value: string): string {
 function commandAdapterFromAdditions(
   additions: readonly { readonly group: JsonObject }[]
 ): HookAdapterTarget {
-  const serialized = JSON.stringify(additions);
-  if (serialized.includes("agentq hook codex ")) {
+  const serialized = JSON.stringify(additions).replace(/\\/g, "/").toLowerCase();
+  if (serialized.includes(" hook codex ")) {
     return "codex";
   }
 
-  if (serialized.includes("agentq hook claude-code ")) {
+  if (serialized.includes(" hook claude-code ")) {
     return "claude-code";
   }
 

@@ -41,9 +41,9 @@ assert(readFile(path.join(workspace, "AGENTS.md")).includes("agentq:begin"), "in
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Codex prehook should include read and mutating tools without matching every tool");
-assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("agentq hook claude-code stop"), "install missed Claude hook");
-assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("agentq hook claude-code pre-tool"), "install missed Claude prehook");
-assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Claude prehook should include read and mutating tools without matching every tool");
+assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code stop"), "install missed Claude hook");
+assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code pre-tool"), "install missed Claude prehook");
+assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("\"matcher\": \"Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit\""), "Claude prehook should avoid read-only tools and include mutating/shell tools");
 assert(readFile(path.join(workspace, ".github", "hooks", "agentq.json")).includes("agentq hook copilot-cli stop"), "install missed Copilot hook");
 assert(readFile(path.join(workspace, ".github", "hooks", "agentq.json")).includes("agentq hook copilot-cli pre-tool"), "install missed Copilot prehook");
 assert(!existsSync(path.join(workspace, ".agentq")), "install created repo-local .agentq");
@@ -256,7 +256,7 @@ function assertInstalledHookCommandsExecute(): void {
 
 function collectAgentQHookCommands(value: unknown): string[] {
   if (typeof value === "string") {
-    return value.startsWith("agentq hook ") ? [value] : [];
+    return /\bhook\s+(codex|claude-code|copilot-cli)\s+(session-start|pre-tool|stop)\b/.test(value) ? [value] : [];
   }
 
   if (Array.isArray(value)) {
