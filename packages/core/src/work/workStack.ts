@@ -12,6 +12,7 @@ import {
   type ActorWorkPointer,
   type WorkEvent
 } from "./schema.js";
+import { renderInternalQueueMaintenance } from "../output/internalEnvelope.js";
 
 export type WorkTerminalStatus = "closed" | "abandoned" | "superseded";
 export type WorkStatus = "open" | WorkTerminalStatus;
@@ -227,12 +228,17 @@ export function planWorkStopContinuation(result: WorkCheckResult): string {
     return "AgentQ work-check passed.";
   }
 
-  return [
-    `AgentQ work-check failed for ${result.actorId}.`,
-    `Active work ${result.activeWork.workId} is still open: ${result.activeWork.title}.`,
-    `Run: agentq next --actor ${result.actorId}`,
-    "It will print the exact evidence or close command before claiming done."
-  ].join(" ");
+  return renderInternalQueueMaintenance({
+    summary: `AgentQ work-check failed for ${result.actorId}.`,
+    afterAction: "Record evidence or close the active work item, then return to the user's original request and answer the requested artifact first.",
+    body: [
+      "Do not use this work-check reason as the user-facing answer.",
+      `AgentQ work-check failed for ${result.actorId}.`,
+      `Active work ${result.activeWork.workId} is still open: ${result.activeWork.title}.`,
+      `Run: agentq next --actor ${result.actorId}`,
+      "It will print the exact evidence or close command before claiming done."
+    ]
+  });
 }
 
 export async function readWorkState(store: WorkspaceStore, workId: string): Promise<WorkState> {

@@ -1,5 +1,6 @@
 import { foldMessageState, type FoldedMessageState, type FoldedRequest } from "./fold.js";
 import { listMessageIdsFromStore, type WorkspaceStore } from "../store/workspaceStore.js";
+import { renderInternalQueueMaintenance } from "../output/internalEnvelope.js";
 
 export type BlockingKind =
   | "inbound_pending"
@@ -59,16 +60,21 @@ export function planStopContinuation(
     };
   }
 
-  const reason = [
-    `AgentQ done-check failed for ${result.actorId}.`,
-    ...result.blocking.map(
-      (item) => `- ${item.kind}: ${item.messageId} for ${item.actorId} (${item.summary})`
-    ),
-    ...result.blocking.flatMap((item) => doneCheckNextLines(result.actorId, item)),
-    stopHookActive
-      ? "Stop hook is already active; follow `agentq next` before trying to finish again."
-      : "Follow `agentq next` before final response."
-  ].join("\n");
+  const reason = renderInternalQueueMaintenance({
+    summary: `AgentQ done-check failed for ${result.actorId}.`,
+    afterAction: "Resolve the required shared-work step, then return to the user's original request and answer the requested artifact first.",
+    body: [
+      "Do not use this block reason as the user-facing answer.",
+      `AgentQ done-check failed for ${result.actorId}.`,
+      ...result.blocking.map(
+        (item) => `- ${item.kind}: ${item.messageId} for ${item.actorId} (${item.summary})`
+      ),
+      ...result.blocking.flatMap((item) => doneCheckNextLines(result.actorId, item)),
+      stopHookActive
+        ? "Stop hook is already active; follow `agentq next` before trying to finish again."
+        : "Follow `agentq next` before final response."
+    ]
+  });
 
   return {
     decision: "block",

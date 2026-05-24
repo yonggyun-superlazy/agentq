@@ -37,7 +37,12 @@ assert(dryRun.includes("Mode: no files written"), "install dry-run did not stay 
 assert(!existsSync(path.join(workspace, "AGENTS.md")), "install dry-run wrote AGENTS.md");
 
 runAgentq(["install", "--yes"], workspace);
-assert(readFile(path.join(workspace, "AGENTS.md")).includes("agentq:begin"), "install missed AGENTS marker");
+const installedAgents = readFile(path.join(workspace, "AGENTS.md"));
+const installedScopedInstructions = readFile(path.join(workspace, ".github", "instructions", "agentq.instructions.md"));
+assert(installedAgents.includes("agentq:begin"), "install missed AGENTS marker");
+assert(installedScopedInstructions.includes("Answer the requested artifact first"), "install missed AgentQ answer-quality instruction");
+assert(installedScopedInstructions.includes("no evidence-free judgment"), "install missed AgentQ evidence-quality instruction");
+assert(installedScopedInstructions.includes("active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Codex prehook should include read and mutating tools without matching every tool");
@@ -337,12 +342,12 @@ function findTarball(predicate: (entry: string) => boolean): string {
 function assertPackageMetadata(): void {
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
     name: "agentq",
-    version: "0.1.0",
+    version: "0.1.1",
     bin: true
   });
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
     name: "@agentq/core",
-    version: "0.1.0",
+    version: "0.1.1",
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");

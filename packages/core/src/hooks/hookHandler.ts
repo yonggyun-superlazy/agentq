@@ -23,6 +23,7 @@ import {
 } from "../work/workStack.js";
 import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
 import { actorScopeWeaknesses } from "../state/scopeCheck.js";
+import { renderInternalQueueMaintenance } from "../output/internalEnvelope.js";
 
 export type HookAdapter = "codex" | "claude-code" | "copilot-cli";
 export type HookRuntimeEvent = "session-start" | "pre-tool" | "stop";
@@ -354,12 +355,28 @@ async function openHookStore(cwd: string, env: NodeJS.ProcessEnv | undefined): P
 
 function sessionStartOutput(adapter: HookAdapter, actorId: string, env: NodeJS.ProcessEnv | undefined): object {
   const mode = (env?.AGENTQ_SESSION_START_CONTEXT ?? "compact").toLowerCase();
-  const context =
+  const body =
     mode === "off" || mode === "none" || mode === "0"
-      ? "Shared-work note: short read-only answers can answer directly. Use shared-work commands only for edits, handoffs, active work, or unclear shared state. Do not mention internal shared-work names, ids, or commands to users."
+      ? [
+        "Shared-work note: short read-only answers can answer directly.",
+        "Use shared-work commands only for edits, handoffs, active work, or unclear shared state."
+      ]
       : mode === "full"
-        ? `Internal shared-work id: ${actorId}. For file/code edits, handoffs, active work, or unclear shared-work state, run: agentq next --actor ${actorId}. For short read-only answers, do not run shared-work commands before answering. Do not mention internal shared-work names, ids, or commands to users.`
-        : `Shared-work id for edits/handoffs only: ${actorId}. Run agentq next --actor ${actorId} before edits, handoffs, active work, or unclear shared state. Short read-only answers can answer directly. Do not mention internal shared-work names, ids, or commands to users.`;
+        ? [
+          `Internal shared-work id: ${actorId}.`,
+          `For file/code edits, handoffs, active work, or unclear shared-work state, run: agentq next --actor ${actorId}.`,
+          "For short read-only answers, do not run shared-work commands before answering."
+        ]
+        : [
+          `Shared-work id for edits/handoffs only: ${actorId}.`,
+          `Run agentq next --actor ${actorId} before edits, handoffs, active work, or unclear shared state.`,
+          "Short read-only answers can answer directly."
+        ];
+  const context = renderInternalQueueMaintenance({
+    summary: "AgentQ session shared-work context.",
+    afterAction: "After handling shared-work maintenance, resume the user's original request and answer the requested artifact first.",
+    body
+  });
 
   if (adapter === "copilot-cli") {
     return { additionalContext: context };
@@ -569,15 +586,19 @@ async function buildWorkAdoptionNudge(
     throw error;
   });
   const weaknesses = presence === null ? [] : actorScopeWeaknesses(presence);
-  return [
-    weaknesses.length === 0
-      ? "AgentQ sees concrete shared-work activity with no active work frame for this actor."
-      : "AgentQ sees concrete shared-work activity while this actor still has weak scope and no active work frame.",
-    ...weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
-    `Run: agentq next --actor ${actorId}`,
-    "It will print the smallest scope/work command before continuing.",
-    "Use the printed command to start or refresh the work frame before the next edit."
-  ].join("\n");
+  return renderInternalQueueMaintenance({
+    summary: "AgentQ work-adoption nudge.",
+    afterAction: "Run or resolve the shared-work step if it affects the current edit/handoff, then return to the user's original request and answer the requested artifact first.",
+    body: [
+      weaknesses.length === 0
+        ? "AgentQ sees concrete shared-work activity with no active work frame for this actor."
+        : "AgentQ sees concrete shared-work activity while this actor still has weak scope and no active work frame.",
+      ...weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
+      `Run: agentq next --actor ${actorId}`,
+      "It will print the smallest scope/work command before continuing.",
+      "Use the printed command to start or refresh the work frame before the next edit."
+    ]
+  });
 }
 
 function renderRelatedOwnerNudge(
@@ -591,20 +612,24 @@ function renderRelatedOwnerNudge(
   const routeArg = firstResource !== undefined
     ? `--resource ${firstResource}`
     : `--path ${firstPath ?? "<path>"}`;
-  return [
-    "AgentQ related active actor detected for this tool path or resource.",
-    ...pathMatches.map(
-      (match) =>
-        `- ${match.actor.actorId} owns ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
-    ),
-    ...resourceMatches.map(
-      (match) =>
-        `- ${match.actor.actorId} uses ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
-    ),
-    "Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.",
-    "If this changes their contract or unblocks their work, ask before local-only resolution:",
-    `agentq question --actor ${actorId} --to ${firstTargetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
-  ].join("\n");
+  return renderInternalQueueMaintenance({
+    summary: "AgentQ owner-overlap nudge.",
+    afterAction: "Ask only if this overlap changes the current edit/handoff; otherwise continue local work and answer the user's requested artifact first.",
+    body: [
+      "AgentQ related active actor detected for this tool path or resource.",
+      ...pathMatches.map(
+        (match) =>
+          `- ${match.actor.actorId} owns ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
+      ),
+      ...resourceMatches.map(
+        (match) =>
+          `- ${match.actor.actorId} uses ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
+      ),
+      "Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.",
+      "If this changes their contract or unblocks their work, ask before local-only resolution:",
+      `agentq question --actor ${actorId} --to ${firstTargetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
+    ]
+  });
 }
 
 function extractActivePaths(payload: PayloadObject, cwd: string): string[] {

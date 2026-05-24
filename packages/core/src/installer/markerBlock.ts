@@ -74,6 +74,8 @@ const SCOPED_MARKER_BODY = [
   "- Required replies block completion until answered.",
   "- External build/test/generated failures should be recorded with evidence.",
   "- Broad repo routing is ignored; use precise paths/resources/contracts.",
+  "- Answer the requested artifact first; no evidence-free judgment or permission-question ending for local diagnostics.",
+  "- active frame is focus/order, not scope shrink; keep parent denominator and same-row delete+replacement pass criteria.",
   "- Keep internal system names, command names, ids, queue/work-stack labels out of user answers unless requested.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");

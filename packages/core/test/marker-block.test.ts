@@ -86,7 +86,7 @@ describe("AgentQ marker installer", () => {
 
   it("keeps the generated instruction block under the install trust budget", () => {
     for (const target of DEFAULT_MARKER_TARGETS) {
-      const budget = target.relativePath === ".github/instructions/agentq.instructions.md" ? 1300 : 520;
+      const budget = target.relativePath === ".github/instructions/agentq.instructions.md" ? 1600 : 520;
       expect(Buffer.byteLength(renderMarkerBlock(target), "utf8")).toBeLessThan(budget);
     }
   });
@@ -114,6 +114,12 @@ describe("AgentQ marker installer", () => {
     expect(scopedBlock).toContain("docs/rules/shared-work-commands.md");
     expect(scopedBlock).toContain("External build/test/generated failures should be recorded with evidence");
     expect(scopedBlock).toContain("Short read-only answers");
+    expect(scopedBlock).toContain("Answer the requested artifact first");
+    expect(scopedBlock).toContain("no evidence-free judgment");
+    expect(scopedBlock).toContain("permission-question ending");
+    expect(scopedBlock).toContain("active frame is focus/order, not scope shrink");
+    expect(scopedBlock).toContain("parent denominator");
+    expect(scopedBlock).toContain("same-row delete+replacement pass criteria");
     expect(scopedBlock).toContain("Keep internal system names");
     expect(scopedBlock).not.toContain("AgentQ handles required-response queues");
     expect(scopedBlock).not.toContain("agentq next --actor");

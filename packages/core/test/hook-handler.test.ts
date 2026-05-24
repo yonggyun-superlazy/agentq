@@ -40,6 +40,17 @@ describe("AgentQ hook handler", () => {
     expect(start.stdout).toContain("Shared-work id for edits/handoffs only:");
     expect(start.stdout).toContain("Short read-only answers");
     expect(start.stdout).toContain("can answer directly");
+    expect(start.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(start.stdout).toContain("user-facing: false");
+    expect(start.stdout).toContain("[USER_FRAME_RESUME]");
+    expect(start.stdout).toContain("resume the user's original request");
+    expect(start.stdout).toContain("answer the requested artifact first");
+    expect(start.stdout).toContain("never end with a permission question");
+    expect(start.stdout).toContain("translate internal queue command names");
+    expect(start.stdout).toContain("do not echo them");
+    expect(start.stdout).toContain("do not quote or restate");
+    expect(start.stdout).toContain("do not ask the user to supply missing context");
+    expect(start.stdout).toContain("do not offer a menu");
     expect(start.stdout).toContain("Do not mention internal shared-work names");
     const actorId = actorIdFromContext(start.stdout);
 
@@ -73,6 +84,16 @@ describe("AgentQ hook handler", () => {
 
     expect(stop.code).toBe(0);
     expect(JSON.parse(stop.stdout)).toMatchObject({ decision: "block" });
+    expect(JSON.parse(stop.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(JSON.parse(stop.stdout).reason).toContain("[USER_FRAME_RESUME]");
+    expect(JSON.parse(stop.stdout).reason).toContain("Do not use this block reason as the user-facing answer");
+    expect(JSON.parse(stop.stdout).reason).toContain("answer the requested artifact first");
+    expect(JSON.parse(stop.stdout).reason).toContain("never end with a permission question");
+    expect(JSON.parse(stop.stdout).reason).toContain("translate internal queue command names");
+    expect(JSON.parse(stop.stdout).reason).toContain("do not echo them");
+    expect(JSON.parse(stop.stdout).reason).toContain("do not quote or restate");
+    expect(JSON.parse(stop.stdout).reason).toContain("do not ask the user to supply missing context");
+    expect(JSON.parse(stop.stdout).reason).toContain("do not offer a menu");
   });
 
   it("supports compact, full, and off SessionStart context modes", async () => {
@@ -95,6 +116,10 @@ describe("AgentQ hook handler", () => {
     });
     expect(compact.stdout).toContain("Shared-work id for edits/handoffs only:");
     expect(compact.stdout).toContain("agentq next --actor");
+    expect(compact.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(compact.stdout).toContain("[USER_FRAME_RESUME]");
+    expect(compact.stdout).toContain("resume the user's original request");
+    expect(compact.stdout).toContain("never end with a permission question");
     expect(compact.stdout).toContain("Do not mention internal shared-work names");
 
     const full = await runHookHandler({
@@ -106,6 +131,10 @@ describe("AgentQ hook handler", () => {
     });
     expect(full.stdout).toContain("Internal shared-work id:");
     expect(full.stdout).toContain("agentq next --actor");
+    expect(full.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(full.stdout).toContain("[USER_FRAME_RESUME]");
+    expect(full.stdout).toContain("resume the user's original request");
+    expect(full.stdout).toContain("never end with a permission question");
     expect(full.stdout).toContain("Do not mention internal shared-work names");
 
     const off = await runHookHandler({
@@ -117,6 +146,10 @@ describe("AgentQ hook handler", () => {
     });
     expect(off.stdout).toContain("Shared-work note:");
     expect(off.stdout).not.toContain("agentq next --actor");
+    expect(off.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(off.stdout).toContain("[USER_FRAME_RESUME]");
+    expect(off.stdout).toContain("resume the user's original request");
+    expect(off.stdout).toContain("never end with a permission question");
     expect(off.stdout).toContain("Do not mention internal shared-work names");
   });
 
@@ -189,6 +222,16 @@ describe("AgentQ hook handler", () => {
     };
     expect(output.hookSpecificOutput?.additionalContext).toContain("no active work frame");
     expect(output.hookSpecificOutput?.additionalContext).toContain("agentq next --actor");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Internal queue maintenance only");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("answer the requested artifact first");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("never end with a permission question");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("translate internal queue command names");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("do not echo them");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("do not quote or restate");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("do not ask the user to supply missing context");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("do not offer a menu");
 
     const store = await resolveWorkspaceStore(workspace, { env });
     const session = await readFile(
@@ -408,6 +451,11 @@ describe("AgentQ hook handler", () => {
       decision: "block",
       reason: expect.stringContaining("work-check failed")
     });
+    expect(JSON.parse(blocked.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(JSON.parse(blocked.stdout).reason).toContain("[USER_FRAME_RESUME]");
+    expect(JSON.parse(blocked.stdout).reason).toContain("Do not use this work-check reason as the user-facing answer");
+    expect(JSON.parse(blocked.stdout).reason).toContain("answer the requested artifact first");
+    expect(JSON.parse(blocked.stdout).reason).toContain("never end with a permission question");
 
     await appendWorkEvidence(store, {
       actorId,
@@ -579,6 +627,11 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain(owner.actorId);
     expect(output.hookSpecificOutput?.additionalContext).toContain("Ownership is a routing signal, not a lock");
     expect(output.hookSpecificOutput?.additionalContext).toContain("agentq question --actor");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Internal queue maintenance only");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("answer the user's requested artifact first");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("never end with a permission question");
   });
 
   it("adds a non-blocking owner nudge on exclusive resource overlap", async () => {
