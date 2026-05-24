@@ -611,10 +611,15 @@ function extractActivePaths(payload: PayloadObject, cwd: string): string[] {
   const candidates = new Set<string>();
   collectPathCandidates(payload, candidates);
 
-  const paths = [...candidates]
-    .map((candidate) => normalizePathCandidate(candidate, cwd))
-    .filter((candidate): candidate is string => candidate !== null)
-    .slice(0, 8);
+  const normalizedPaths = new Set<string>();
+  for (const candidate of candidates) {
+    const normalized = normalizePathCandidate(candidate, cwd);
+    if (normalized !== null) {
+      normalizedPaths.add(normalized);
+    }
+  }
+
+  const paths = [...normalizedPaths].slice(0, 8);
 
   return paths.length === 0 ? ["."] : paths;
 }

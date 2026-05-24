@@ -278,6 +278,7 @@ describe("AgentQ hook handler", () => {
       ".github/instructions/agentq.instructions.md",
       ".codex/hooks/session-note.py"
     ]));
+    expect(new Set(events[0]?.paths).size).toBe(events[0]?.paths.length);
     expect(events[0]?.paths).not.toContain("success/fail");
     expect(events[0]?.paths).not.toContain("model/parser/writer");
     expect(events[0]?.paths).not.toContain("plan/compiler/binder/executor");
