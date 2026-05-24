@@ -275,6 +275,12 @@ Interpretation:
 - The useful product claim is narrower: AgentQ can prevent plausible local
   fixes from violating shared ownership contracts.
 
+Follow-up:
+
+- [Repo-case cross-CLI experiment](repo-case-cross-cli-2026-05-24.md)
+  reproduced the same ownership-contract effect across Codex, Claude Code, and
+  Copilot CLI using a ProjectDD-style damage floater fixture.
+
 ## Question
 
 Does AgentQ's queue/stack inbox surface improve agent answer quality compared to
