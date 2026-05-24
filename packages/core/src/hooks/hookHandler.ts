@@ -560,7 +560,8 @@ async function buildWorkAdoptionNudge(
       : "AgentQ sees concrete shared-work activity while this actor still has weak scope and no active work frame.",
     ...weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
     `Run: agentq next --actor ${actorId}`,
-    "It will print the smallest scope/work command before continuing."
+    "It will print the smallest scope/work command before continuing.",
+    "Use the printed command to start or refresh the work frame before the next edit."
   ].join("\n");
 }
 
@@ -770,7 +771,7 @@ function collectPatchPathCandidates(value: string, candidates: Set<string>): voi
 }
 
 function collectShellCommandPathCandidates(command: string, candidates: Set<string>): void {
-  const optionPattern = /(?:^|\s)(?:-Path|-LiteralPath|--path|--file|-C)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|]+))/gi;
+  const optionPattern = /(?:^|\s)(?:-Path|-LiteralPath|--path|--file|-C(?![A-Za-z]))\s+(?:"([^"]+)"|'([^']+)'|([^\s;|]+))/gi;
   for (const match of command.matchAll(optionPattern)) {
     const candidate = match[1] ?? match[2] ?? match[3];
     if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
@@ -782,6 +783,21 @@ function collectShellCommandPathCandidates(command: string, candidates: Set<stri
   for (const match of command.matchAll(directCommandPattern)) {
     const candidate = match[1] ?? match[2] ?? match[3];
     if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
+      candidates.add(candidate);
+    }
+  }
+
+  const inlineFilePathPattern = /(?:^|[\s"'`])([A-Za-z0-9_.@/-]+[\/\\][A-Za-z0-9_.@/\\-]+\.(?:cs|ts|tsx|js|json|md|yaml|yml|xml|csproj|sln|ps1|bat|txt))(?=$|[\s"'`;|])/gi;
+  for (const match of command.matchAll(inlineFilePathPattern)) {
+    const candidate = match[1];
+    if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
+      candidates.add(candidate);
+    }
+  }
+
+  for (const rawToken of command.split(/[\s"'`]+/)) {
+    const candidate = rawToken.replace(/[),]+$/g, "");
+    if (looksLikeCommandPathArgument(candidate)) {
       candidates.add(candidate);
     }
   }
@@ -804,6 +820,7 @@ function looksLikeCommandPathArgument(value: string): boolean {
   return trimmed.length > 0 &&
     !trimmed.startsWith("-") &&
     !/^[a-z]+:\/\//i.test(trimmed) &&
+    isSafePathCandidate(trimmed) &&
     (isPathLikeValue(trimmed) || /\.(?:cs|ts|tsx|js|json|md|yaml|yml|xml|csproj|sln|ps1|bat|txt)$/i.test(trimmed));
 }
 
@@ -821,8 +838,11 @@ function isPathLikeValue(value: string): boolean {
 }
 
 function normalizePathCandidate(value: string, cwd: string): string | null {
-  const trimmed = value.trim();
+  const trimmed = stripPathBoundaryQuotes(value.trim());
   if (trimmed.length === 0 || trimmed.length > 260) {
+    return null;
+  }
+  if (!isSafePathCandidate(trimmed)) {
     return null;
   }
 
@@ -833,6 +853,34 @@ function normalizePathCandidate(value: string, cwd: string): string | null {
   }
 
   return relative.length === 0 ? "." : relative.replace(/\\/g, "/");
+}
+
+function stripPathBoundaryQuotes(value: string): string {
+  if (value.length < 2) {
+    return value;
+  }
+
+  const first = value[0];
+  const last = value[value.length - 1];
+  return (first === "\"" || first === "'") && last === first
+    ? value.slice(1, -1).trim()
+    : value;
+}
+
+function isSafePathCandidate(value: string): boolean {
+  if (/[<>{}`$*?\[\]\r\n;|&]/.test(value)) {
+    return false;
+  }
+
+  if (/(^|\s)(?:rtk|rg|grep|git|dotnet|npm|node|pwsh|powershell|agentq|read|Get-Content|Select-String|Test-Path)(?=$|\s)/i.test(value)) {
+    return false;
+  }
+
+  if (/\s-{1,2}[A-Za-z]/.test(value)) {
+    return false;
+  }
+
+  return true;
 }
 
 function isNotFoundError(error: unknown): boolean {

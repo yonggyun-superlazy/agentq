@@ -611,7 +611,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   if (subcommand === "start") {
     assertNoUnexpectedPositionals(args, "work start", 0);
     const workId = optionValue(args, "id");
-    const goal = optionValue(args, "goal");
+    const goal = await textOption(args, "goal", runtime, "work start");
     const activeResources = optionValues(args, "resource");
     const paths = requiredSpecificPathOptions(args, "path", "work start");
     const state = await startWork(store, {
@@ -1009,12 +1009,11 @@ function renderNextDoneBlocker(
   const lines = [`AgentQ next for ${actorId}`];
   if (blocker.kind === "outbound_pending") {
     lines.push(
-      "Action: wait for the required reply or continue only non-overlapping work.",
+      "Action: wait for the required reply; do not poll AgentQ for the same pending item.",
       `Pending: ${blocker.messageId} for ${blocker.actorId}`,
       `Summary: ${blocker.summary}`,
-      "Do not supersede just to make done-check pass.",
-      "Check again:",
-      `  agentq next --actor ${actorId}`
+      "Next local action: continue only work that cannot touch this reply path, or stop and wait for the receiver evidence.",
+      "Do not supersede just to make done-check pass."
     );
     return `${lines.join("\n")}\n`;
   }
@@ -1156,11 +1155,11 @@ async function enterCommand(argv: readonly string[], runtime: CommandRuntime): P
   const args = parseArgs(argv);
   const paths = pathOptionValues(args, "paths");
   const activeResources = optionValues(args, "resource");
-  const responsibilities = optionValues(args, "responsibility");
+  const responsibilities = cleanInlineTextValues(args, "responsibility", "enter");
   const store = await openStore(runtime);
   const actorId = optionValue(args, "actor");
   if (actorId !== undefined) {
-    const summary = optionValue(args, "summary");
+    const summary = await textOption(args, "summary", runtime, "enter");
     const presence = await refreshActorPresence(store, {
       actorId,
       cwd: runtime.cwd,
@@ -1180,7 +1179,7 @@ async function enterCommand(argv: readonly string[], runtime: CommandRuntime): P
 
   const adapter = requiredOption(args, "as") as AgentKind;
   const sessionId = optionValue(args, "session") ?? `${adapter}-manual`;
-  const summary = optionValue(args, "summary") ?? responsibilities[0] ?? `${adapter} actor`;
+  const summary = await textOption(args, "summary", runtime, "enter") ?? responsibilities[0] ?? `${adapter} actor`;
   const handle = optionValue(args, "handle");
   const bindingInput = {
     adapter,
@@ -1987,6 +1986,10 @@ function optionValues(args: ParsedArgs, name: string): string[] {
   return [...(args.options.get(name) ?? [])];
 }
 
+function cleanInlineTextValues(args: ParsedArgs, name: string, commandName: string): string[] {
+  return optionValues(args, name).map((value) => cleanTextOption(value, name, commandName));
+}
+
 async function requiredTextOption(
   args: ParsedArgs,
   name: string,
@@ -2042,12 +2045,14 @@ async function readTextFile(runtime: CommandRuntime, filePath: string): Promise<
 }
 
 function cleanTextOption(value: string, name: string, commandName: string): string {
-  const trimmed = stripDanglingBoundaryQuote(value.trim());
+  const raw = value.trim();
+  const hadDanglingQuote = hasDanglingBoundaryQuote(raw);
+  const trimmed = stripDanglingBoundaryQuote(raw);
   if (trimmed.length === 0) {
     throw new Error(`${commandName} --${name} must not be empty.`);
   }
 
-  if (looksLikeBrokenShellText(trimmed)) {
+  if (hadDanglingQuote && looksLikeBrokenShellText(trimmed)) {
     throw new Error(
       `${commandName} --${name} looks truncated: ${trimmed}. ` +
       `Use --${name}-file <path> or --${name}-stdin for shell-safe text.`
@@ -2055,6 +2060,17 @@ function cleanTextOption(value: string, name: string, commandName: string): stri
   }
 
   return trimmed;
+}
+
+function hasDanglingBoundaryQuote(value: string): boolean {
+  if (value.length < 2) {
+    return false;
+  }
+
+  const first = value[0];
+  const last = value[value.length - 1];
+  return ((first === "\"" || first === "'") && last !== first) ||
+    ((last === "\"" || last === "'") && first !== last);
 }
 
 function stripDanglingBoundaryQuote(value: string): string {
@@ -2279,6 +2295,7 @@ function renderWorkspaceStatus(
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
   const activeActorLines = activeDetails.map(renderStatusActorLine);
   const openWorkLines = details.flatMap(renderStatusWorkLines);
+  const zeroEvidenceOpenWorkLines = details.flatMap(renderZeroEvidenceWorkLines);
   const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
   const recommendationLines = statusRecommendations({
     pendingInboxCount,
@@ -2355,6 +2372,9 @@ function renderWorkspaceStatus(
     "",
     "Open work:",
     ...(openWorkLines.length === 0 ? ["  none"] : openWorkLines),
+    "",
+    "Zero-evidence open work:",
+    ...(zeroEvidenceOpenWorkLines.length === 0 ? ["  none"] : zeroEvidenceOpenWorkLines),
     "",
     "Pending inbox:",
     ...(pendingInboxLines.length === 0 ? ["  none"] : pendingInboxLines)
@@ -2838,6 +2858,7 @@ function renderDiagnosticActivity(
         `adoption:${row.adoption}`,
         row.workAdoptionNudgeCount === 0 ? undefined : `workNudges:${row.workAdoptionNudgeCount}`,
         row.ignoredWorkAdoptionNudge ? "ignored-work-nudge" : undefined,
+        row.openWorkEvidenceCount === 0 ? "zero-evidence" : undefined,
         row.openWorkEvidenceCount === null ? undefined : `evidence:${row.openWorkEvidenceCount}`,
         row.openWorkTitle === null ? undefined : `workTitle:${row.openWorkTitle}`,
         `paths:${formatList(row.paths)}`,
@@ -2875,7 +2896,25 @@ function renderStatusWorkLines(detail: WorkspaceStatusActor): string[] {
       `actorStatus: ${detail.summary.status}`,
       `status: ${detail.activeWork.status}`,
       `title: ${detail.activeWork.title}`,
-      `evidence: ${detail.activeWork.evidence.length}`
+      `evidence: ${detail.activeWork.evidence.length}`,
+      ...(detail.activeWork.evidence.length === 0
+        ? [`next: agentq next --actor ${detail.summary.actor.actorId}`]
+        : [])
+    ].join(" | ")
+  ];
+}
+
+function renderZeroEvidenceWorkLines(detail: WorkspaceStatusActor): string[] {
+  if (detail.activeWork === null || detail.activeWork.evidence.length > 0) {
+    return [];
+  }
+
+  return [
+    [
+      `  ${detail.activeWork.workId}`,
+      `actor: ${detail.summary.actor.actorId}`,
+      `title: ${detail.activeWork.title}`,
+      `next: agentq next --actor ${detail.summary.actor.actorId}`
     ].join(" | ")
   ];
 }

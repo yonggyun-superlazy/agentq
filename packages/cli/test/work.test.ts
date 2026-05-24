@@ -201,6 +201,64 @@ describe("CLI work stack", () => {
     ], runtime)).rejects.toThrow(/broad/);
   });
 
+  it("rejects dangling quoted work titles and responsibilities", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-text-quality-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+
+    await expect(runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "short",
+      "--paths",
+      "README.md",
+      "--responsibility",
+      "consumer"
+    ], runtime)).resolves.toMatchObject({
+      code: 0
+    });
+
+    await expect(runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "broken",
+      "--paths",
+      "README.md",
+      "--responsibility",
+      '"Implement'
+    ], runtime)).rejects.toThrow(/looks truncated/);
+
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "work-title",
+      "--paths",
+      "README.md",
+      "--responsibility",
+      "README owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--title",
+      '"Diagnose',
+      "--path",
+      "README.md"
+    ], runtime)).rejects.toThrow(/looks truncated/);
+  });
+
   it("lets the sender supersede an outbound request without impersonating the receiver", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-supersede-"));
     const runtime = {
@@ -632,10 +690,15 @@ describe("CLI work stack", () => {
     await expect(runCommand(["next", "--actor", receiver], runtime)).resolves.toMatchObject({
       stdout: expect.stringContaining(`agentq respond AQ-next --actor ${receiver} --status answered`)
     });
-    await expect(runCommand(["next", "--actor", sender], runtime)).resolves.toMatchObject({
+    const pendingNext = await runCommand(["next", "--actor", sender], runtime);
+    expect(pendingNext).toMatchObject({
       code: 0,
-      stdout: expect.stringContaining("Action: wait for the required reply")
+      stderr: "",
+      stdout: expect.stringContaining("Action: wait for the required reply; do not poll AgentQ")
     });
+    expect(pendingNext.stdout).toContain("Next local action: continue only work that cannot touch this reply path");
+    expect(pendingNext.stdout).not.toContain("Check again:");
+    expect(pendingNext.stdout).not.toContain(`agentq next --actor ${sender}`);
 
     await runCommand([
       "respond",
@@ -986,6 +1049,8 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
     expect(result.stdout).toContain("zero-evidence open work: 1");
+    expect(result.stdout).toContain("Zero-evidence open work:");
+    expect(result.stdout).toContain(`next: agentq next --actor ${sender}`);
     expect(result.stdout).toContain("Open work without context evidence remains");
     expect(result.stdout).toContain("agentq next --actor <id>");
     expect(result.stdout).toContain("recent messages 24h: 1");

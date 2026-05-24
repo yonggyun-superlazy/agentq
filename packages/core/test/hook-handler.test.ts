@@ -245,6 +245,47 @@ describe("AgentQ hook handler", () => {
     });
   });
 
+  it("rejects HTML, glob, and command snippets as hook paths", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-noisy-paths-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-noisy",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          file_path: "><span>Ticks</span><b>${ticks.join(",
+          paths: "rg -n pressure ProjectDD/**/*.cs",
+          command: "rtk pwsh -NoProfile -Command \"Select-String -Path '*.cs' -Pattern '<span>'\""
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.stdout).toBe("{}\n");
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const session = await readFile(
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S-noisy")),
+      "utf8"
+    );
+    const presence = await readFile(store.layout.actorPresencePath(actorIdFromSession(session)), "utf8");
+    expect(presence).not.toContain("<span>");
+    expect(presence).not.toContain("*.cs");
+    expect(presence).not.toContain("rg -n");
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      paths: ["."],
+      nudge: false
+    });
+  });
+
   it("bootstraps a missing session binding from Stop without blocking on scope-only weakness", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-stop-bootstrap-"));
     const workspace = path.join(tempRoot, "workspace");
