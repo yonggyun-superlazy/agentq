@@ -113,12 +113,13 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       resources: hookResources,
       ignoredCommands: resourceInference.ignoredCommands,
       nudge: preToolNudge !== null,
+      nudgeKinds: preToolNudge?.kinds ?? [],
       at: options.now
     });
 
     return {
       code: 0,
-      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId, preToolNudge))}\n`,
+      stdout: `${JSON.stringify(preToolOutput(options.adapter, actorId, preToolNudge?.message ?? null))}\n`,
       stderr: ""
     };
   }
@@ -454,6 +455,7 @@ async function writeHookDiagnostic(
     readonly resources: readonly string[];
     readonly ignoredCommands: readonly string[];
     readonly nudge?: boolean;
+    readonly nudgeKinds?: readonly string[];
     readonly at: string;
   }
 ): Promise<void> {
@@ -468,8 +470,16 @@ async function writeHookDiagnostic(
     resources: [...input.resources],
     ignoredCommands: [...input.ignoredCommands],
     ...(input.nudge === undefined ? {} : { nudge: input.nudge }),
+    ...(input.nudgeKinds === undefined || input.nudgeKinds.length === 0
+      ? {}
+      : { nudgeKinds: [...input.nudgeKinds] }),
     at: input.at
   });
+}
+
+interface PreToolNudge {
+  readonly message: string;
+  readonly kinds: readonly string[];
 }
 
 async function buildPreToolNudge(
@@ -478,13 +488,21 @@ async function buildPreToolNudge(
   paths: readonly string[],
   resources: readonly string[],
   now: string
-): Promise<string | null> {
+): Promise<PreToolNudge | null> {
   const [ownerNudge, workNudge] = await Promise.all([
     buildRelatedOwnerNudge(store, actorId, paths, resources, now),
     buildWorkAdoptionNudge(store, actorId, paths, resources)
   ]);
-  const nudges = [ownerNudge, workNudge].filter((nudge): nudge is string => nudge !== null);
-  return nudges.length === 0 ? null : nudges.join("\n\n");
+  const nudges = [
+    ownerNudge === null ? null : { kind: "owner-overlap", message: ownerNudge },
+    workNudge === null ? null : { kind: "work-adoption", message: workNudge }
+  ].filter((nudge): nudge is { readonly kind: string; readonly message: string } => nudge !== null);
+  return nudges.length === 0
+    ? null
+    : {
+      message: nudges.map((nudge) => nudge.message).join("\n\n"),
+      kinds: nudges.map((nudge) => nudge.kind)
+    };
 }
 
 async function buildRelatedOwnerNudge(
@@ -700,6 +718,9 @@ function extractUnityProjectPath(command: string, cwd: string): string | null {
 function collectPathCandidates(value: unknown, candidates: Set<string>, key = ""): void {
   if (typeof value === "string") {
     collectPatchPathCandidates(value, candidates);
+    if (isCommandLikeKey(key)) {
+      collectShellCommandPathCandidates(value, candidates);
+    }
     if (isPathLikeKey(key) || isPathLikeValue(value)) {
       candidates.add(value);
     }
@@ -746,6 +767,44 @@ function collectPatchPathCandidates(value: string, candidates: Set<string>): voi
       candidates.add(candidate);
     }
   }
+}
+
+function collectShellCommandPathCandidates(command: string, candidates: Set<string>): void {
+  const optionPattern = /(?:^|\s)(?:-Path|-LiteralPath|--path|--file|-C)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|]+))/gi;
+  for (const match of command.matchAll(optionPattern)) {
+    const candidate = match[1] ?? match[2] ?? match[3];
+    if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
+      candidates.add(candidate);
+    }
+  }
+
+  const directCommandPattern = /(?:^|\s)(?:(?:rtk\s+)?read|Get-Content|Test-Path)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|]+))/gi;
+  for (const match of command.matchAll(directCommandPattern)) {
+    const candidate = match[1] ?? match[2] ?? match[3];
+    if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
+      candidates.add(candidate);
+    }
+  }
+
+  const quotedPattern = /(?:"([^"]+)"|'([^']+)')/g;
+  for (const match of command.matchAll(quotedPattern)) {
+    const candidate = match[1] ?? match[2];
+    if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
+      candidates.add(candidate);
+    }
+  }
+}
+
+function isCommandLikeKey(key: string): boolean {
+  return /^(command|cmd|script|shell_command)$/i.test(key);
+}
+
+function looksLikeCommandPathArgument(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length > 0 &&
+    !trimmed.startsWith("-") &&
+    !/^[a-z]+:\/\//i.test(trimmed) &&
+    (isPathLikeValue(trimmed) || /\.(?:cs|ts|tsx|js|json|md|yaml|yml|xml|csproj|sln|ps1|bat|txt)$/i.test(trimmed));
 }
 
 function isPathLikeKey(key: string): boolean {

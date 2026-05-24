@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { foldMessageState, resolveWorkspaceStore } from "@agentq/core";
+import { appendDiagnosticEvent, foldMessageState, resolveWorkspaceStore } from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI work stack", () => {
@@ -978,6 +978,8 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("broad/generic active actors: 1");
     expect(result.stdout).toContain("active work actors: 1");
     expect(result.stdout).toContain("routeable no-work actors: 1");
+    expect(result.stdout).toContain("recent work-adoption nudged actors: 0");
+    expect(result.stdout).toContain("ignored work-adoption nudges: 0");
     expect(result.stdout).toContain("broad presence-only actors: 1");
     expect(result.stdout).toContain("codex: total 1, active 1, stale 0, routeable 1, broad/generic 0, active-work 1, routeable-no-work 0, broad-presence-only 0");
     expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, routeable 1, broad/generic 1, active-work 0, routeable-no-work 1, broad-presence-only 1");
@@ -990,6 +992,51 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("weak-scope actors: 1");
     expect(result.stdout).toContain("AW-status");
     expect(result.stdout).toContain("AQ-status");
+  });
+
+  it("prompts active work after a recent concrete edit nudge", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-next-nudge-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "nudge",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ CLI adoption diagnostics"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:09:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "apply_patch",
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      nudge: true,
+      nudgeKinds: ["work-adoption"]
+    });
+
+    const next = await runCommand(["next", "--actor", actorId], runtime);
+    expect(next).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(next.stdout).toContain("Action: start or confirm active work before continuing.");
+    expect(next.stdout).toContain("Recent work-adoption nudge: 1");
+    expect(next.stdout).toContain("agentq work start --actor");
+
+    const status = await runCommand(["status"], runtime);
+    expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
+    expect(status.stdout).toContain("ignored work-adoption nudges: 1");
+    expect(status.stdout).toContain("Some actors received concrete edit work-adoption nudges");
   });
 
   it("finds active path owners and excludes the current actor when requested", async () => {

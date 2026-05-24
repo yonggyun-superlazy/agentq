@@ -219,7 +219,10 @@ describe("CLI required-response protocol", () => {
       at: "2026-05-18T00:00:00.000Z",
       actorId,
       event: "pre-tool",
-      toolName: "Bash"
+      toolName: "Bash",
+      paths: ["README.md"],
+      nudge: true,
+      nudgeKinds: ["work-adoption"]
     });
     await appendDiagnosticEvent(store, {
       kind: "hook",
@@ -260,6 +263,7 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("avgGap:2m");
     expect(result.stdout).toContain("work:open");
     expect(result.stdout).toContain("adoption:tracked-work");
+    expect(result.stdout).toContain("workNudges:1");
     expect(result.stdout).toContain("evidence:0");
     expect(result.stdout).toContain("workTitle:Diagnose activity output");
     expect(result.stdout).toContain("paths:README.md");

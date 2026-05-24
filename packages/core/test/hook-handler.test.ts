@@ -201,7 +201,47 @@ describe("AgentQ hook handler", () => {
     const events = await readDiagnosticEvents(store, 5);
     expect(events[0]).toMatchObject({
       paths: ["src/protocol.ts"],
-      nudge: true
+      nudge: true,
+      nudgeKinds: ["work-adoption"]
+    });
+  });
+
+  it("extracts explicit paths from shell command payloads", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-shell-paths-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "AgentQ/packages/cli/src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-shell",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "rtk pwsh -NoProfile -Command \"Select-String -Path 'AgentQ/packages/cli/src/main.ts' -Pattern 'routeable'\""
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const session = await readFile(
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S-shell")),
+      "utf8"
+    );
+    const actorId = actorIdFromSession(session);
+    const presence = await readFile(store.layout.actorPresencePath(actorId), "utf8");
+    expect(presence).toContain("AgentQ/packages/cli/src/main.ts");
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      nudge: true,
+      nudgeKinds: ["work-adoption"]
     });
   });
 

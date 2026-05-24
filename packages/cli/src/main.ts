@@ -82,6 +82,7 @@ export interface CommandRuntime {
 }
 
 const DEFAULT_ACTOR_STALE_AFTER_MS = 3_600_000;
+const RECENT_WORK_NUDGE_WINDOW_MS = 1_800_000;
 
 export const COMMANDS: readonly CommandSpec[] = [
   { name: "install", summary: "Install agent instructions and hook gates" },
@@ -751,6 +752,7 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
   const actors = await listActorPresences(store);
   const now = runtime.now();
   const nowMs = Date.parse(now);
+  const diagnosticEvents = await readDiagnosticEvents(store, 10_000);
   const details = await Promise.all(
     actors.map(async (actor) => {
       const summary = actorStatus(actor, nowMs, staleAfterMs);
@@ -762,7 +764,13 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
         summary,
         pendingInbox,
         activeWork,
-        weaknesses: actorScopeWeaknesses(actor)
+        weaknesses: actorScopeWeaknesses(actor),
+        recentWorkAdoptionNudge: findRecentWorkAdoptionNudge(
+          diagnosticEvents,
+          actor.actorId,
+          nowMs,
+          RECENT_WORK_NUDGE_WINDOW_MS
+        )
       };
     })
   );
@@ -779,12 +787,14 @@ async function nextCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   const args = parseArgs(argv);
   const actorId = requiredOption(args, "actor");
   const store = await openStore(runtime);
-  const [inboxItems, doneResult, workResult, scopeResult, resolvedOutbound] = await Promise.all([
+  const nowMs = Date.parse(runtime.now());
+  const [inboxItems, doneResult, workResult, scopeResult, resolvedOutbound, diagnosticEvents] = await Promise.all([
     listInboxItems(store, actorId),
     runDoneCheck(store, actorId),
     runWorkDoneCheck(store, actorId),
     runScopeCheck(store, actorId),
-    resolvedOutboundItems(store, actorId)
+    resolvedOutboundItems(store, actorId),
+    readDiagnosticEvents(store, 10_000)
   ]);
 
   return {
@@ -796,6 +806,12 @@ async function nextCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       workResult,
       scopeResult,
       resolvedOutbound,
+      recentWorkAdoptionNudge: findRecentWorkAdoptionNudge(
+        diagnosticEvents,
+        actorId,
+        nowMs,
+        RECENT_WORK_NUDGE_WINDOW_MS
+      ),
       queueStackUx: queueStackUxEnabled(runtime.env)
     }),
     stderr: ""
@@ -809,6 +825,7 @@ interface NextActionInput {
   readonly workResult: Awaited<ReturnType<typeof runWorkDoneCheck>>;
   readonly scopeResult: Awaited<ReturnType<typeof runScopeCheck>>;
   readonly resolvedOutbound: readonly ResolvedOutboundItem[];
+  readonly recentWorkAdoptionNudge: RecentWorkAdoptionNudge | null;
   readonly queueStackUx: boolean;
 }
 
@@ -864,6 +881,22 @@ function renderNextAction(input: NextActionInput): string {
       `  agentq next --actor ${input.actorId}`
     );
     return `${lines.join("\n")}\n`;
+  }
+
+  if (input.recentWorkAdoptionNudge !== null) {
+    const nudge = input.recentWorkAdoptionNudge;
+    const firstPath = nudge.latestPaths.find((value) => value !== ".");
+    lines.push(
+      "Action: start or confirm active work before continuing.",
+      `Recent work-adoption nudge: ${nudge.count} in the last ${formatDuration(RECENT_WORK_NUDGE_WINDOW_MS)}; latest ${nudge.latestAt}`,
+      `Paths: ${formatList(nudge.latestPaths)}`,
+      nudge.latestResources.length === 0 ? "" : `Resources: ${formatList(nudge.latestResources)}`,
+      "Run:",
+      `  agentq work start --actor ${input.actorId} --title "<current task>" --path ${firstPath ?? "<specific-path>"}`,
+      "Then:",
+      `  agentq next --actor ${input.actorId}`
+    );
+    return `${lines.filter((line) => line.length > 0).join("\n")}\n`;
   }
 
   if (input.resolvedOutbound.length > 0) {
@@ -1958,6 +1991,14 @@ interface WorkspaceStatusActor {
   readonly pendingInbox: PendingInboxItems;
   readonly activeWork: WorkState | null;
   readonly weaknesses: ReturnType<typeof actorScopeWeaknesses>;
+  readonly recentWorkAdoptionNudge: RecentWorkAdoptionNudge | null;
+}
+
+interface RecentWorkAdoptionNudge {
+  readonly count: number;
+  readonly latestAt: string;
+  readonly latestPaths: readonly string[];
+  readonly latestResources: readonly string[];
 }
 
 interface WorkspaceKindBreakdown {
@@ -1995,6 +2036,8 @@ interface DiagnosticActivityRow {
   readonly openWorkEvidenceCount: number | null;
   readonly openWorkTitle: string | null;
   readonly adoption: string;
+  readonly workAdoptionNudgeCount: number;
+  readonly ignoredWorkAdoptionNudge: boolean;
   readonly paths: readonly string[];
   readonly observedPaths: readonly string[];
   readonly resources: readonly string[];
@@ -2046,6 +2089,12 @@ function renderWorkspaceStatus(
   const activeWorkActorCount = activeDetails.filter((detail) => detail.activeWork !== null).length;
   const routeableNoWorkCount = activeDetails.filter(isRouteableNoWorkActor).length;
   const broadPresenceOnlyCount = activeDetails.filter(isBroadPresenceOnlyActor).length;
+  const recentWorkNudgeActorCount = activeDetails.filter(
+    (detail) => detail.recentWorkAdoptionNudge !== null
+  ).length;
+  const ignoredWorkNudgeActorCount = activeDetails.filter(
+    (detail) => detail.activeWork === null && detail.recentWorkAdoptionNudge !== null
+  ).length;
   const kindBreakdown = buildKindBreakdown(details);
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
   const activeActorLines = activeDetails.map(renderStatusActorLine);
@@ -2056,6 +2105,7 @@ function renderWorkspaceStatus(
     routeableActiveCount,
     weakActiveCount,
     routeableNoWorkCount,
+    ignoredWorkNudgeActorCount,
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
     zeroEvidenceOpenWorkCount
@@ -2071,6 +2121,8 @@ function renderWorkspaceStatus(
     `broad/generic active actors: ${weakActiveCount}`,
     `active work actors: ${activeWorkActorCount}`,
     `routeable no-work actors: ${routeableNoWorkCount}`,
+    `recent work-adoption nudged actors: ${recentWorkNudgeActorCount}`,
+    `ignored work-adoption nudges: ${ignoredWorkNudgeActorCount}`,
     `broad presence-only actors: ${broadPresenceOnlyCount}`,
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
@@ -2103,6 +2155,7 @@ function renderWorkspaceStatus(
       `  ${statusNextAction({
         pendingInboxCount,
         weakActiveCount,
+        ignoredWorkNudgeActorCount,
         routeableNoWorkCount,
         zeroEvidenceOpenWorkCount,
         staleOpenWorkCount,
@@ -2293,6 +2346,7 @@ async function buildDiagnosticActivityRows(
       const hasOpenWork = activeWork !== null;
       const lastEventMs = eventTimes[eventTimes.length - 1];
       const lastSeenMs = actor === undefined ? Number.NaN : Date.parse(actor.lastSeen);
+      const workAdoptionNudgeEvents = actorEvents.filter(eventHasWorkAdoptionNudge);
 
       return {
         actorId,
@@ -2312,7 +2366,9 @@ async function buildDiagnosticActivityRows(
         hasOpenWork,
         openWorkEvidenceCount: activeWork?.evidence.length ?? null,
         openWorkTitle: activeWork?.title ?? null,
-        adoption: classifyActivityAdoption(actor, hasOpenWork, actorEvents.length),
+        adoption: classifyActivityAdoption(actor, hasOpenWork, actorEvents.length, workAdoptionNudgeEvents.length),
+        workAdoptionNudgeCount: workAdoptionNudgeEvents.length,
+        ignoredWorkAdoptionNudge: workAdoptionNudgeEvents.length > 0 && !hasOpenWork,
         paths: actor?.activePaths ?? [],
         observedPaths: actor?.observedPaths ?? [],
         resources: actor?.activeResources ?? [],
@@ -2333,6 +2389,7 @@ function statusRecommendations(input: {
   readonly routeableActiveCount: number;
   readonly weakActiveCount: number;
   readonly routeableNoWorkCount: number;
+  readonly ignoredWorkNudgeActorCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
@@ -2341,6 +2398,10 @@ function statusRecommendations(input: {
 
   if (input.pendingInboxCount > 0) {
     lines.push("Required inbox items are pending; run `agentq next --actor <id>` for the affected actor.");
+  }
+
+  if (input.ignoredWorkNudgeActorCount > 0) {
+    lines.push("Some actors received concrete edit work-adoption nudges but still have no active work; run `agentq next --actor <id>` for those actors before the next edit.");
   }
 
   if (input.weakActiveCount > 0) {
@@ -2369,6 +2430,7 @@ function statusRecommendations(input: {
 function statusNextAction(input: {
   readonly pendingInboxCount: number;
   readonly weakActiveCount: number;
+  readonly ignoredWorkNudgeActorCount: number;
   readonly routeableNoWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
   readonly staleOpenWorkCount: number;
@@ -2377,6 +2439,10 @@ function statusNextAction(input: {
 }): string {
   if (input.pendingInboxCount > 0) {
     return "Resolve pending inbox first with `agentq next --actor <id>` for the affected actor.";
+  }
+
+  if (input.ignoredWorkNudgeActorCount > 0) {
+    return "Start active work for actors that already received concrete edit nudges with `agentq next --actor <id>`.";
   }
 
   if (input.weakActiveCount > 0) {
@@ -2405,7 +2471,8 @@ function statusNextAction(input: {
 function classifyActivityAdoption(
   actor: Presence | undefined,
   hasOpenWork: boolean,
-  eventCount: number
+  eventCount: number,
+  workAdoptionNudgeCount: number
 ): string {
   if (actor === undefined) {
     return "diagnostic-only";
@@ -2415,12 +2482,60 @@ function classifyActivityAdoption(
     return "tracked-work";
   }
 
+  if (workAdoptionNudgeCount > 0) {
+    return "nudge-no-work";
+  }
+
   const weaknesses = actorScopeWeaknesses(actor);
   if (weaknesses.length === 0) {
     return "scoped-no-work";
   }
 
   return eventCount <= 1 ? "broad-presence-only" : "broad-active";
+}
+
+function findRecentWorkAdoptionNudge(
+  events: readonly DiagnosticEvent[],
+  actorId: string,
+  nowMs: number,
+  windowMs: number
+): RecentWorkAdoptionNudge | null {
+  const matches = events
+    .filter((event) => {
+      const atMs = Date.parse(event.at);
+      return event.actorId === actorId &&
+        eventHasWorkAdoptionNudge(event) &&
+        Number.isFinite(nowMs) &&
+        Number.isFinite(atMs) &&
+        nowMs - atMs >= 0 &&
+        nowMs - atMs <= windowMs;
+    })
+    .sort((left, right) => right.at.localeCompare(left.at));
+  const latest = matches[0];
+  if (latest === undefined) {
+    return null;
+  }
+
+  return {
+    count: matches.length,
+    latestAt: latest.at,
+    latestPaths: latest.paths ?? [],
+    latestResources: latest.resources ?? []
+  };
+}
+
+function eventHasWorkAdoptionNudge(event: DiagnosticEvent): boolean {
+  const nudgeKinds = event.nudgeKinds ?? [];
+  if (nudgeKinds.includes("work-adoption")) {
+    return true;
+  }
+
+  return event.nudge === true &&
+    ((event.paths ?? []).some(isSpecificDiagnosticPath) || (event.resources ?? []).length > 0);
+}
+
+function isSpecificDiagnosticPath(value: string): boolean {
+  return value.trim().length > 0 && value.trim() !== ".";
 }
 
 function renderOwners(
@@ -2500,7 +2615,10 @@ function renderDiagnosticEvents(events: readonly DiagnosticEvent[]): string {
         event.ignoredCommands === undefined || event.ignoredCommands.length === 0
           ? undefined
           : `ignored:${event.ignoredCommands.length}`,
-        event.nudge === undefined ? undefined : `nudge:${event.nudge ? "yes" : "no"}`
+        event.nudge === undefined ? undefined : `nudge:${event.nudge ? "yes" : "no"}`,
+        event.nudgeKinds === undefined || event.nudgeKinds.length === 0
+          ? undefined
+          : `nudgeKinds:${formatList(event.nudgeKinds)}`
       ].filter((part): part is string => part !== undefined).join(" | ")
     );
   }
@@ -2538,6 +2656,8 @@ function renderDiagnosticActivity(
         `inbox:${row.pendingInboxCount}`,
         `work:${row.hasOpenWork ? "open" : "none"}`,
         `adoption:${row.adoption}`,
+        row.workAdoptionNudgeCount === 0 ? undefined : `workNudges:${row.workAdoptionNudgeCount}`,
+        row.ignoredWorkAdoptionNudge ? "ignored-work-nudge" : undefined,
         row.openWorkEvidenceCount === null ? undefined : `evidence:${row.openWorkEvidenceCount}`,
         row.openWorkTitle === null ? undefined : `workTitle:${row.openWorkTitle}`,
         `paths:${formatList(row.paths)}`,
