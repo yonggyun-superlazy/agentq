@@ -221,6 +221,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq question --actor <id> --question-stdin [--to <id>...] --path <path>...",
       "",
       "Questions are required requests. The sender remains blocked until routed actors answer.",
+      "Text options accept normal shell-split words until the next --option; use file/stdin only for exact multi-line text.",
       "After routing, AgentQ records pending delivery without starting headless agent processes."
     ].join("\n");
   }
@@ -235,7 +236,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq note --actor <id> --note-file <path> [--to <id>...] --path <path>...",
       "  agentq note --actor <id> --note-stdin [--to <id>...] --path <path>...",
       "",
-      "Notes are non-blocking inbox items. Use question or block when the sender must wait for a reply."
+      "Notes are non-blocking inbox items. Use question or block when the sender must wait for a reply.",
+      "Text options accept normal shell-split words until the next --option; use file/stdin only for exact multi-line text."
     ].join("\n");
   }
 
@@ -288,7 +290,9 @@ export function renderCommandHelp(command: CommandSpec): string {
       "Usage:",
       "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence \"...\"",
       "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence-file <path>",
-      "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence-stdin"
+      "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence-stdin",
+      "",
+      "Text options accept normal shell-split words until the next --option; use file/stdin only for exact multi-line text."
     ].join("\n");
   }
 
@@ -1876,6 +1880,25 @@ interface ParsedArgs {
   readonly positionals: readonly string[];
 }
 
+const GREEDY_TEXT_OPTIONS = new Set([
+  "broken-contract",
+  "contract-broken",
+  "evidence",
+  "evidence-file",
+  "expect",
+  "goal",
+  "note",
+  "note-file",
+  "observed",
+  "pass",
+  "question",
+  "question-file",
+  "responsibility",
+  "summary",
+  "summary-file",
+  "title"
+]);
+
 function parseArgs(argv: readonly string[]): ParsedArgs {
   const flags = new Set<string>();
   const options = new Map<string, string[]>();
@@ -1908,6 +1931,25 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       continue;
     }
 
+    if (GREEDY_TEXT_OPTIONS.has(name)) {
+      const values: string[] = [];
+      let valueIndex = index + 1;
+      while (valueIndex < argv.length) {
+        const valueToken = argv[valueIndex];
+        if (valueToken === undefined || valueToken.startsWith("--")) {
+          break;
+        }
+
+        values.push(valueToken);
+        valueIndex += 1;
+      }
+
+      const existing = options.get(name) ?? [];
+      options.set(name, [...existing, values.join(" ")]);
+      index = valueIndex - 1;
+      continue;
+    }
+
     const existing = options.get(name) ?? [];
     options.set(name, [...existing, next]);
     index += 1;
@@ -1924,7 +1966,7 @@ function assertNoUnexpectedPositionals(args: ParsedArgs, commandName: string, al
   const extra = args.positionals.slice(allowedCount).join(" ");
   throw new Error(
     `${commandName} received unexpected positional text: ${extra}. ` +
-    "This usually means shell quoting split a text option; use --question-file/--evidence-file or --question-stdin/--evidence-stdin for long text."
+    "Put free text after a text option such as --question, --evidence, --summary, or --pass."
   );
 }
 
@@ -2000,7 +2042,7 @@ async function readTextFile(runtime: CommandRuntime, filePath: string): Promise<
 }
 
 function cleanTextOption(value: string, name: string, commandName: string): string {
-  const trimmed = value.trim();
+  const trimmed = stripDanglingBoundaryQuote(value.trim());
   if (trimmed.length === 0) {
     throw new Error(`${commandName} --${name} must not be empty.`);
   }
@@ -2013,6 +2055,24 @@ function cleanTextOption(value: string, name: string, commandName: string): stri
   }
 
   return trimmed;
+}
+
+function stripDanglingBoundaryQuote(value: string): string {
+  if (value.length < 2) {
+    return value;
+  }
+
+  const first = value[0];
+  const last = value[value.length - 1];
+  if ((first === "\"" || first === "'") && last !== first) {
+    return value.slice(1).trim();
+  }
+
+  if ((last === "\"" || last === "'") && first !== last) {
+    return value.slice(0, -1).trim();
+  }
+
+  return value;
 }
 
 function looksLikeBrokenShellText(value: string): boolean {

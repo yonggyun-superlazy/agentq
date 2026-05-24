@@ -169,17 +169,16 @@ describe("CLI required-response protocol", () => {
     });
   });
 
-  it("rejects split quoted question text before writing a broken message", async () => {
+  it("reconstructs shell-split question and response text by default", async () => {
     const workspace = await createWorkspace("agentq-cli-question-quote-");
     const runtime = createRuntime(workspace);
     const sender = await enter(runtime, "codex", "sender");
     const receiver = await enter(runtime, "claude-code", "receiver");
-    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
 
     await expect(runCommand([
       "question",
       "--id",
-      "AQ-broken-question",
+      "AQ-split-question",
       "--actor",
       sender,
       "--to",
@@ -189,13 +188,91 @@ describe("CLI required-response protocol", () => {
       "--question",
       '"I',
       "am",
-      "split",
+      "checking",
+      "whether",
+      "you",
+      "still",
+      "own",
+      "this",
+      "file",
+      "--expect",
+      "Answer",
+      "with",
+      "evidence"
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("AQ-split-question routed")
+    });
+
+    await expect(runCommand([
+      "respond",
+      "AQ-split-question",
+      "--actor",
+      receiver,
+      "--status",
+      "answered",
+      "--evidence",
+      "No",
+      "overlap",
+      "with",
+      "my",
+      "current",
+      "work"
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "AQ-split-question answered\n",
+      stderr: ""
+    });
+
+    const state = await foldMessageState(await resolveWorkspaceStore(workspace, { env: runtime.env }), "AQ-split-question");
+    expect(state.message).toMatchObject({
+      kind: "question",
+      question: "I am checking whether you still own this file",
+      expectedAnswer: "Answer with evidence"
+    });
+    expect(state.events).toContainEqual(expect.objectContaining({
+      kind: "response",
+      evidence: ["No overlap with my current work"]
+    }));
+  });
+
+  it("rejects short truncated response fragments before writing them", async () => {
+    const workspace = await createWorkspace("agentq-cli-response-fragment-");
+    const runtime = createRuntime(workspace);
+    const sender = await enter(runtime, "codex", "sender");
+    const receiver = await enter(runtime, "claude-code", "receiver");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+
+    await runCommand([
+      "question",
+      "--id",
+      "AQ-response-fragment",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "README.md",
+      "--question",
+      "Can I edit README now?",
       "--expect",
       "Answer with evidence"
-    ], runtime)).rejects.toThrow(/unexpected positional text/);
-    await expect(readFile(store.layout.messagePath("AQ-broken-question"), "utf8")).rejects.toMatchObject({
-      code: "ENOENT"
-    });
+    ], runtime);
+
+    await expect(runCommand([
+      "respond",
+      "AQ-response-fragment",
+      "--actor",
+      receiver,
+      "--status",
+      "answered",
+      "--evidence",
+      '"No'
+    ], runtime)).rejects.toThrow(/looks truncated/);
+    const state = await foldMessageState(store, "AQ-response-fragment");
+    expect(state.events).not.toContainEqual(expect.objectContaining({
+      kind: "response"
+    }));
   });
 
   it("reads long question and response text from files to avoid shell quoting loss", async () => {
