@@ -1,9 +1,15 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { appendDiagnosticEvent, ensureWorkspaceStore, readDiagnosticEvents, resolveWorkspaceStore } from "@agentq/core";
+import {
+  appendDiagnosticEvent,
+  ensureWorkspaceStore,
+  foldMessageState,
+  readDiagnosticEvents,
+  resolveWorkspaceStore
+} from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI required-response protocol", () => {
@@ -161,6 +167,109 @@ describe("CLI required-response protocol", () => {
       code: 0,
       stdout: expect.stringContaining(`AQ-resource-question routed to ${receiver}`)
     });
+  });
+
+  it("rejects split quoted question text before writing a broken message", async () => {
+    const workspace = await createWorkspace("agentq-cli-question-quote-");
+    const runtime = createRuntime(workspace);
+    const sender = await enter(runtime, "codex", "sender");
+    const receiver = await enter(runtime, "claude-code", "receiver");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+
+    await expect(runCommand([
+      "question",
+      "--id",
+      "AQ-broken-question",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "README.md",
+      "--question",
+      '"I',
+      "am",
+      "split",
+      "--expect",
+      "Answer with evidence"
+    ], runtime)).rejects.toThrow(/unexpected positional text/);
+    await expect(readFile(store.layout.messagePath("AQ-broken-question"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
+  it("reads long question and response text from files to avoid shell quoting loss", async () => {
+    const workspace = await createWorkspace("agentq-cli-question-file-");
+    const runtime = createRuntime(workspace);
+    const sender = await enter(runtime, "codex", "sender");
+    const receiver = await enter(runtime, "claude-code", "receiver");
+    const questionPath = path.join(workspace, "question.txt");
+    const evidencePath = path.join(workspace, "evidence.txt");
+    await writeFile(
+      questionPath,
+      "Can I run the shared PlayMode verification now, or do you still own the Unity test host?",
+      "utf8"
+    );
+    await writeFile(
+      evidencePath,
+      "Safe to run now. My test host edits are closed and the latest targeted PlayMode run passed.",
+      "utf8"
+    );
+
+    await expect(runCommand([
+      "question",
+      "--id",
+      "AQ-file-question",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "Shared/Superlazy.Unity.TestHost",
+      "--question-file",
+      questionPath,
+      "--expect",
+      "Answer with current test host ownership evidence"
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("AQ-file-question routed")
+    });
+
+    await expect(runCommand([
+      "respond",
+      "AQ-file-question",
+      "--actor",
+      receiver,
+      "--status",
+      "answered",
+      "--evidence",
+      '"No'
+    ], runtime)).rejects.toThrow(/looks truncated/);
+
+    await expect(runCommand([
+      "respond",
+      "AQ-file-question",
+      "--actor",
+      receiver,
+      "--status",
+      "answered",
+      "--evidence-file",
+      evidencePath
+    ], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "AQ-file-question answered\n",
+      stderr: ""
+    });
+
+    const state = await foldMessageState(await resolveWorkspaceStore(workspace, { env: runtime.env }), "AQ-file-question");
+    expect(state.message).toMatchObject({
+      kind: "question",
+      question: "Can I run the shared PlayMode verification now, or do you still own the Unity test host?"
+    });
+    expect(state.events).toContainEqual(expect.objectContaining({
+      kind: "response",
+      evidence: ["Safe to run now. My test host edits are closed and the latest targeted PlayMode run passed."]
+    }));
   });
 
   it("prints diagnostic ring log entries", async () => {

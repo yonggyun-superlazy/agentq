@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -147,6 +147,10 @@ const ownerNudge = runAgentq(
   })
 );
 assert(ownerNudge.includes(wakeReceiver), `pre-tool owner nudge missed wake receiver: ${ownerNudge}`);
+const wakeQuestionPath = path.join(workspace, "wake-question.txt");
+const wakeEvidencePath = path.join(workspace, "wake-evidence.txt");
+writeFileSync(wakeQuestionPath, "Package smoke wake inspection", "utf8");
+writeFileSync(wakeEvidencePath, "package smoke wake inspection verified", "utf8");
 const wakeQuestion = runAgentq([
   "question",
   "--id",
@@ -157,10 +161,9 @@ const wakeQuestion = runAgentq([
   wakeReceiver,
   "--path",
   "src/package-smoke.ts",
-  "--question",
-  "Package smoke wake inspection",
-  "--pass",
-  "wake receiver can inspect inbox"
+  "--question-file",
+  "wake-question.txt",
+  "--pass=wake-receiver-can-inspect-inbox"
 ], workspace);
 assert(wakeQuestion.includes("delivery:"), `question did not report delivery phase: ${wakeQuestion}`);
 assert(wakeQuestion.includes("record_only"), `package smoke delivery should be record-only: ${wakeQuestion}`);
@@ -177,8 +180,8 @@ runAgentq([
   wakeReceiver,
   "--status",
   "answered",
-  "--evidence",
-  "package smoke wake inspection verified"
+  "--evidence-file",
+  "wake-evidence.txt"
 ], workspace);
 
 runAgentq(["uninstall", "--yes"], workspace);

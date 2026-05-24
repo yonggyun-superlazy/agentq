@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   AGENTQ_POSITIONING,
@@ -163,7 +164,9 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq work status --actor <id>",
       "  agentq work touch --actor <id> --path <path>...",
       "  agentq work evidence --actor <id> --evidence \"...\"",
-      "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"]"
+      "  agentq work evidence --actor <id> --evidence-file <path>",
+      "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"]",
+      "  agentq work close --actor <id> --summary-file <path> [--evidence-file <path>]"
     ].join("\n");
   }
 
@@ -200,6 +203,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       "",
       "Usage:",
       "  agentq block --actor <id> --summary \"...\" [--to <id>...] [--id <id>] [--path <path>...] [--resource <resource>...] [--contract <name>...] [--pass \"...\"]",
+      "  agentq block --actor <id> --summary-file <path> [--to <id>...] [--path <path>...]",
       "",
       "If --to is omitted, AgentQ routes to active actors matched by path, resource, or contract.",
       "After routing, AgentQ records pending delivery without starting headless agent processes."
@@ -213,8 +217,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       "",
       "Usage:",
       "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --path <path>... [--resource <resource>...] [--contract <name>...] [--expect \"...\"] [--pass \"...\"]",
-      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --resource <resource>... [--expect \"...\"] [--pass \"...\"]",
-      "  agentq question --actor <id> --question \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --contract <name>... [--expect \"...\"] [--pass \"...\"]",
+      "  agentq question --actor <id> --question-file <path> [--to <id>...] --path <path>...",
+      "  agentq question --actor <id> --question-stdin [--to <id>...] --path <path>...",
       "",
       "Questions are required requests. The sender remains blocked until routed actors answer.",
       "After routing, AgentQ records pending delivery without starting headless agent processes."
@@ -228,8 +232,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       "",
       "Usage:",
       "  agentq note --actor <id> --note \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --path <path>... [--resource <resource>...] [--contract <name>...]",
-      "  agentq note --actor <id> --note \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --resource <resource>...",
-      "  agentq note --actor <id> --note \"...\" [--to <id>...] [--id <id>] [--summary \"...\"] --contract <name>...",
+      "  agentq note --actor <id> --note-file <path> [--to <id>...] --path <path>...",
+      "  agentq note --actor <id> --note-stdin [--to <id>...] --path <path>...",
       "",
       "Notes are non-blocking inbox items. Use question or block when the sender must wait for a reply."
     ].join("\n");
@@ -282,7 +286,9 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence \"...\""
+      "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence \"...\"",
+      "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence-file <path>",
+      "  agentq respond <message-id> --actor <id> --status <resolved|answered|not_mine|invalid|blocked> --evidence-stdin"
     ].join("\n");
   }
 
@@ -292,7 +298,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq supersede <message-id> --actor <sender-id> --to <recipient-id> --evidence \"...\""
+      "  agentq supersede <message-id> --actor <sender-id> --to <recipient-id> --evidence \"...\"",
+      "  agentq supersede <message-id> --actor <sender-id> --to <recipient-id> --evidence-file <path>"
     ].join("\n");
   }
 
@@ -302,7 +309,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq follow-up <message-id> --actor <sender-id> --to <blocked-recipient-id> --evidence \"...\""
+      "  agentq follow-up <message-id> --actor <sender-id> --to <blocked-recipient-id> --evidence \"...\"",
+      "  agentq follow-up <message-id> --actor <sender-id> --to <blocked-recipient-id> --evidence-file <path>"
     ].join("\n");
   }
 
@@ -312,7 +320,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq accept-blocked <message-id> --actor <sender-id> --to <blocked-recipient-id> --evidence \"...\""
+      "  agentq accept-blocked <message-id> --actor <sender-id> --to <blocked-recipient-id> --evidence \"...\"",
+      "  agentq accept-blocked <message-id> --actor <sender-id> --to <blocked-recipient-id> --evidence-file <path>"
     ].join("\n");
   }
 
@@ -582,8 +591,10 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
         "  agentq work start --actor <id> --title <title> --path <path>...",
         "  agentq work status --actor <id>",
         "  agentq work touch --actor <id> --path <path>...",
-        "  agentq work evidence --actor <id> --evidence \"...\"",
-        "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"] [--status closed|abandoned|superseded]"
+      "  agentq work evidence --actor <id> --evidence \"...\"",
+      "  agentq work evidence --actor <id> --evidence-file <path>",
+      "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"] [--status closed|abandoned|superseded]",
+      "  agentq work close --actor <id> --summary-file <path> [--evidence-file <path>] [--status closed|abandoned|superseded]"
       ].join("\n") + "\n",
       stderr: ""
     };
@@ -594,13 +605,14 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   const store = await openStore(runtime);
 
   if (subcommand === "start") {
+    assertNoUnexpectedPositionals(args, "work start", 0);
     const workId = optionValue(args, "id");
     const goal = optionValue(args, "goal");
     const activeResources = optionValues(args, "resource");
     const paths = requiredSpecificPathOptions(args, "path", "work start");
     const state = await startWork(store, {
       actorId,
-      title: requiredOption(args, "title"),
+      title: await requiredTextOption(args, "title", runtime, "work start"),
       paths,
       now: runtime.now(),
       ...(workId === undefined ? {} : { workId }),
@@ -633,6 +645,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   }
 
   if (subcommand === "touch") {
+    assertNoUnexpectedPositionals(args, "work touch", 0);
     const state = await appendActiveWorkTouch(store, {
       actorId,
       paths: pathOptionValues(args, "path"),
@@ -654,9 +667,10 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   }
 
   if (subcommand === "evidence") {
+    assertNoUnexpectedPositionals(args, "work evidence", 0);
     const state = await appendWorkEvidence(store, {
       actorId,
-      evidence: optionValues(args, "evidence"),
+      evidence: await textOptionValues(args, "evidence", runtime, "work evidence"),
       now: runtime.now()
     });
     return {
@@ -667,11 +681,12 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   }
 
   if (subcommand === "close") {
+    assertNoUnexpectedPositionals(args, "work close", 0);
     const status = parseWorkTerminalStatus(optionValue(args, "status"));
     const state = await closeWork(store, {
       actorId,
-      summary: requiredOption(args, "summary"),
-      evidence: optionValues(args, "evidence"),
+      summary: await requiredTextOption(args, "summary", runtime, "work close"),
+      evidence: await textOptionValues(args, "evidence", runtime, "work close"),
       ...(status === undefined ? {} : { status }),
       now: runtime.now()
     });
@@ -1187,10 +1202,11 @@ async function enterCommand(argv: readonly string[], runtime: CommandRuntime): P
 
 async function blockCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
+  assertNoUnexpectedPositionals(args, "block", 0);
   const store = await openStore(runtime);
   const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
   const to = optionValues(args, "to");
-  const summary = requiredOption(args, "summary");
+  const summary = await requiredTextOption(args, "summary", runtime, "block");
   const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
@@ -1203,8 +1219,8 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
     ...(resources.length === 0 ? {} : { resources }),
     contracts,
     passCriteria: optionValues(args, "pass").length > 0 ? optionValues(args, "pass") : ["recipient responds"],
-    observed: optionValue(args, "observed") ?? summary,
-    brokenContract: optionValue(args, "contract-broken") ?? "required handoff must be answered"
+    observed: await textOption(args, "observed", runtime, "block") ?? summary,
+    brokenContract: await textOption(args, "contract-broken", runtime, "block") ?? "required handoff must be answered"
   };
   const routeInput = {
     message,
@@ -1226,23 +1242,24 @@ async function blockCommand(argv: readonly string[], runtime: CommandRuntime): P
 
 async function questionCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
+  assertNoUnexpectedPositionals(args, "question", 0);
   const store = await openStore(runtime);
   const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
   const to = optionValues(args, "to");
-  const question = requiredOption(args, "question");
+  const question = await requiredTextOption(args, "question", runtime, "question");
   const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
   if (paths.length === 0 && resources.length === 0 && contracts.length === 0) {
     throw new Error("question requires --path, --resource, or --contract so recipients can judge relevance.");
   }
-  const expectedAnswer = optionValue(args, "expect");
+  const expectedAnswer = await textOption(args, "expect", runtime, "question");
   const passCriteria = optionValues(args, "pass");
   const message: Message = {
     id,
     kind: "question",
     createdBy: requiredOption(args, "actor"),
-    summary: optionValue(args, "summary") ?? question,
+    summary: await textOption(args, "summary", runtime, "question") ?? question,
     paths,
     ...(resources.length === 0 ? {} : { resources }),
     contracts,
@@ -1272,10 +1289,11 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
 
 async function noteCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
+  assertNoUnexpectedPositionals(args, "note", 0);
   const store = await openStore(runtime);
   const id = optionValue(args, "id") ?? `AQ-${Date.now()}`;
   const to = optionValues(args, "to");
-  const note = requiredOption(args, "note");
+  const note = await requiredTextOption(args, "note", runtime, "note");
   const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   const contracts = optionValues(args, "contract");
@@ -1286,7 +1304,7 @@ async function noteCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     id,
     kind: "note",
     createdBy: requiredOption(args, "actor"),
-    summary: optionValue(args, "summary") ?? note,
+    summary: await textOption(args, "summary", runtime, "note") ?? note,
     paths,
     ...(resources.length === 0 ? {} : { resources }),
     contracts,
@@ -1545,6 +1563,7 @@ function joinList(values: readonly string[]): string {
 
 async function respondCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
+  assertNoUnexpectedPositionals(args, "respond", 1);
   const messageId = args.positionals[0];
   if (messageId === undefined) {
     throw new Error("respond requires a message id");
@@ -1553,7 +1572,7 @@ async function respondCommand(argv: readonly string[], runtime: CommandRuntime):
   const store = await openStore(runtime);
   const actorId = requiredOption(args, "actor");
   const status = requiredOption(args, "status") as ResponseStatus;
-  const evidence = requiredOption(args, "evidence");
+  const evidence = await requiredTextOption(args, "evidence", runtime, "respond");
   const eventId = optionValue(args, "event") ?? `EV-${Date.now()}`;
   const state = await foldMessageState(store, messageId);
   requirePendingInboundRequest(state, messageId, actorId);
@@ -1578,6 +1597,7 @@ async function respondCommand(argv: readonly string[], runtime: CommandRuntime):
 
 async function supersedeCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
+  assertNoUnexpectedPositionals(args, "supersede", 1);
   const messageId = args.positionals[0];
   if (messageId === undefined) {
     throw new Error("supersede requires a message id");
@@ -1586,7 +1606,7 @@ async function supersedeCommand(argv: readonly string[], runtime: CommandRuntime
   const store = await openStore(runtime);
   const actorId = requiredOption(args, "actor");
   const targetActorId = requiredOption(args, "to");
-  const evidence = requiredOption(args, "evidence");
+  const evidence = await requiredTextOption(args, "evidence", runtime, "supersede");
   const eventId = optionValue(args, "event") ?? `EV-${Date.now()}`;
   const state = await foldMessageState(store, messageId);
   requirePendingOutboundRequest(state, messageId, actorId, targetActorId);
@@ -1623,6 +1643,7 @@ async function writeBlockedFollowUpEvent(
   runtime: CommandRuntime
 ): Promise<CommandResult> {
   const args = parseArgs(argv);
+  assertNoUnexpectedPositionals(args, kind === "follow_up" ? "follow-up" : "accept-blocked", 1);
   const messageId = args.positionals[0];
   if (messageId === undefined) {
     throw new Error(`${kind === "follow_up" ? "follow-up" : "accept-blocked"} requires a message id`);
@@ -1631,7 +1652,7 @@ async function writeBlockedFollowUpEvent(
   const store = await openStore(runtime);
   const actorId = requiredOption(args, "actor");
   const blockedActorId = requiredOption(args, "to");
-  const evidence = requiredOption(args, "evidence");
+  const evidence = await requiredTextOption(args, "evidence", runtime, kind === "follow_up" ? "follow-up" : "accept-blocked");
   const eventId = optionValue(args, "event") ?? `EV-${Date.now()}`;
   const state = await foldMessageState(store, messageId);
   requireBlockedOutboundRequest(state, messageId, actorId, blockedActorId);
@@ -1871,6 +1892,15 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       continue;
     }
 
+    const equalsIndex = token.indexOf("=");
+    if (equalsIndex > 2) {
+      const name = token.slice(2, equalsIndex);
+      const value = token.slice(equalsIndex + 1);
+      const existing = options.get(name) ?? [];
+      options.set(name, [...existing, value]);
+      continue;
+    }
+
     const name = token.slice(2);
     const next = argv[index + 1];
     if (next === undefined || next.startsWith("--")) {
@@ -1884,6 +1914,18 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   }
 
   return { flags, options, positionals };
+}
+
+function assertNoUnexpectedPositionals(args: ParsedArgs, commandName: string, allowedCount: number): void {
+  if (args.positionals.length <= allowedCount) {
+    return;
+  }
+
+  const extra = args.positionals.slice(allowedCount).join(" ");
+  throw new Error(
+    `${commandName} received unexpected positional text: ${extra}. ` +
+    "This usually means shell quoting split a text option; use --question-file/--evidence-file or --question-stdin/--evidence-stdin for long text."
+  );
 }
 
 function requiredOption(args: ParsedArgs, name: string): string {
@@ -1901,6 +1943,84 @@ function optionValue(args: ParsedArgs, name: string): string | undefined {
 
 function optionValues(args: ParsedArgs, name: string): string[] {
   return [...(args.options.get(name) ?? [])];
+}
+
+async function requiredTextOption(
+  args: ParsedArgs,
+  name: string,
+  runtime: CommandRuntime,
+  commandName: string
+): Promise<string> {
+  const value = await textOption(args, name, runtime, commandName);
+  if (value === undefined) {
+    throw new Error(`missing required option --${name}`);
+  }
+
+  return value;
+}
+
+async function textOptionValues(
+  args: ParsedArgs,
+  name: string,
+  runtime: CommandRuntime,
+  commandName: string
+): Promise<string[]> {
+  const values = optionValues(args, name).map((value) => cleanTextOption(value, name, commandName));
+  const fileValue = optionValue(args, `${name}-file`);
+  const stdinFlag = args.flags.has(`${name}-stdin`);
+  const sourceCount = (values.length > 0 ? 1 : 0) + (fileValue === undefined ? 0 : 1) + (stdinFlag ? 1 : 0);
+  if (sourceCount > 1) {
+    throw new Error(`${commandName} accepts only one --${name}, --${name}-file, or --${name}-stdin source.`);
+  }
+
+  if (fileValue !== undefined) {
+    return [cleanTextOption(await readTextFile(runtime, fileValue), name, commandName)];
+  }
+
+  if (stdinFlag) {
+    return [cleanTextOption(await readStdin(), name, commandName)];
+  }
+
+  return values;
+}
+
+async function textOption(
+  args: ParsedArgs,
+  name: string,
+  runtime: CommandRuntime,
+  commandName: string
+): Promise<string | undefined> {
+  const values = await textOptionValues(args, name, runtime, commandName);
+  return values[0];
+}
+
+async function readTextFile(runtime: CommandRuntime, filePath: string): Promise<string> {
+  const resolved = path.isAbsolute(filePath) ? filePath : path.join(runtime.cwd, filePath);
+  return await readFile(resolved, "utf8");
+}
+
+function cleanTextOption(value: string, name: string, commandName: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`${commandName} --${name} must not be empty.`);
+  }
+
+  if (looksLikeBrokenShellText(trimmed)) {
+    throw new Error(
+      `${commandName} --${name} looks truncated: ${trimmed}. ` +
+      `Use --${name}-file <path> or --${name}-stdin for shell-safe text.`
+    );
+  }
+
+  return trimmed;
+}
+
+function looksLikeBrokenShellText(value: string): boolean {
+  if (value.length >= 16) {
+    return false;
+  }
+
+  return /^["']?[\p{L}\p{N}_-]+$/u.test(value);
 }
 
 function pathOptionValues(args: ParsedArgs, name: string): string[] {
