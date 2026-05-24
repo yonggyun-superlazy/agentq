@@ -245,6 +245,45 @@ describe("AgentQ hook handler", () => {
     });
   });
 
+  it("normalizes punctuated file paths and rejects conceptual slash tokens", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-path-quality-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, ".github/instructions"), { recursive: true });
+    await mkdir(path.join(workspace, ".codex/hooks"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-path-quality",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          file_path: ".github/instructions/agentq.instructions.md.",
+          summary: "Compare success/fail and model/parser/writer outcomes",
+          notes: "Keep plan/compiler/binder/executor and +option-enter/value-change/live as prose, not scope.",
+          command: "rtk read .codex/hooks/session-note.py."
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]?.paths).toEqual(expect.arrayContaining([
+      ".github/instructions/agentq.instructions.md",
+      ".codex/hooks/session-note.py"
+    ]));
+    expect(events[0]?.paths).not.toContain("success/fail");
+    expect(events[0]?.paths).not.toContain("model/parser/writer");
+    expect(events[0]?.paths).not.toContain("plan/compiler/binder/executor");
+    expect(events[0]?.paths).not.toContain("+option-enter/value-change/live");
+  });
+
   it("rejects HTML, glob, and command snippets as hook paths", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-noisy-paths-"));
     const workspace = path.join(tempRoot, "workspace");

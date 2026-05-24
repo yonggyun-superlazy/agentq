@@ -28,6 +28,21 @@ export type HookAdapter = "codex" | "claude-code" | "copilot-cli";
 export type HookRuntimeEvent = "session-start" | "pre-tool" | "stop";
 
 const UNITY_EXECUTABLE_PATTERN = /(^|[\/\s"';&|])unity(?:\.exe)?(?=$|[\s"';&|])/i;
+const PATH_FILE_EXTENSION_PATTERN = /\.(?:asmdef|asset|bat|cs|csproj|html|js|json|log|md|prefab|prompt\.txt|ps1|py|result\.txt|sln|slui|stamp|ts|tsx|txt|xml|yaml|yml)$/i;
+const TRUSTED_WORKSPACE_PATH_ROOTS = new Set([
+  ".claude",
+  ".codex",
+  ".github",
+  ".tmp",
+  "agentq",
+  "docs",
+  "projectdd",
+  "projectim",
+  "projectshe",
+  "shared",
+  "tools",
+  "wiki"
+]);
 
 export interface HookHandlerOptions {
   readonly adapter: HookAdapter;
@@ -787,7 +802,7 @@ function collectShellCommandPathCandidates(command: string, candidates: Set<stri
     }
   }
 
-  const inlineFilePathPattern = /(?:^|[\s"'`])([A-Za-z0-9_.@/-]+[\/\\][A-Za-z0-9_.@/\\-]+\.(?:cs|ts|tsx|js|json|md|yaml|yml|xml|csproj|sln|ps1|bat|txt))(?=$|[\s"'`;|])/gi;
+  const inlineFilePathPattern = /(?:^|[\s"'`])([A-Za-z0-9_.@/-]+[\/\\][A-Za-z0-9_.@/\\-]+\.(?:asmdef|asset|bat|cs|csproj|html|js|json|log|md|prefab|prompt\.txt|ps1|py|result\.txt|sln|slui|stamp|ts|tsx|txt|xml|yaml|yml))(?=$|[\s"'`;|,.])/gi;
   for (const match of command.matchAll(inlineFilePathPattern)) {
     const candidate = match[1];
     if (candidate !== undefined && looksLikeCommandPathArgument(candidate)) {
@@ -796,7 +811,7 @@ function collectShellCommandPathCandidates(command: string, candidates: Set<stri
   }
 
   for (const rawToken of command.split(/[\s"'`]+/)) {
-    const candidate = rawToken.replace(/[),]+$/g, "");
+    const candidate = stripPathTrailingPunctuation(rawToken);
     if (looksLikeCommandPathArgument(candidate)) {
       candidates.add(candidate);
     }
@@ -816,12 +831,13 @@ function isCommandLikeKey(key: string): boolean {
 }
 
 function looksLikeCommandPathArgument(value: string): boolean {
-  const trimmed = value.trim();
+  const trimmed = stripPathTrailingPunctuation(value.trim());
   return trimmed.length > 0 &&
     !trimmed.startsWith("-") &&
     !/^[a-z]+:\/\//i.test(trimmed) &&
     isSafePathCandidate(trimmed) &&
-    (isPathLikeValue(trimmed) || /\.(?:cs|ts|tsx|js|json|md|yaml|yml|xml|csproj|sln|ps1|bat|txt)$/i.test(trimmed));
+    hasConcretePathShape(trimmed) &&
+    (isPathLikeValue(trimmed) || PATH_FILE_EXTENSION_PATTERN.test(trimmed));
 }
 
 function isPathLikeKey(key: string): boolean {
@@ -829,20 +845,23 @@ function isPathLikeKey(key: string): boolean {
 }
 
 function isPathLikeValue(value: string): boolean {
-  const trimmed = value.trim();
+  const trimmed = stripPathTrailingPunctuation(value.trim());
   if (/\s/.test(trimmed)) {
     return false;
   }
 
-  return trimmed.includes("/") || trimmed.includes("\\");
+  return (trimmed.includes("/") || trimmed.includes("\\")) && hasConcretePathShape(trimmed);
 }
 
 function normalizePathCandidate(value: string, cwd: string): string | null {
-  const trimmed = stripPathBoundaryQuotes(value.trim());
+  const trimmed = stripPathTrailingPunctuation(stripPathBoundaryQuotes(value.trim()));
   if (trimmed.length === 0 || trimmed.length > 260) {
     return null;
   }
   if (!isSafePathCandidate(trimmed)) {
+    return null;
+  }
+  if (!hasConcretePathShape(trimmed)) {
     return null;
   }
 
@@ -865,6 +884,29 @@ function stripPathBoundaryQuotes(value: string): string {
   return (first === "\"" || first === "'") && last === first
     ? value.slice(1, -1).trim()
     : value;
+}
+
+function stripPathTrailingPunctuation(value: string): string {
+  return value.replace(/[),\].:]+$/g, "");
+}
+
+function hasConcretePathShape(value: string): boolean {
+  const normalized = stripPathBoundaryQuotes(value.trim()).replace(/\\/g, "/").replace(/^\.\/+/, "");
+  if (normalized === "." || normalized === "..") {
+    return normalized === ".";
+  }
+
+  if (PATH_FILE_EXTENSION_PATTERN.test(normalized)) {
+    return true;
+  }
+
+  const segments = normalized.split("/").filter((segment) => segment.length > 0);
+  if (/^(?:[A-Za-z]:\/|\/)/.test(normalized)) {
+    return segments.some((segment) => TRUSTED_WORKSPACE_PATH_ROOTS.has(segment.toLowerCase()));
+  }
+
+  const firstSegment = segments[0]?.toLowerCase();
+  return firstSegment !== undefined && TRUSTED_WORKSPACE_PATH_ROOTS.has(firstSegment);
 }
 
 function isSafePathCandidate(value: string): boolean {
