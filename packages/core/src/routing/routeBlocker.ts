@@ -430,6 +430,15 @@ function pathPatternOverlaps(activePattern: string, messagePath: string, workspa
   const active = normalizePath(activePattern, workspaceRoot);
   const message = normalizePath(messagePath, workspaceRoot);
 
+  if (normalizedPathPatternOverlaps(active, message)) {
+    return true;
+  }
+
+  return absoluteSuffixPathCandidates(active).some((candidate) => normalizedPathPatternOverlaps(candidate, message)) ||
+    absoluteSuffixPathCandidates(message).some((candidate) => normalizedPathPatternOverlaps(active, candidate));
+}
+
+function normalizedPathPatternOverlaps(active: string, message: string): boolean {
   if (active === ".") {
     return false;
   }
@@ -449,6 +458,28 @@ function pathPatternOverlaps(activePattern: string, messagePath: string, workspa
   }
 
   return message.startsWith(`${active}/`);
+}
+
+function absoluteSuffixPathCandidates(value: string): string[] {
+  if (!isAbsolutePathLike(value)) {
+    return [];
+  }
+
+  const parts = value.split("/").filter((part) => part.length > 0 && part !== "?");
+  const startIndex = parts[0]?.endsWith(":") === true ? 1 : 0;
+  const candidates: string[] = [];
+  for (let index = startIndex; index < parts.length; index += 1) {
+    const candidate = parts.slice(index).join("/");
+    if (candidate.length > 0 && !candidate.includes(":") && candidate !== value) {
+      candidates.push(candidate);
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
+function isAbsolutePathLike(value: string): boolean {
+  return value.startsWith("/") || value.startsWith("//?/") || /^[A-Za-z]:\//.test(value);
 }
 
 function pathPatternsOverlap(leftPattern: string, rightPattern: string, workspaceRoot: string): boolean {

@@ -189,6 +189,23 @@ describe("blocker routing", () => {
     expect(docsPlan.recipients[0]?.evidence).toContainEqual({ kind: "path", detail: docsPath });
   });
 
+  it("routes relative message paths when an absolute active path cannot be root-relativized", async () => {
+    const store = await createStore();
+    const docsPath = "D:/a/_temp/agentq-cli-absolute-owners/AgentQ/docs";
+    const receiver = await enterActor(store, "claude-code", "session-absolute-suffix", [docsPath], [
+      "AgentQ public docs"
+    ]);
+
+    const plan = await createRoutedBlocker(store, {
+      message: blocker("AQ-absolute-suffix", ["AgentQ/docs/focused-product-validation.md"], []),
+      now: "2026-05-18T00:00:10.000Z",
+      staleAfterMs: 60_000
+    });
+
+    expect(plan.recipients.map((recipient) => recipient.actorId)).toEqual([receiver.actorId]);
+    expect(plan.recipients[0]?.evidence).toContainEqual({ kind: "path", detail: docsPath });
+  });
+
   it("excludes stale actors from new blockers but keeps existing requests blocking", async () => {
     const store = await createStore();
     const staleActor = await enterActor(store, "codex", "session-1", ["packages/core/src/**"], [
