@@ -476,6 +476,11 @@ function relativizeWorkspacePath(value: string, workspaceRoot: string): string {
     return value;
   }
 
+  const pathRelative = relativizeWithPathModule(value, root);
+  if (pathRelative !== undefined) {
+    return pathRelative;
+  }
+
   const caseInsensitive = process.platform === "win32" || /^[A-Za-z]:\//.test(value) || /^[A-Za-z]:\//.test(root);
   for (const candidateRoot of equivalentAbsolutePathCandidates(root)) {
     for (const candidateValue of equivalentAbsolutePathCandidates(value)) {
@@ -496,8 +501,33 @@ function relativizeWorkspacePath(value: string, workspaceRoot: string): string {
   return value;
 }
 
+function relativizeWithPathModule(value: string, root: string): string | undefined {
+  const pathModule = /^[A-Za-z]:\//.test(value) || /^[A-Za-z]:\//.test(root) || value.startsWith("//?/")
+    ? path.win32
+    : path.posix;
+
+  if (!pathModule.isAbsolute(value) || !pathModule.isAbsolute(root)) {
+    return undefined;
+  }
+
+  const relative = pathModule.relative(root, value);
+  if (relative.length === 0) {
+    return ".";
+  }
+
+  const normalized = relative.replace(/\\/g, "/");
+  if (normalized === ".." || normalized.startsWith("../") || pathModule.isAbsolute(relative)) {
+    return undefined;
+  }
+
+  return normalized.replace(/\/+$/, "") || ".";
+}
+
 function equivalentAbsolutePathCandidates(value: string): string[] {
   const candidates = [value];
+  if (value.startsWith("//?/")) {
+    candidates.push(value.slice(4));
+  }
   if (value.startsWith("/private/")) {
     candidates.push(value.slice("/private".length));
   } else if (value.startsWith("/var/")) {
