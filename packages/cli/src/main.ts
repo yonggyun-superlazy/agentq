@@ -2204,6 +2204,7 @@ interface WorkspaceKindBreakdown {
   readonly stale: number;
   readonly routeableActive: number;
   readonly weakActive: number;
+  readonly scopeRefreshNeeded: number;
   readonly activeWork: number;
   readonly routeableNoWork: number;
   readonly broadPresenceOnly: number;
@@ -2282,6 +2283,7 @@ function renderWorkspaceStatus(
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
   const routeableActiveCount = activeDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = activeCount - routeableActiveCount;
+  const scopeRefreshNeededCount = activeDetails.filter(isScopeRefreshNeededActor).length;
   const activeWorkActorCount = activeDetails.filter((detail) => detail.activeWork !== null).length;
   const routeableNoWorkCount = activeDetails.filter(isRouteableNoWorkActor).length;
   const broadPresenceOnlyCount = activeDetails.filter(isBroadPresenceOnlyActor).length;
@@ -2300,7 +2302,8 @@ function renderWorkspaceStatus(
   const recommendationLines = statusRecommendations({
     pendingInboxCount,
     routeableActiveCount,
-    weakActiveCount,
+    scopeRefreshNeededCount,
+    broadPresenceOnlyCount,
     routeableNoWorkCount,
     ignoredWorkNudgeActorCount,
     recentMessageCount: recentMessages.length,
@@ -2316,6 +2319,7 @@ function renderWorkspaceStatus(
     `actors: ${details.length} (active ${activeCount}, stale ${staleCount}, staleAfter ${formatDuration(staleAfterMs)})`,
     `routeable active actors: ${routeableActiveCount}`,
     `broad/generic active actors: ${weakActiveCount}`,
+    `scope-refresh-needed actors: ${scopeRefreshNeededCount}`,
     `active work actors: ${activeWorkActorCount}`,
     `routeable no-work actors: ${routeableNoWorkCount}`,
     `recent work-adoption nudged actors: ${recentWorkNudgeActorCount}`,
@@ -2351,7 +2355,7 @@ function renderWorkspaceStatus(
       "Next:",
       `  ${statusNextAction({
         pendingInboxCount,
-        weakActiveCount,
+        scopeRefreshNeededCount,
         ignoredWorkNudgeActorCount,
         routeableNoWorkCount,
         zeroEvidenceOpenWorkCount,
@@ -2397,6 +2401,7 @@ function buildKindBreakdown(details: readonly WorkspaceStatusActor[]): Workspace
       stale: existing.stale + (active ? 0 : 1),
       routeableActive: existing.routeableActive + (active && detail.weaknesses.length === 0 ? 1 : 0),
       weakActive: existing.weakActive + (weakActive ? 1 : 0),
+      scopeRefreshNeeded: existing.scopeRefreshNeeded + (isScopeRefreshNeededActor(detail) ? 1 : 0),
       activeWork: existing.activeWork + (active && detail.activeWork !== null ? 1 : 0),
       routeableNoWork: existing.routeableNoWork + (isRouteableNoWorkActor(detail) ? 1 : 0),
       broadPresenceOnly: existing.broadPresenceOnly + (isBroadPresenceOnlyActor(detail) ? 1 : 0)
@@ -2416,6 +2421,7 @@ function emptyKindBreakdown(kind: AgentKind): WorkspaceKindBreakdown {
     stale: 0,
     routeableActive: 0,
     weakActive: 0,
+    scopeRefreshNeeded: 0,
     activeWork: 0,
     routeableNoWork: 0,
     broadPresenceOnly: 0
@@ -2435,7 +2441,16 @@ function isBroadPresenceOnlyActor(detail: WorkspaceStatusActor): boolean {
     detail.summary.status === "active" &&
     detail.weaknesses.length > 0 &&
     detail.pendingInbox.length === 0 &&
-    detail.activeWork === null
+    detail.activeWork === null &&
+    detail.recentWorkAdoptionNudge === null
+  );
+}
+
+function isScopeRefreshNeededActor(detail: WorkspaceStatusActor): boolean {
+  return (
+    detail.summary.status === "active" &&
+    detail.weaknesses.length > 0 &&
+    !isBroadPresenceOnlyActor(detail)
   );
 }
 
@@ -2446,6 +2461,7 @@ function renderKindBreakdownLine(row: WorkspaceKindBreakdown): string {
     `stale ${row.stale}`,
     `routeable ${row.routeableActive}`,
     `broad/generic ${row.weakActive}`,
+    `scope-refresh-needed ${row.scopeRefreshNeeded}`,
     `active-work ${row.activeWork}`,
     `routeable-no-work ${row.routeableNoWork}`,
     `broad-presence-only ${row.broadPresenceOnly}`
@@ -2587,7 +2603,8 @@ async function buildDiagnosticActivityRows(
 function statusRecommendations(input: {
   readonly pendingInboxCount: number;
   readonly routeableActiveCount: number;
-  readonly weakActiveCount: number;
+  readonly scopeRefreshNeededCount: number;
+  readonly broadPresenceOnlyCount: number;
   readonly routeableNoWorkCount: number;
   readonly ignoredWorkNudgeActorCount: number;
   readonly recentMessageCount: number;
@@ -2604,8 +2621,12 @@ function statusRecommendations(input: {
     lines.push("Some actors received concrete edit work-adoption nudges but still have no active work; run `agentq next --actor <id>` for those actors before the next edit.");
   }
 
-  if (input.weakActiveCount > 0) {
-    lines.push("Broad active actors need scope refresh; run `agentq next --actor <id>` for each affected actor.");
+  if (input.scopeRefreshNeededCount > 0) {
+    lines.push("Weak-scoped actors with inbox/work/nudges need scope refresh; run `agentq next --actor <id>` for each affected actor.");
+  }
+
+  if (input.broadPresenceOnlyCount > 0) {
+    lines.push("Broad presence-only actors are session bookkeeping; classify them by adapter and refresh scope only when concrete work starts.");
   }
 
   if (input.routeableNoWorkCount > 0) {
@@ -2629,7 +2650,7 @@ function statusRecommendations(input: {
 
 function statusNextAction(input: {
   readonly pendingInboxCount: number;
-  readonly weakActiveCount: number;
+  readonly scopeRefreshNeededCount: number;
   readonly ignoredWorkNudgeActorCount: number;
   readonly routeableNoWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
@@ -2645,8 +2666,8 @@ function statusNextAction(input: {
     return "Start active work for actors that already received concrete edit nudges with `agentq next --actor <id>`.";
   }
 
-  if (input.weakActiveCount > 0) {
-    return "Refresh broad active scopes with `agentq next --actor <id>` for each affected actor.";
+  if (input.scopeRefreshNeededCount > 0) {
+    return "Refresh weak-scoped actors that have inbox/work/nudges with `agentq next --actor <id>`.";
   }
 
   if (input.routeableNoWorkCount > 0) {

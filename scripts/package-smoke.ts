@@ -45,6 +45,9 @@ assert(installedScopedInstructions.includes("no evidence-free judgment"), "insta
 assert(installedScopedInstructions.includes("active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
 assert(installedScopedInstructions.includes("not stop conditions"), "install missed AgentQ coordination-as-stop guard");
 assert(installedScopedInstructions.includes("Usage diagnostics must classify metrics by agent type"), "install missed AgentQ per-agent diagnostic instruction");
+assert(installedScopedInstructions.includes("Codex: broad session presence is bookkeeping"), "install missed AgentQ Codex diagnostic instruction");
+assert(installedScopedInstructions.includes("Claude Code: edit nudges require active work/evidence adoption"), "install missed AgentQ Claude Code diagnostic instruction");
+assert(installedScopedInstructions.includes("Copilot CLI: report local samples separately"), "install missed AgentQ Copilot diagnostic instruction");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Codex prehook should include read and mutating tools without matching every tool");
@@ -344,12 +347,12 @@ function findTarball(predicate: (entry: string) => boolean): string {
 function assertPackageMetadata(): void {
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
     name: "agentq",
-    version: "0.1.5",
+    version: "0.1.6",
     bin: true
   });
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
     name: "@agentq/core",
-    version: "0.1.5",
+    version: "0.1.6",
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");
