@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { parseYamlWithSchema, PresenceSchema } from "../domain/schema.js";
 import type { Presence } from "../domain/types.js";
 import type { WorkspaceStore } from "../store/workspaceStore.js";
+import { isBroadPresencePath, isGenericResponsibility } from "./presenceClassification.js";
 
 export type ScopeWeaknessKind =
   | "missing_presence"
@@ -80,18 +81,6 @@ export function planScopeContinuation(result: ScopeCheckResult): string {
     `Run: agentq next --actor ${result.actorId}`,
     "It will print the exact scope refresh command for this actor."
   ].join("\n");
-}
-
-function isBroadPresencePath(pathValue: string): boolean {
-  return normalizePresencePath(pathValue) === ".";
-}
-
-function normalizePresencePath(pathValue: string): string {
-  return pathValue.replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
-}
-
-function isGenericResponsibility(responsibility: string): boolean {
-  return /(^| )(active tool scope|pre-tool scope|stop gate|session)( |$)/i.test(responsibility);
 }
 
 function isNotFoundError(error: unknown): boolean {

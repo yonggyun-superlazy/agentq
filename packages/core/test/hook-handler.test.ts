@@ -248,12 +248,13 @@ describe("AgentQ hook handler", () => {
     const events = await readDiagnosticEvents(store, 5);
     expect(events[0]).toMatchObject({
       paths: ["src/protocol.ts"],
+      toolMode: "mutating",
       nudge: true,
       nudgeKinds: ["work-adoption"]
     });
   });
 
-  it("extracts explicit paths from shell command payloads", async () => {
+  it("records read-only shell paths without ownership nudges", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-shell-paths-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "AgentQ/packages/cli/src"), { recursive: true });
@@ -287,9 +288,10 @@ describe("AgentQ hook handler", () => {
     const events = await readDiagnosticEvents(store, 5);
     expect(events[0]).toMatchObject({
       paths: ["AgentQ/packages/cli/src/main.ts"],
-      nudge: true,
-      nudgeKinds: ["work-adoption"]
+      toolMode: "read-only",
+      nudge: false
     });
+    expect(events[0]?.nudgeKinds).toBeUndefined();
   });
 
   it("normalizes punctuated file paths and rejects conceptual slash tokens", async () => {

@@ -127,6 +127,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       event: options.event,
       sessionId,
       toolName: toolNameFromPayload(payload),
+      toolMode: mutatingTool ? "mutating" : "read-only",
       paths: hookPaths,
       resources: hookResources,
       ignoredCommands: resourceInference.ignoredCommands,
@@ -176,6 +177,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     adapter: options.adapter,
     event: options.event,
     sessionId,
+    toolMode: "stop",
     paths: stopPaths,
     resources: stopResources,
     ignoredCommands: stopResourceInference.ignoredCommands,
@@ -259,15 +261,31 @@ async function refreshHookPresence(
   const activePaths = effectivePresencePaths(input.hookPaths, activeWork?.touchedPaths ?? []);
   if (activeWork === null) {
     if (!input.mutatingTool) {
-      await refreshActorPresence(store, {
-        actorId: input.actorId,
-        cwd: input.cwd,
-        activePaths: [],
-        observedPaths: activePaths.filter(isSpecificPath),
-        responsibilities: [],
-        mergeObservedPaths: true,
-        now: input.now
-      });
+      try {
+        await refreshActorPresence(store, {
+          actorId: input.actorId,
+          cwd: input.cwd,
+          activePaths: [],
+          observedPaths: activePaths.filter(isSpecificPath),
+          responsibilities: [],
+          mergeObservedPaths: true,
+          now: input.now
+        });
+      } catch (error) {
+        if (!isNotFoundError(error)) {
+          throw error;
+        }
+        await createOrRefreshSessionBinding(store, {
+          adapter: input.adapter,
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+          activePaths: ["."],
+          observedPaths: activePaths.filter(isSpecificPath),
+          responsibilities: [`${input.adapter} read scope`],
+          summary: `${input.adapter} read scope`,
+          now: input.now
+        });
+      }
       return;
     }
 
@@ -474,7 +492,32 @@ function toolNameFromPayload(payload: PayloadObject): string | undefined {
 
 function shouldNudgeForTool(payload: PayloadObject): boolean {
   const toolName = toolNameFromPayload(payload) ?? "";
-  return /(bash|write|edit|apply|patch|shell|command|delete|move|rename)/i.test(toolName);
+  if (/(write|edit|apply|patch|delete|move|rename)/i.test(toolName)) {
+    return true;
+  }
+  if (!/(bash|shell|command)/i.test(toolName)) {
+    return false;
+  }
+
+  const commands = new Set<string>();
+  collectCommandCandidates(payload, commands);
+  if (commands.size === 0) {
+    return true;
+  }
+
+  return ![...commands].every(isReadOnlyShellCommand);
+}
+
+function isReadOnlyShellCommand(command: string): boolean {
+  const normalized = command.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) {
+    return false;
+  }
+  if (/(^|[\s"';&|])(?:rm|del|erase|rmdir|mkdir|touch|set-content|add-content|out-file|remove-item|move-item|copy-item|new-item|git\s+(?:add|commit|push|pull|merge|rebase|checkout|switch|reset)|npm\s+(?:install|publish)|pnpm\s+(?:install|publish)|corepack\s+pnpm\s+(?:install|publish)|apply_patch)\b/i.test(normalized)) {
+    return false;
+  }
+
+  return /(^|[\s"';&|])(?:(?:rtk\s+)?(?:read|rg|git\s+(?:status|diff|show|log|ls-files)|npm\s+(?:list|view|whoami)|agentq\s+(?:status|diag|owners|doctor|inbox|next|work\s+status))|(?:get-content|select-string|get-childitem|test-path)\b)/i.test(normalized);
 }
 
 async function writeHookDiagnostic(
@@ -485,6 +528,7 @@ async function writeHookDiagnostic(
     readonly event: HookRuntimeEvent;
     readonly sessionId: string;
     readonly toolName?: string | undefined;
+    readonly toolMode?: "read-only" | "mutating" | "stop" | undefined;
     readonly paths: readonly string[];
     readonly resources: readonly string[];
     readonly ignoredCommands: readonly string[];
@@ -500,6 +544,7 @@ async function writeHookDiagnostic(
     event: input.event,
     sessionId: input.sessionId,
     ...(input.toolName === undefined ? {} : { toolName: input.toolName }),
+    ...(input.toolMode === undefined ? {} : { toolMode: input.toolMode }),
     paths: [...input.paths],
     resources: [...input.resources],
     ignoredCommands: [...input.ignoredCommands],

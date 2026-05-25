@@ -44,6 +44,7 @@ import {
   runWorkDoneCheck,
   startWork,
   actorScopeWeaknesses,
+  isBookkeepingPresence,
   type DoctorReport,
   type HookAdapter,
   type HookConfigPlan,
@@ -1017,19 +1018,27 @@ function renderNextAction(input: NextActionInput): string {
   if (!input.workResult.ok && input.workResult.activeWork !== undefined) {
     const work = input.workResult.activeWork;
     const stack = input.workResult.activeStack ?? [work];
+    const parentReturn = input.workResult.parentReturnEvidenceRequired;
     lines.push(
-      work.evidence.length === 0
+      parentReturn !== undefined
+        ? "Action: record parent-return evidence that rechecks the restored parent work before closing it."
+        : work.evidence.length === 0
         ? "Action: record context evidence for your active work."
         : "Action: close or update your active work before claiming done.",
       `Work: ${work.workId} - ${work.spec.objective}`,
       ...renderWorkStackLines(stack, "Stack"),
-      work.evidence.length === 0
+      parentReturn !== undefined
+        ? `Returned from child: ${parentReturn.fromWorkId} at ${parentReturn.since}`
+        : "",
+      parentReturn !== undefined
+        ? `Run: agentq work evidence --actor ${input.actorId} --evidence "Parent return: rechecked parent denominator after child close; next pass check"`
+        : work.evidence.length === 0
         ? `Run: agentq work evidence --actor ${input.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`
         : `Run: agentq work close --actor ${input.actorId} --summary "<what changed and how it was verified>"`,
       "Then:",
       `  agentq next --actor ${input.actorId}`
     );
-    return `${lines.join("\n")}\n`;
+    return `${lines.filter((line) => line.length > 0).join("\n")}\n`;
   }
 
   if (input.recentWorkAdoptionNudge !== null) {
@@ -1268,6 +1277,7 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
   });
   const actors = await listActorPresences(store);
   const rows = await buildDiagnosticActivityRows(store, actors, windowEvents, nowMs, windowMs);
+  const agentRows = buildDiagnosticAgentActivityRows(rows);
 
   return {
     code: 0,
@@ -1275,7 +1285,8 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
       windowMs,
       eventCount: windowEvents.length,
       rowCount: rows.length,
-      limit
+      limit,
+      agentRows
     }),
     stderr: ""
   };
@@ -2383,6 +2394,8 @@ interface WorkspaceKindBreakdown {
   readonly total: number;
   readonly active: number;
   readonly stale: number;
+  readonly operationalActive: number;
+  readonly bookkeepingActive: number;
   readonly routeableActive: number;
   readonly weakActive: number;
   readonly scopeRefreshNeeded: number;
@@ -2401,6 +2414,7 @@ interface RecentMessageSummary {
 
 interface DiagnosticActivityRow {
   readonly actorId: string;
+  readonly agentKind: string;
   readonly eventCount: number;
   readonly firstEventAt: string | null;
   readonly lastEventAt: string | null;
@@ -2414,7 +2428,17 @@ interface DiagnosticActivityRow {
   readonly openWorkEvidenceCount: number | null;
   readonly openWorkTitle: string | null;
   readonly adoption: string;
+  readonly nudgeCount: number;
   readonly workAdoptionNudgeCount: number;
+  readonly ownerOverlapNudgeCount: number;
+  readonly stackContextNudgeCount: number;
+  readonly readOnlyEventCount: number;
+  readonly mutatingEventCount: number;
+  readonly stopEventCount: number;
+  readonly readOnlyNudgeCount: number;
+  readonly pathfulEventCount: number;
+  readonly broadEventCount: number;
+  readonly ignoredCommandEventCount: number;
   readonly ignoredWorkAdoptionNudge: boolean;
   readonly paths: readonly string[];
   readonly observedPaths: readonly string[];
@@ -2422,11 +2446,33 @@ interface DiagnosticActivityRow {
   readonly summary: string | null;
 }
 
+interface DiagnosticAgentActivityRow {
+  readonly agentKind: string;
+  readonly actorCount: number;
+  readonly eventCount: number;
+  readonly readOnlyEventCount: number;
+  readonly mutatingEventCount: number;
+  readonly stopEventCount: number;
+  readonly nudgeCount: number;
+  readonly readOnlyNudgeCount: number;
+  readonly workAdoptionNudgeCount: number;
+  readonly ownerOverlapNudgeCount: number;
+  readonly stackContextNudgeCount: number;
+  readonly pathfulEventCount: number;
+  readonly broadEventCount: number;
+  readonly ignoredCommandEventCount: number;
+  readonly openWorkCount: number;
+  readonly zeroEvidenceOpenWorkCount: number;
+  readonly broadPresenceOnlyCount: number;
+  readonly diagnosis: string;
+}
+
 interface DiagnosticActivityRenderInput {
   readonly windowMs: number;
   readonly eventCount: number;
   readonly rowCount: number;
   readonly limit: number;
+  readonly agentRows: readonly DiagnosticAgentActivityRow[];
 }
 
 function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
@@ -2448,7 +2494,11 @@ function renderWorkspaceStatus(
   recentMessages: readonly RecentMessageSummary[]
 ): string {
   const activeDetails = details.filter((detail) => detail.summary.status === "active");
+  const auditOnlyActiveDetails = activeDetails.filter(isAuditOnlyActor);
+  const operationalActiveDetails = activeDetails.filter((detail) => !isAuditOnlyActor(detail));
   const activeCount = activeDetails.length;
+  const operationalActiveCount = operationalActiveDetails.length;
+  const auditOnlyActiveCount = auditOnlyActiveDetails.length;
   const staleCount = details.length - activeCount;
   const pendingInboxCount = details.reduce(
     (count, detail) => count + detail.pendingInbox.length,
@@ -2462,21 +2512,22 @@ function renderWorkspaceStatus(
     (detail) => detail.activeWork !== null && detail.activeWork.evidence.length === 0
   ).length;
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
-  const routeableActiveCount = activeDetails.filter((detail) => detail.weaknesses.length === 0).length;
-  const weakActiveCount = activeCount - routeableActiveCount;
-  const scopeRefreshNeededCount = activeDetails.filter(isScopeRefreshNeededActor).length;
+  const routeableActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length === 0).length;
+  const weakActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length > 0).length;
+  const scopeRefreshNeededCount = operationalActiveDetails.filter(isScopeRefreshNeededActor).length;
   const activeWorkActorCount = activeDetails.filter((detail) => detail.activeWork !== null).length;
-  const routeableNoWorkCount = activeDetails.filter(isRouteableNoWorkActor).length;
+  const routeableNoWorkCount = operationalActiveDetails.filter(isRouteableNoWorkActor).length;
   const broadPresenceOnlyCount = activeDetails.filter(isBroadPresenceOnlyActor).length;
-  const recentWorkNudgeActorCount = activeDetails.filter(
+  const recentWorkNudgeActorCount = operationalActiveDetails.filter(
     (detail) => detail.recentWorkAdoptionNudge !== null
   ).length;
-  const ignoredWorkNudgeActorCount = activeDetails.filter(
+  const ignoredWorkNudgeActorCount = operationalActiveDetails.filter(
     (detail) => detail.activeWork === null && detail.recentWorkAdoptionNudge !== null
   ).length;
   const kindBreakdown = buildKindBreakdown(details);
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
-  const activeActorLines = activeDetails.map(renderStatusActorLine);
+  const operationalActorLines = operationalActiveDetails.map(renderStatusActorLine);
+  const auditOnlyActorLines = auditOnlyActiveDetails.map(renderStatusActorLine);
   const openWorkLines = details.flatMap(renderStatusWorkLines);
   const zeroEvidenceOpenWorkLines = details.flatMap(renderZeroEvidenceWorkLines);
   const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
@@ -2498,6 +2549,8 @@ function renderWorkspaceStatus(
     `Runtime store: ${report.storePath}`,
     `doctor: ${report.summary}`,
     `actors: ${details.length} (active ${activeCount}, stale ${staleCount}, staleAfter ${formatDuration(staleAfterMs)})`,
+    `operational active actors: ${operationalActiveCount}`,
+    `audit/bookkeeping active actors: ${auditOnlyActiveCount}`,
     `routeable active actors: ${routeableActiveCount}`,
     `broad/generic active actors: ${weakActiveCount}`,
     `scope-refresh-needed actors: ${scopeRefreshNeededCount}`,
@@ -2552,8 +2605,11 @@ function renderWorkspaceStatus(
 
   lines.push(
     "",
-    "Active actors:",
-    ...(activeActorLines.length === 0 ? ["  none"] : activeActorLines),
+    "Operational active actors:",
+    ...(operationalActorLines.length === 0 ? ["  none"] : operationalActorLines),
+    "",
+    "Audit/bookkeeping active actors:",
+    ...(auditOnlyActorLines.length === 0 ? ["  none"] : auditOnlyActorLines),
     "",
     "Open work:",
     ...(openWorkLines.length === 0 ? ["  none"] : openWorkLines),
@@ -2574,13 +2630,16 @@ function buildKindBreakdown(details: readonly WorkspaceStatusActor[]): Workspace
     const kind = detail.summary.actor.kind;
     const existing = rows.get(kind) ?? emptyKindBreakdown(kind);
     const active = detail.summary.status === "active";
-    const weakActive = active && detail.weaknesses.length > 0;
+    const operationalActive = active && !isAuditOnlyActor(detail);
+    const weakActive = operationalActive && detail.weaknesses.length > 0;
     rows.set(kind, {
       kind,
       total: existing.total + 1,
       active: existing.active + (active ? 1 : 0),
       stale: existing.stale + (active ? 0 : 1),
-      routeableActive: existing.routeableActive + (active && detail.weaknesses.length === 0 ? 1 : 0),
+      operationalActive: existing.operationalActive + (operationalActive ? 1 : 0),
+      bookkeepingActive: existing.bookkeepingActive + (active && isAuditOnlyActor(detail) ? 1 : 0),
+      routeableActive: existing.routeableActive + (operationalActive && detail.weaknesses.length === 0 ? 1 : 0),
       weakActive: existing.weakActive + (weakActive ? 1 : 0),
       scopeRefreshNeeded: existing.scopeRefreshNeeded + (isScopeRefreshNeededActor(detail) ? 1 : 0),
       activeWork: existing.activeWork + (active && detail.activeWork !== null ? 1 : 0),
@@ -2600,6 +2659,8 @@ function emptyKindBreakdown(kind: AgentKind): WorkspaceKindBreakdown {
     total: 0,
     active: 0,
     stale: 0,
+    operationalActive: 0,
+    bookkeepingActive: 0,
     routeableActive: 0,
     weakActive: 0,
     scopeRefreshNeeded: 0,
@@ -2612,6 +2673,7 @@ function emptyKindBreakdown(kind: AgentKind): WorkspaceKindBreakdown {
 function isRouteableNoWorkActor(detail: WorkspaceStatusActor): boolean {
   return (
     detail.summary.status === "active" &&
+    !isAuditOnlyActor(detail) &&
     detail.weaknesses.length === 0 &&
     detail.activeWork === null
   );
@@ -2630,8 +2692,19 @@ function isBroadPresenceOnlyActor(detail: WorkspaceStatusActor): boolean {
 function isScopeRefreshNeededActor(detail: WorkspaceStatusActor): boolean {
   return (
     detail.summary.status === "active" &&
+    !isAuditOnlyActor(detail) &&
     detail.weaknesses.length > 0 &&
     !isBroadPresenceOnlyActor(detail)
+  );
+}
+
+function isAuditOnlyActor(detail: WorkspaceStatusActor): boolean {
+  return (
+    detail.summary.status === "active" &&
+    isBookkeepingPresence(detail.summary.actor) &&
+    detail.pendingInbox.length === 0 &&
+    detail.activeWork === null &&
+    detail.recentWorkAdoptionNudge === null
   );
 }
 
@@ -2640,6 +2713,8 @@ function renderKindBreakdownLine(row: WorkspaceKindBreakdown): string {
     `  ${row.kind}: total ${row.total}`,
     `active ${row.active}`,
     `stale ${row.stale}`,
+    `operational-active ${row.operationalActive}`,
+    `bookkeeping-active ${row.bookkeepingActive}`,
     `routeable ${row.routeableActive}`,
     `broad/generic ${row.weakActive}`,
     `scope-refresh-needed ${row.scopeRefreshNeeded}`,
@@ -2744,9 +2819,18 @@ async function buildDiagnosticActivityRows(
       const lastEventMs = eventTimes[eventTimes.length - 1];
       const lastSeenMs = actor === undefined ? Number.NaN : Date.parse(actor.lastSeen);
       const workAdoptionNudgeEvents = actorEvents.filter(eventHasWorkAdoptionNudge);
+      const nudgeEvents = actorEvents.filter((event) => event.nudge === true);
+      const ownerOverlapNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("owner-overlap") === true);
+      const stackContextNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("work-stack") === true);
+      const readOnlyEvents = actorEvents.filter((event) => event.toolMode === "read-only");
+      const mutatingEvents = actorEvents.filter((event) => event.toolMode === "mutating");
+      const stopEvents = actorEvents.filter((event) => event.toolMode === "stop" || event.event === "stop");
+      const pathfulEvents = actorEvents.filter(eventHasSpecificDiagnosticScope);
+      const ignoredCommandEvents = actorEvents.filter((event) => (event.ignoredCommands ?? []).length > 0);
 
       return {
         actorId,
+        agentKind: diagnosticAgentKind(actor, actorEvents),
         eventCount: actorEvents.length,
         firstEventAt: actorEvents[0]?.at ?? null,
         lastEventAt: actorEvents[actorEvents.length - 1]?.at ?? null,
@@ -2764,7 +2848,17 @@ async function buildDiagnosticActivityRows(
         openWorkEvidenceCount: activeWork?.evidence.length ?? null,
         openWorkTitle: activeWork?.title ?? null,
         adoption: classifyActivityAdoption(actor, hasOpenWork, actorEvents.length, workAdoptionNudgeEvents.length),
+        nudgeCount: nudgeEvents.length,
         workAdoptionNudgeCount: workAdoptionNudgeEvents.length,
+        ownerOverlapNudgeCount: ownerOverlapNudgeEvents.length,
+        stackContextNudgeCount: stackContextNudgeEvents.length,
+        readOnlyEventCount: readOnlyEvents.length,
+        mutatingEventCount: mutatingEvents.length,
+        stopEventCount: stopEvents.length,
+        readOnlyNudgeCount: readOnlyEvents.filter((event) => event.nudge === true).length,
+        pathfulEventCount: pathfulEvents.length,
+        broadEventCount: actorEvents.length - pathfulEvents.length,
+        ignoredCommandEventCount: ignoredCommandEvents.length,
         ignoredWorkAdoptionNudge: workAdoptionNudgeEvents.length > 0 && !hasOpenWork,
         paths: actor?.activePaths ?? [],
         observedPaths: actor?.observedPaths ?? [],
@@ -2779,6 +2873,105 @@ async function buildDiagnosticActivityRows(
     nullableNumber(left.lastEventAgeMs) - nullableNumber(right.lastEventAgeMs) ||
     left.actorId.localeCompare(right.actorId)
   );
+}
+
+function buildDiagnosticAgentActivityRows(rows: readonly DiagnosticActivityRow[]): DiagnosticAgentActivityRow[] {
+  const byKind = new Map<string, Omit<DiagnosticAgentActivityRow, "diagnosis">>();
+  for (const row of rows) {
+    const existing = byKind.get(row.agentKind) ?? emptyDiagnosticAgentActivityRow(row.agentKind);
+    byKind.set(row.agentKind, {
+      agentKind: row.agentKind,
+      actorCount: existing.actorCount + 1,
+      eventCount: existing.eventCount + row.eventCount,
+      readOnlyEventCount: existing.readOnlyEventCount + row.readOnlyEventCount,
+      mutatingEventCount: existing.mutatingEventCount + row.mutatingEventCount,
+      stopEventCount: existing.stopEventCount + row.stopEventCount,
+      nudgeCount: existing.nudgeCount + row.nudgeCount,
+      readOnlyNudgeCount: existing.readOnlyNudgeCount + row.readOnlyNudgeCount,
+      workAdoptionNudgeCount: existing.workAdoptionNudgeCount + row.workAdoptionNudgeCount,
+      ownerOverlapNudgeCount: existing.ownerOverlapNudgeCount + row.ownerOverlapNudgeCount,
+      stackContextNudgeCount: existing.stackContextNudgeCount + row.stackContextNudgeCount,
+      pathfulEventCount: existing.pathfulEventCount + row.pathfulEventCount,
+      broadEventCount: existing.broadEventCount + row.broadEventCount,
+      ignoredCommandEventCount: existing.ignoredCommandEventCount + row.ignoredCommandEventCount,
+      openWorkCount: existing.openWorkCount + (row.hasOpenWork ? 1 : 0),
+      zeroEvidenceOpenWorkCount: existing.zeroEvidenceOpenWorkCount + (row.openWorkEvidenceCount === 0 ? 1 : 0),
+      broadPresenceOnlyCount: existing.broadPresenceOnlyCount + (row.adoption === "broad-presence-only" ? 1 : 0)
+    });
+  }
+
+  return [...byKind.values()]
+    .map((row) => ({ ...row, diagnosis: classifyDiagnosticAgentActivity(row) }))
+    .sort((left, right) =>
+      agentKindOrder(left.agentKind) - agentKindOrder(right.agentKind) ||
+      right.eventCount - left.eventCount ||
+      left.agentKind.localeCompare(right.agentKind)
+    );
+}
+
+function emptyDiagnosticAgentActivityRow(agentKind: string): Omit<DiagnosticAgentActivityRow, "diagnosis"> {
+  return {
+    agentKind,
+    actorCount: 0,
+    eventCount: 0,
+    readOnlyEventCount: 0,
+    mutatingEventCount: 0,
+    stopEventCount: 0,
+    nudgeCount: 0,
+    readOnlyNudgeCount: 0,
+    workAdoptionNudgeCount: 0,
+    ownerOverlapNudgeCount: 0,
+    stackContextNudgeCount: 0,
+    pathfulEventCount: 0,
+    broadEventCount: 0,
+    ignoredCommandEventCount: 0,
+    openWorkCount: 0,
+    zeroEvidenceOpenWorkCount: 0,
+    broadPresenceOnlyCount: 0
+  };
+}
+
+function classifyDiagnosticAgentActivity(row: Omit<DiagnosticAgentActivityRow, "diagnosis">): string {
+  if (row.readOnlyNudgeCount > 0) {
+    return "policy-readonly-nudge";
+  }
+
+  if (row.eventCount > 0 && row.pathfulEventCount === 0) {
+    return "agent-scope-missing";
+  }
+
+  if (row.workAdoptionNudgeCount > 0 && row.openWorkCount === 0) {
+    return "policy-work-adoption-unresolved";
+  }
+
+  if (row.ownerOverlapNudgeCount > 0) {
+    return "shared-owner-routing";
+  }
+
+  if (row.broadPresenceOnlyCount > 0 && row.pathfulEventCount === 0) {
+    return "session-presence-only";
+  }
+
+  return "mixed-observed";
+}
+
+function diagnosticAgentKind(actor: Presence | undefined, events: readonly DiagnosticEvent[]): string {
+  if (actor !== undefined) {
+    return actor.kind;
+  }
+
+  const latestAdapter = [...events].reverse().find((event) => event.adapter !== undefined)?.adapter;
+  return latestAdapter ?? "unknown";
+}
+
+function eventHasSpecificDiagnosticScope(event: DiagnosticEvent): boolean {
+  return (event.paths ?? []).some(isSpecificDiagnosticPath) || (event.resources ?? []).length > 0;
+}
+
+function agentKindOrder(kind: string): number {
+  const order = ["codex", "claude-code", "copilot-cli", "custom", "unknown"];
+  const index = order.indexOf(kind);
+  return index === -1 ? order.length : index;
 }
 
 function statusRecommendations(input: {
@@ -2928,6 +3121,10 @@ function findRecentWorkAdoptionNudge(
 
 function eventHasWorkAdoptionNudge(event: DiagnosticEvent): boolean {
   const nudgeKinds = event.nudgeKinds ?? [];
+  if (event.nudgeKinds !== undefined) {
+    return nudgeKinds.includes("work-adoption");
+  }
+
   if (nudgeKinds.includes("work-adoption")) {
     return true;
   }
@@ -3012,6 +3209,7 @@ function renderDiagnosticEvents(events: readonly DiagnosticEvent[]): string {
         event.actorId ?? "(no actor)",
         event.event ?? event.kind,
         event.toolName === undefined ? undefined : `tool:${event.toolName}`,
+        event.toolMode === undefined ? undefined : `mode:${event.toolMode}`,
         event.paths === undefined ? undefined : `paths:${formatList(event.paths)}`,
         event.resources === undefined ? undefined : `resources:${formatList(event.resources)}`,
         event.ignoredCommands === undefined || event.ignoredCommands.length === 0
@@ -3038,6 +3236,9 @@ function renderDiagnosticActivity(
     `Hook events in window: ${input.eventCount}`,
     `Actors shown: ${rows.length}/${input.rowCount}${input.rowCount > input.limit ? ` (limit ${input.limit})` : ""}`,
     "",
+    "Agents:",
+    ...(input.agentRows.length === 0 ? ["  none"] : input.agentRows.map(renderDiagnosticAgentActivityRow)),
+    "",
     "Actors:"
   ];
   if (rows.length === 0) {
@@ -3049,6 +3250,7 @@ function renderDiagnosticActivity(
     lines.push(
       [
         `  ${row.actorId}`,
+        `agent:${row.agentKind}`,
         `events:${row.eventCount}`,
         `lastEvent:${formatNullableDuration(row.lastEventAgeMs)}`,
         `maxGap:${formatNullableDuration(row.maxGapMs)}`,
@@ -3058,7 +3260,11 @@ function renderDiagnosticActivity(
         `inbox:${row.pendingInboxCount}`,
         `work:${row.hasOpenWork ? "open" : "none"}`,
         `adoption:${row.adoption}`,
+        row.nudgeCount === 0 ? undefined : `nudges:${row.nudgeCount}`,
         row.workAdoptionNudgeCount === 0 ? undefined : `workNudges:${row.workAdoptionNudgeCount}`,
+        row.ownerOverlapNudgeCount === 0 ? undefined : `ownerNudges:${row.ownerOverlapNudgeCount}`,
+        row.stackContextNudgeCount === 0 ? undefined : `stackContexts:${row.stackContextNudgeCount}`,
+        row.readOnlyNudgeCount === 0 ? undefined : `readOnlyNudges:${row.readOnlyNudgeCount}`,
         row.ignoredWorkAdoptionNudge ? "ignored-work-nudge" : undefined,
         row.openWorkEvidenceCount === 0 ? "zero-evidence" : undefined,
         row.openWorkEvidenceCount === null ? undefined : `evidence:${row.openWorkEvidenceCount}`,
@@ -3072,6 +3278,28 @@ function renderDiagnosticActivity(
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+function renderDiagnosticAgentActivityRow(row: DiagnosticAgentActivityRow): string {
+  return [
+    `  ${row.agentKind}: actors:${row.actorCount}`,
+    `events:${row.eventCount}`,
+    `readOnly:${row.readOnlyEventCount}`,
+    `mutating:${row.mutatingEventCount}`,
+    `stop:${row.stopEventCount}`,
+    `nudges:${row.nudgeCount}`,
+    `readOnlyNudges:${row.readOnlyNudgeCount}`,
+    `workNudges:${row.workAdoptionNudgeCount}`,
+    `ownerNudges:${row.ownerOverlapNudgeCount}`,
+    `stackContexts:${row.stackContextNudgeCount}`,
+    `pathful:${row.pathfulEventCount}`,
+    `broad:${row.broadEventCount}`,
+    `ignoredCmdEvents:${row.ignoredCommandEventCount}`,
+    `openWork:${row.openWorkCount}`,
+    `zeroEvidenceWork:${row.zeroEvidenceOpenWorkCount}`,
+    `broadPresenceOnly:${row.broadPresenceOnlyCount}`,
+    `diagnosis:${row.diagnosis}`
+  ].join(" | ");
 }
 
 function renderStatusActorLine(detail: WorkspaceStatusActor): string {
@@ -3325,6 +3553,9 @@ function renderWorkState(
       "",
       `returned to parent: ${returned.workId}`,
       `  objective: ${returned.spec.objective}`,
+      `  evidence: ${returned.evidence.length}`,
+      ...renderWorkSpecDetailLines(returned, "  "),
+      "  required: record parent-return evidence that mentions the restored parent denominator/pass/next/objective before closing this frame",
       ...(returned.spec.nextOperation === undefined ? [] : [`  next: ${returned.spec.nextOperation}`]),
       ...renderWorkStackLines(returnStack, "Return stack")
     );

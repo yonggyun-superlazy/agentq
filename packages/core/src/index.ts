@@ -28,6 +28,7 @@ export * from "./state/fold.js";
 export * from "./state/inbox.js";
 export * from "./state/doneCheck.js";
 export * from "./state/scopeCheck.js";
+export * from "./state/presenceClassification.js";
 export * from "./diagnostics/ringLog.js";
 export * from "./routing/routeBlocker.js";
 export * from "./work/schema.js";

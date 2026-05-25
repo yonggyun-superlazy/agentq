@@ -399,13 +399,17 @@ describe("CLI required-response protocol", () => {
     const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
     await ensureWorkspaceStore(store);
     const actorId = await enter(runtime, "codex", "activity");
+    const claudeActorId = await enter(runtime, "claude-code", "activity-claude");
+    const copilotActorId = await enter(runtime, "copilot-cli", "activity-copilot");
 
     await appendDiagnosticEvent(store, {
       kind: "hook",
       at: "2026-05-18T00:00:00.000Z",
       actorId,
+      adapter: "codex",
       event: "pre-tool",
       toolName: "Bash",
+      toolMode: "mutating",
       paths: ["README.md"],
       nudge: true,
       nudgeKinds: ["work-adoption"]
@@ -414,14 +418,41 @@ describe("CLI required-response protocol", () => {
       kind: "hook",
       at: "2026-05-18T00:01:00.000Z",
       actorId,
+      adapter: "codex",
       event: "pre-tool",
-      toolName: "Bash"
+      toolName: "Bash",
+      toolMode: "read-only"
     });
     await appendDiagnosticEvent(store, {
       kind: "hook",
       at: "2026-05-18T00:05:00.000Z",
       actorId,
-      event: "stop"
+      adapter: "codex",
+      event: "stop",
+      toolMode: "stop"
+    });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:06:00.000Z",
+      actorId: claudeActorId,
+      adapter: "claude-code",
+      event: "pre-tool",
+      toolName: "Bash",
+      toolMode: "mutating",
+      paths: ["README.md"],
+      nudge: true,
+      nudgeKinds: ["owner-overlap"]
+    });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:07:00.000Z",
+      actorId: copilotActorId,
+      adapter: "copilot-cli",
+      event: "pre-tool",
+      toolName: "Bash",
+      toolMode: "mutating",
+      paths: ["."],
+      nudge: false
     });
     await runCommand([
       "work",
@@ -442,6 +473,17 @@ describe("CLI required-response protocol", () => {
     });
     const result = await runCommand(["diag", "activity", "--window", "1h"], runtime);
     expect(result.stdout).toContain(actorId);
+    expect(result.stdout).toContain("Agents:");
+    expect(result.stdout).toContain("codex: actors:1 | events:3");
+    expect(result.stdout).toContain("claude-code: actors:1 | events:1");
+    expect(result.stdout).toContain("copilot-cli: actors:1 | events:1");
+    expect(result.stdout).toContain("readOnly:1");
+    expect(result.stdout).toContain("mutating:1");
+    expect(result.stdout).toContain("stop:1");
+    expect(result.stdout).toContain("ownerNudges:1");
+    expect(result.stdout).toContain("diagnosis:shared-owner-routing");
+    expect(result.stdout).toContain("diagnosis:agent-scope-missing");
+    expect(result.stdout).toContain("agent:codex");
     expect(result.stdout).toContain("events:3");
     expect(result.stdout).toContain("lastEvent:5m");
     expect(result.stdout).toContain("maxGap:4m");

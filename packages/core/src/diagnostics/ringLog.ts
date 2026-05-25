@@ -12,6 +12,7 @@ export const DiagnosticEventSchema = z
     event: z.string().min(1).optional(),
     sessionId: z.string().min(1).optional(),
     toolName: z.string().min(1).optional(),
+    toolMode: z.enum(["read-only", "mutating", "stop"]).optional(),
     paths: z.array(z.string()).optional(),
     resources: z.array(z.string()).optional(),
     ignoredCommands: z.array(z.string()).optional(),

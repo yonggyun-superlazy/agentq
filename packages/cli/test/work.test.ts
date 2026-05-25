@@ -802,10 +802,20 @@ describe("CLI work stack", () => {
       "Restore parent combat-positioning objective",
       "--denominator",
       "combat planning residual failures",
+      "--pass",
+      "parent denominator rechecked after child close",
       "--next",
       "Inspect action-locked route query",
       "--path",
       "AgentQ"
+    ], runtime);
+    await runCommand([
+      "work",
+      "evidence",
+      "--actor",
+      actorId,
+      "--evidence",
+      "Initial parent context recorded."
     ], runtime);
     await runCommand([
       "work",
@@ -852,7 +862,61 @@ describe("CLI work stack", () => {
     ], runtime);
     expect(closeChild.stdout).toContain("returned to parent: AW-top");
     expect(closeChild.stdout).toContain("objective: Restore parent combat-positioning objective");
+    expect(closeChild.stdout).toContain("denominator: combat planning residual failures");
+    expect(closeChild.stdout).toContain("pass: parent denominator rechecked after child close");
+    expect(closeChild.stdout).toContain("required: record parent-return evidence");
     expect(closeChild.stdout).toContain("next: Inspect action-locked route query");
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("record parent-return evidence")
+    });
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("Returned from child: AW-current")
+    });
+    await expect(runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--summary",
+      "Parent closed without recheck"
+    ], runtime)).rejects.toThrow(/parent-return evidence/);
+    await expect(runCommand([
+      "work",
+      "evidence",
+      "--actor",
+      actorId,
+      "--evidence",
+      "Reviewed the child output."
+    ], runtime)).rejects.toThrow(/parent-return evidence/);
+    await expect(runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--summary",
+      "Parent closed with generic evidence",
+      "--evidence",
+      "Reviewed the child output."
+    ], runtime)).rejects.toThrow(/parent-return evidence/);
+    await runCommand([
+      "work",
+      "evidence",
+      "--actor",
+      actorId,
+      "--evidence",
+      "Parent return: parent denominator rechecked after child close."
+    ], runtime);
+    await expect(runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--summary",
+      "Parent closed after return recheck"
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("closed: AW-top")
+    });
   });
 
   it("routes non-blocking notes without gating sender or receiver done-check", async () => {
@@ -1062,16 +1126,18 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("AgentQ status");
     expect(result.stdout).toContain("doctor: warn");
     expect(result.stdout).toContain("actors: 3 (active 3, stale 0, staleAfter 1h)");
+    expect(result.stdout).toContain("operational active actors: 2");
+    expect(result.stdout).toContain("audit/bookkeeping active actors: 1");
     expect(result.stdout).toContain("routeable active actors: 2");
-    expect(result.stdout).toContain("broad/generic active actors: 1");
+    expect(result.stdout).toContain("broad/generic active actors: 0");
     expect(result.stdout).toContain("scope-refresh-needed actors: 0");
     expect(result.stdout).toContain("active work actors: 1");
     expect(result.stdout).toContain("routeable no-work actors: 1");
     expect(result.stdout).toContain("recent work-adoption nudged actors: 0");
     expect(result.stdout).toContain("ignored work-adoption nudges: 0");
     expect(result.stdout).toContain("broad presence-only actors: 1");
-    expect(result.stdout).toContain("codex: total 1, active 1, stale 0, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 1, routeable-no-work 0, broad-presence-only 0");
-    expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, routeable 1, broad/generic 1, scope-refresh-needed 0, active-work 0, routeable-no-work 1, broad-presence-only 1");
+    expect(result.stdout).toContain("codex: total 1, active 1, stale 0, operational-active 1, bookkeeping-active 0, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 1, routeable-no-work 0, broad-presence-only 0");
+    expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, operational-active 1, bookkeeping-active 1, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 0, routeable-no-work 1, broad-presence-only 1");
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
     expect(result.stdout).toContain("zero-evidence open work: 1");
@@ -1082,6 +1148,8 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("agentq next --actor <id>");
     expect(result.stdout).toContain("recent messages 24h: 1");
     expect(result.stdout).toContain("weak-scope actors: 1");
+    expect(result.stdout).toContain("Operational active actors:");
+    expect(result.stdout).toContain("Audit/bookkeeping active actors:");
     expect(result.stdout).toContain("AW-status");
     expect(result.stdout).toContain("AQ-status");
   });
@@ -1160,6 +1228,17 @@ describe("CLI work stack", () => {
       "--responsibility",
       "AgentQ CLI source owner"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const bookkeeping = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "bookkeeping",
+      "--paths",
+      "AgentQ/packages/cli/src",
+      "--responsibility",
+      "codex session"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
 
     const result = await runCommand([
       "owners",
@@ -1175,9 +1254,26 @@ describe("CLI work stack", () => {
     });
     expect(result.stdout).toContain(`owners for AgentQ/packages/cli/src/main.ts:`);
     expect(result.stdout).toContain(receiver);
+    expect(result.stdout).not.toContain(bookkeeping);
     expect(result.stdout).not.toContain(`  ${sender} |`);
     expect(result.stdout).toContain("Ownership is a routing signal, not a lock");
     expect(result.stdout).toContain("agentq question --actor <your-actor-id>");
+
+    const routed = await runCommand([
+      "question",
+      "--id",
+      "AQ-owner-bookkeeping",
+      "--actor",
+      sender,
+      "--path",
+      "AgentQ/packages/cli/src/main.ts",
+      "--question",
+      "Can I edit main?",
+      "--expect",
+      "Answer with active ownership evidence"
+    ], runtime);
+    expect(routed.stdout).toContain(`AQ-owner-bookkeeping routed to ${receiver}`);
+    expect(routed.stdout).not.toContain(bookkeeping);
   });
 
   it("rejects state --paths while suggesting the owner-routing command", async () => {

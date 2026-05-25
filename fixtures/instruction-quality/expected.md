@@ -22,6 +22,8 @@ started: AW-instruction-quality
   actor: <target>
   status: open
   title: Modify protocol consumer safely
+  objective: Modify protocol consumer safely
+  spec: current
   touched: src/consumer.ts
   evidence: 0
   next: record collaboration context now: agentq work evidence --actor <target> --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"
@@ -30,6 +32,8 @@ evidence: AW-instruction-quality
   actor: <target>
   status: open
   title: Modify protocol consumer safely
+  objective: Modify protocol consumer safely
+  spec: current
   touched: src/consumer.ts
   evidence: 1
   next: add missing final evidence or close with summary when the frame is actually done
@@ -102,6 +106,8 @@ evidence: AW-instruction-quality
   actor: <target>
   status: open
   title: Modify protocol consumer safely
+  objective: Modify protocol consumer safely
+  spec: current
   touched: src/consumer.ts
   evidence: 2
   next: add missing final evidence or close with summary when the frame is actually done
@@ -110,6 +116,8 @@ closed: AW-instruction-quality
   actor: <target>
   status: closed
   title: Modify protocol consumer safely
+  objective: Modify protocol consumer safely
+  spec: current
   touched: src/consumer.ts
   evidence: 2
   summary: Protocol consumer update is unblocked by owner evidence.

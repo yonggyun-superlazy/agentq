@@ -43,6 +43,12 @@ export interface WorkCheckResult {
   readonly actorId: string;
   readonly activeWork?: WorkState;
   readonly activeStack?: readonly WorkState[];
+  readonly parentReturnEvidenceRequired?: ParentReturnEvidenceRequirement;
+}
+
+export interface ParentReturnEvidenceRequirement {
+  readonly fromWorkId: string;
+  readonly since: string;
 }
 
 export interface StartWorkInput {
@@ -147,16 +153,19 @@ export async function appendWorkEvidence(
   input: AppendWorkEvidenceInput
 ): Promise<WorkState> {
   const workId = await requireTargetWorkId(store, input.actorId, input.workId);
+  const evidence = normalizeNonEmpty(input.evidence);
+  await assertParentReturnEvidenceQuality(store, input.actorId, workId, evidence);
   const event: WorkEvent = {
     kind: "work_evidence",
     id: createWorkEventId(),
     workId,
     actorId: input.actorId,
-    evidence: normalizeNonEmpty(input.evidence),
+    evidence,
     at: input.now
   };
 
   await appendWorkEvent(store, event);
+  await clearParentReturnEvidenceRequirement(store, input.actorId, workId, input.now);
   return await readWorkState(store, workId);
 }
 
@@ -168,9 +177,19 @@ export async function closeWork(store: WorkspaceStore, input: CloseWorkInput): P
     throw new Error(`AgentQ work item is already closed: ${workId}`);
   }
 
-  const closeEvidence = [...input.evidence];
+  const closeEvidence = normalizeTextValues(input.evidence);
   if (before.evidence.length === 0 && closeEvidence.length === 0) {
     throw new Error("AgentQ work close requires evidence recorded by `work evidence` or `work close --evidence`.");
+  }
+  const pointer = await readActiveWorkPointer(store, input.actorId);
+  if (
+    pointer?.activeWorkId === workId &&
+    pointer.returnEvidenceSince !== undefined &&
+    !hasParentReturnEvidence(closeEvidence)
+  ) {
+    throw new Error(
+      parentReturnEvidenceErrorMessage()
+    );
   }
 
   const event: WorkEvent = {
@@ -186,7 +205,20 @@ export async function closeWork(store: WorkspaceStore, input: CloseWorkInput): P
 
   await appendWorkEvent(store, event);
   const after = await readWorkState(store, workId);
-  await writeActivePointer(store, input.actorId, after.parentWorkId, input.now);
+  await writeActivePointer(
+    store,
+    input.actorId,
+    after.parentWorkId,
+    input.now,
+    after.parentWorkId === null
+      ? undefined
+      : {
+        parentReturnEvidenceRequired: {
+          fromWorkId: after.workId,
+          since: input.now
+        }
+      }
+  );
   return after;
 }
 
@@ -231,13 +263,29 @@ export async function runWorkDoneCheck(
   store: WorkspaceStore,
   actorId: string
 ): Promise<WorkCheckResult> {
+  const pointer = await readActiveWorkPointer(store, actorId);
   const activeStack = await readActiveWorkStack(store, actorId);
   const activeWork = activeStack[activeStack.length - 1];
   if (activeWork === undefined || activeWork.status !== "open") {
     return { ok: true, actorId };
   }
 
-  return { ok: false, actorId, activeWork, activeStack };
+  const parentReturnEvidenceRequired =
+    pointer?.activeWorkId === activeWork.workId &&
+    pointer.returnFromWorkId !== undefined &&
+    pointer.returnEvidenceSince !== undefined
+      ? {
+        fromWorkId: pointer.returnFromWorkId,
+        since: pointer.returnEvidenceSince
+      }
+      : undefined;
+  return {
+    ok: false,
+    actorId,
+    activeWork,
+    activeStack,
+    ...(parentReturnEvidenceRequired === undefined ? {} : { parentReturnEvidenceRequired })
+  };
 }
 
 export function planWorkStopContinuation(result: WorkCheckResult): string {
@@ -421,6 +469,10 @@ function normalizeOptionalNonEmpty(values: readonly string[] | undefined): strin
   return normalized.length === 0 ? undefined : normalized;
 }
 
+function normalizeTextValues(values: readonly string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
+}
+
 function nonEmptyOptional(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
@@ -470,7 +522,7 @@ function workEventPriority(event: WorkEvent): string {
   return "1";
 }
 
-async function readActiveWorkId(store: WorkspaceStore, actorId: string): Promise<string | null> {
+async function readActiveWorkPointer(store: WorkspaceStore, actorId: string): Promise<ActorWorkPointer | null> {
   try {
     const pointer = parseYamlWithSchema(
       ActorWorkPointerSchema,
@@ -479,7 +531,7 @@ async function readActiveWorkId(store: WorkspaceStore, actorId: string): Promise
     if (pointer.actorId !== actorId) {
       throw new Error(`AgentQ active work pointer belongs to another actor: ${actorId}`);
     }
-    return pointer.activeWorkId;
+    return pointer;
   } catch (error) {
     if (isNotFoundError(error)) {
       return null;
@@ -487,6 +539,10 @@ async function readActiveWorkId(store: WorkspaceStore, actorId: string): Promise
 
     throw error;
   }
+}
+
+async function readActiveWorkId(store: WorkspaceStore, actorId: string): Promise<string | null> {
+  return (await readActiveWorkPointer(store, actorId))?.activeWorkId ?? null;
 }
 
 async function requireTargetWorkId(
@@ -506,15 +562,78 @@ async function writeActivePointer(
   store: WorkspaceStore,
   actorId: string,
   activeWorkId: string | null,
-  updatedAt: string
+  updatedAt: string,
+  options: {
+    readonly parentReturnEvidenceRequired?: ParentReturnEvidenceRequirement;
+  } = {}
 ): Promise<void> {
   const pointer: ActorWorkPointer = {
     actorId,
     activeWorkId,
-    updatedAt
+    updatedAt,
+    ...(activeWorkId === null || options.parentReturnEvidenceRequired === undefined
+      ? {}
+      : {
+        returnFromWorkId: options.parentReturnEvidenceRequired.fromWorkId,
+        returnEvidenceSince: options.parentReturnEvidenceRequired.since
+      })
   };
   ActorWorkPointerSchema.parse(pointer);
   await writeAtomicYaml(store.layout.actorWorkPointerPath(actorId), pointer);
+}
+
+async function clearParentReturnEvidenceRequirement(
+  store: WorkspaceStore,
+  actorId: string,
+  workId: string,
+  updatedAt: string
+): Promise<void> {
+  const pointer = await readActiveWorkPointer(store, actorId);
+  if (
+    pointer?.activeWorkId !== workId ||
+    pointer.returnEvidenceSince === undefined
+  ) {
+    return;
+  }
+
+  await writeActivePointer(store, actorId, workId, updatedAt);
+}
+
+async function assertParentReturnEvidenceQuality(
+  store: WorkspaceStore,
+  actorId: string,
+  workId: string,
+  evidence: readonly string[]
+): Promise<void> {
+  const pointer = await readActiveWorkPointer(store, actorId);
+  if (
+    pointer?.activeWorkId !== workId ||
+    pointer.returnEvidenceSince === undefined ||
+    hasParentReturnEvidence(evidence)
+  ) {
+    return;
+  }
+
+  throw new Error(parentReturnEvidenceErrorMessage());
+}
+
+function parentReturnEvidenceErrorMessage(): string {
+  return (
+    "AgentQ parent-return evidence must say the restored parent work was rechecked after the child closed. " +
+    "Include parent return plus parent denominator, pass, next, or objective evidence."
+  );
+}
+
+function hasParentReturnEvidence(evidence: readonly string[]): boolean {
+  const text = evidence.join(" ").toLowerCase();
+  if (text.length === 0) {
+    return false;
+  }
+
+  const returnCue = /parent[- ]return|returned to parent|after child|child close|child closed|restored parent|parent frame|parent work/.test(text);
+  const parentCue = /\bparent\b/.test(text);
+  const recheckCue = /denominator|pass criteria|\bpass\b|next operation|\bnext\b|objective|recheck|rechecked|reviewed|remaining/.test(text);
+  return returnCue && parentCue && recheckCue;
 }
 
 function assertActorOwnsWork(state: WorkState, actorId: string): void {

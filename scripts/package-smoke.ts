@@ -349,12 +349,12 @@ function findTarball(predicate: (entry: string) => boolean): string {
 function assertPackageMetadata(): void {
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
     name: "agentq",
-    version: "0.1.9",
+    version: "0.1.10",
     bin: true
   });
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
     name: "@agentq/core",
-    version: "0.1.9",
+    version: "0.1.10",
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");

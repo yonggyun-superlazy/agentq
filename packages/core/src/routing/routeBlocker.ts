@@ -10,6 +10,7 @@ import {
 import type { Message, Presence, RequiredRequest } from "../domain/types.js";
 import type { WorkspaceStore } from "../store/workspaceStore.js";
 import { writeOnceYaml } from "../store/writeOnce.js";
+import { isBookkeepingPresence } from "../state/presenceClassification.js";
 
 export type RoutingEvidence = z.infer<typeof RoutingEvidenceSchema>;
 
@@ -92,11 +93,12 @@ async function planMessageRoutes(
   validateExplicitRecipients(activePresences, explicitTo);
   addExplicitRoutes(routeMap, activePresences, explicitTo);
   if (explicitTo.length === 0) {
-    addContractRoutes(routeMap, activePresences, input.message.contracts);
-    addPathRoutes(routeMap, activePresences, input.message.paths, store.workspaceRoot);
-    addResourceRoutes(routeMap, activePresences, input.message.resources ?? []);
-    addKnownActorRoutes(routeMap, activePresences, input.threadActorIds ?? [], "thread");
-    addKnownActorRoutes(routeMap, activePresences, input.recentActorIds ?? [], "recent");
+    const routeablePresences = activePresences.filter((presence) => !isBookkeepingPresence(presence));
+    addContractRoutes(routeMap, routeablePresences, input.message.contracts);
+    addPathRoutes(routeMap, routeablePresences, input.message.paths, store.workspaceRoot);
+    addResourceRoutes(routeMap, routeablePresences, input.message.resources ?? []);
+    addKnownActorRoutes(routeMap, routeablePresences, input.threadActorIds ?? [], "thread");
+    addKnownActorRoutes(routeMap, routeablePresences, input.recentActorIds ?? [], "recent");
     removeImplicitSelfRoute(routeMap, input.message.createdBy);
   }
 
@@ -123,7 +125,8 @@ export async function findActiveResourceOwners(
   }
 
   const queriedResources = input.resources.map(normalizeResource).filter((candidate) => candidate.length > 0);
-  const activePresences = await readActivePresences(store, input.now, input.staleAfterMs);
+  const activePresences = (await readActivePresences(store, input.now, input.staleAfterMs))
+    .filter((presence) => !isBookkeepingPresence(presence));
   const matches: ActiveResourceOwnerMatch[] = [];
 
   for (const actor of activePresences) {
@@ -158,7 +161,8 @@ export async function findActivePathOwners(
     return [];
   }
 
-  const activePresences = await readActivePresences(store, input.now, input.staleAfterMs);
+  const activePresences = (await readActivePresences(store, input.now, input.staleAfterMs))
+    .filter((presence) => !isBookkeepingPresence(presence));
   const matches: ActivePathOwnerMatch[] = [];
 
   for (const actor of activePresences) {

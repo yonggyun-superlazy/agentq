@@ -63,7 +63,9 @@ export const ActorWorkPointerSchema = z
   .object({
     actorId: SafeIdSchema,
     activeWorkId: SafeIdSchema.nullable(),
-    updatedAt: NonEmptyStringSchema
+    updatedAt: NonEmptyStringSchema,
+    returnFromWorkId: SafeIdSchema.optional(),
+    returnEvidenceSince: NonEmptyStringSchema.optional()
   })
   .strict();
 
