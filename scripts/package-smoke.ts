@@ -44,6 +44,7 @@ assert(installedScopedInstructions.includes("Answer the requested artifact first
 assert(installedScopedInstructions.includes("no evidence-free judgment"), "install missed AgentQ evidence-quality instruction");
 assert(installedScopedInstructions.includes("active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
 assert(installedScopedInstructions.includes("not stop conditions"), "install missed AgentQ coordination-as-stop guard");
+assert(installedScopedInstructions.includes("Usage diagnostics must classify metrics by agent type"), "install missed AgentQ per-agent diagnostic instruction");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Codex prehook should include read and mutating tools without matching every tool");

@@ -75,6 +75,7 @@ const SCOPED_MARKER_BODY = [
   "- External build/test/generated failures should be recorded with evidence.",
   "- Broad repo routing is ignored; use precise paths/resources/contracts.",
   "- Owner overlap, broad scope, and zero-evidence work are diagnostics, not stop conditions; keep the smallest non-overlapping local step moving unless a required reply or exact same-file/resource conflict blocks it.",
+  "- Usage diagnostics must classify metrics by agent type before aggregate conclusions.",
   "- Answer the requested artifact first; no evidence-free judgment or permission-question ending for local diagnostics.",
   "- active frame is focus/order, not scope shrink; keep parent denominator and same-row delete+replacement pass criteria.",
   "- Keep internal system names, command names, ids, queue/work-stack labels out of user answers unless requested.",
