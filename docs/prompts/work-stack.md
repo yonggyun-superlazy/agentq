@@ -30,7 +30,7 @@ before opening new work.
 If there is no active work frame for the current task, run:
 
 ```bash
-agentq work start --actor <agentq-actor-id> --title "<current frame>" --path <main-path>
+agentq work start --actor <agentq-actor-id> --title "<current slice>" --objective "<parent/user objective>" --path <main-path> --next "<next local operation>"
 ```
 
 If an interrupt or child investigation is part of the current task, start it as
@@ -121,6 +121,13 @@ evidence as parent evidence or a residual frame. When deletion and replacement
 close one broken contract, keep them in the same closure row and order the
 operations inside that row; `remove-first` does not mean deletion-only scope
 unless the parent denominator is reclassified with source evidence.
+
+Each stack frame is a spec-bearing frame. Prefer `--objective`, `--slice`,
+`--denominator`, `--pass`, `--next`, and `--stop-condition` over title-only
+frames. Title-only legacy frames are obsolete context: keep them visible long
+enough to close or rebase them, but do not rely on them as proof of the parent
+objective. When a child closes, read the returned parent frame and continue from
+the parent's objective, denominator, and next operation before answering done.
 
 Before claiming done, close the active work and then run done-check:
 

@@ -5,6 +5,18 @@ const NonEmptyStringSchema = z.string().min(1);
 const NonEmptyStringArraySchema = z.array(NonEmptyStringSchema).min(1);
 export const WorkTerminalStatusSchema = z.enum(["closed", "abandoned", "superseded"]);
 
+export const WorkFrameSpecSchema = z
+  .object({
+    version: z.literal(2),
+    objective: NonEmptyStringSchema,
+    slice: NonEmptyStringSchema.optional(),
+    denominator: NonEmptyStringArraySchema.optional(),
+    passCriteria: NonEmptyStringArraySchema.optional(),
+    nextOperation: NonEmptyStringSchema.optional(),
+    stopCondition: NonEmptyStringSchema.optional()
+  })
+  .strict();
+
 const BaseWorkEventSchema = z
   .object({
     id: SafeIdSchema,
@@ -19,6 +31,7 @@ export const WorkStartedEventSchema = BaseWorkEventSchema.extend({
   parentWorkId: SafeIdSchema.nullable(),
   title: NonEmptyStringSchema,
   goal: NonEmptyStringSchema,
+  spec: WorkFrameSpecSchema.optional(),
   paths: NonEmptyStringArraySchema
 }).strict();
 
@@ -55,4 +68,5 @@ export const ActorWorkPointerSchema = z
   .strict();
 
 export type WorkEvent = z.infer<typeof WorkEventSchema>;
+export type WorkFrameSpec = z.infer<typeof WorkFrameSpecSchema>;
 export type ActorWorkPointer = z.infer<typeof ActorWorkPointerSchema>;

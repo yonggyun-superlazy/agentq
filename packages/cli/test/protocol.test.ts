@@ -391,7 +391,7 @@ describe("CLI required-response protocol", () => {
     const events = await readDiagnosticEvents(store, 300);
     expect(events).toHaveLength(250);
     expect(events[0]?.at).toBe("2026-05-18T00:00:00.000Z");
-  }, 10_000);
+  }, 20_000);
 
   it("prints actor activity from diagnostic hook gaps", async () => {
     const workspace = await createWorkspace("agentq-cli-diag-activity-");

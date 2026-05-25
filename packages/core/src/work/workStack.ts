@@ -10,12 +10,14 @@ import {
   ActorWorkPointerSchema,
   WorkEventSchema,
   type ActorWorkPointer,
-  type WorkEvent
+  type WorkEvent,
+  type WorkFrameSpec
 } from "./schema.js";
 import { renderInternalQueueMaintenance } from "../output/internalEnvelope.js";
 
 export type WorkTerminalStatus = "closed" | "abandoned" | "superseded";
 export type WorkStatus = "open" | WorkTerminalStatus;
+export type WorkSpecStatus = "current" | "legacy-obsolete";
 
 export interface WorkState {
   readonly workId: string;
@@ -23,6 +25,9 @@ export interface WorkState {
   readonly parentWorkId: string | null;
   readonly title: string;
   readonly goal: string;
+  readonly spec: WorkFrameSpec;
+  readonly specStatus: WorkSpecStatus;
+  readonly obsoleteReason: string | null;
   readonly paths: readonly string[];
   readonly touchedPaths: readonly string[];
   readonly evidence: readonly string[];
@@ -45,9 +50,19 @@ export interface StartWorkInput {
   readonly workId?: string;
   readonly title: string;
   readonly goal?: string;
+  readonly spec?: StartWorkFrameSpecInput;
   readonly paths: readonly string[];
   readonly parentWorkId?: string | null;
   readonly now: string;
+}
+
+export interface StartWorkFrameSpecInput {
+  readonly objective?: string;
+  readonly slice?: string;
+  readonly denominator?: readonly string[];
+  readonly passCriteria?: readonly string[];
+  readonly nextOperation?: string;
+  readonly stopCondition?: string;
 }
 
 export interface AppendWorkTouchInput {
@@ -85,6 +100,7 @@ export async function startWork(store: WorkspaceStore, input: StartWorkInput): P
   const existingActiveWorkId = await readActiveWorkId(store, input.actorId);
   const workId = input.workId ?? createWorkId();
   const parentWorkId = input.parentWorkId === undefined ? existingActiveWorkId : input.parentWorkId;
+  const spec = createWorkFrameSpec(input);
   const event: WorkEvent = {
     kind: "work_started",
     id: createWorkEventId(),
@@ -92,7 +108,8 @@ export async function startWork(store: WorkspaceStore, input: StartWorkInput): P
     actorId: input.actorId,
     parentWorkId,
     title: input.title,
-    goal: input.goal ?? input.title,
+    goal: input.goal ?? spec.objective,
+    spec,
     paths: normalizeNonEmpty(input.paths),
     at: input.now
   };
@@ -228,17 +245,55 @@ export function planWorkStopContinuation(result: WorkCheckResult): string {
     return "AgentQ work-check passed.";
   }
 
+  const stack = result.activeStack ?? [result.activeWork];
   return renderInternalQueueMaintenance({
     summary: `AgentQ work-check failed for ${result.actorId}.`,
     afterAction: "Record evidence or close the active work item, then return to the user's original request and answer the requested artifact first.",
     body: [
       "Do not use this work-check reason as the user-facing answer.",
       `AgentQ work-check failed for ${result.actorId}.`,
-      `Active work ${result.activeWork.workId} is still open: ${result.activeWork.title}.`,
+      `Active work ${result.activeWork.workId} is still open: ${result.activeWork.spec.objective}.`,
+      ...renderWorkStackSpecLines(stack, "Active stack"),
       `Run: agentq next --actor ${result.actorId}`,
       "It will print the exact evidence or close command before claiming done."
     ]
   });
+}
+
+export function renderWorkStackSpecLines(stack: readonly WorkState[], label = "Work stack"): string[] {
+  if (stack.length === 0) {
+    return [`${label}: none`];
+  }
+
+  return [
+    `${label}:`,
+    ...stack.flatMap((frame, index) => {
+      const marker = index === stack.length - 1 ? "current" : "parent";
+      const lines = [
+        `  ${index + 1}. ${frame.workId} [${marker}] ${frame.spec.objective}`,
+        `     spec: ${frame.specStatus}`
+      ];
+      if (frame.spec.slice !== undefined) {
+        lines.push(`     slice: ${frame.spec.slice}`);
+      }
+      if (frame.spec.denominator !== undefined) {
+        lines.push(`     denominator: ${frame.spec.denominator.join("; ")}`);
+      }
+      if (frame.spec.passCriteria !== undefined) {
+        lines.push(`     pass: ${frame.spec.passCriteria.join("; ")}`);
+      }
+      if (frame.spec.nextOperation !== undefined) {
+        lines.push(`     next: ${frame.spec.nextOperation}`);
+      }
+      if (frame.spec.stopCondition !== undefined) {
+        lines.push(`     stop: ${frame.spec.stopCondition}`);
+      }
+      if (frame.obsoleteReason !== null) {
+        lines.push(`     obsolete: ${frame.obsoleteReason}`);
+      }
+      return lines;
+    })
+  ];
 }
 
 export async function readWorkState(store: WorkspaceStore, workId: string): Promise<WorkState> {
@@ -296,6 +351,7 @@ export async function readWorkState(store: WorkspaceStore, workId: string): Prom
     parentWorkId: first.parentWorkId,
     title: first.title,
     goal: first.goal,
+    ...readWorkFrameSpec(first),
     paths: [...paths].sort(),
     touchedPaths: [...touchedPaths].sort(),
     evidence,
@@ -305,6 +361,73 @@ export async function readWorkState(store: WorkspaceStore, workId: string): Prom
     closedAt,
     closeSummary
   };
+}
+
+function createWorkFrameSpec(input: StartWorkInput): WorkFrameSpec {
+  const objective = nonEmptyOrFallback(input.spec?.objective, input.goal ?? input.title);
+  const slice = nonEmptyOptional(input.spec?.slice);
+  const denominator = normalizeOptionalNonEmpty(input.spec?.denominator);
+  const passCriteria = normalizeOptionalNonEmpty(input.spec?.passCriteria);
+  const nextOperation = nonEmptyOptional(input.spec?.nextOperation);
+  const stopCondition = nonEmptyOptional(input.spec?.stopCondition);
+  const spec: WorkFrameSpec = {
+    version: 2,
+    objective
+  };
+  if (slice !== undefined) {
+    spec.slice = slice;
+  }
+  if (denominator !== undefined) {
+    spec.denominator = denominator;
+  }
+  if (passCriteria !== undefined) {
+    spec.passCriteria = passCriteria;
+  }
+  if (nextOperation !== undefined) {
+    spec.nextOperation = nextOperation;
+  }
+  if (stopCondition !== undefined) {
+    spec.stopCondition = stopCondition;
+  }
+  return spec;
+}
+
+function readWorkFrameSpec(first: Extract<WorkEvent, { readonly kind: "work_started" }>): Pick<WorkState, "spec" | "specStatus" | "obsoleteReason"> {
+  if (first.spec !== undefined) {
+    return {
+      spec: first.spec,
+      specStatus: "current",
+      obsoleteReason: null
+    };
+  }
+
+  return {
+    spec: {
+      version: 2,
+      objective: first.goal,
+      slice: first.title,
+      stopCondition: "Rebase this legacy title/goal frame into an explicit v2 work spec before relying on it for parent-goal restoration."
+    },
+    specStatus: "legacy-obsolete",
+    obsoleteReason: "Legacy work_started event has no v2 frame spec; keep it visible only as obsolete stack context until it is closed or rebased."
+  };
+}
+
+function normalizeOptionalNonEmpty(values: readonly string[] | undefined): string[] | undefined {
+  if (values === undefined) {
+    return undefined;
+  }
+  const normalized = normalizeNonEmpty(values);
+  return normalized.length === 0 ? undefined : normalized;
+}
+
+function nonEmptyOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+function nonEmptyOrFallback(value: string | undefined, fallback: string): string {
+  return nonEmptyOptional(value) ?? fallback;
 }
 
 async function appendWorkEvent(store: WorkspaceStore, event: WorkEvent): Promise<void> {

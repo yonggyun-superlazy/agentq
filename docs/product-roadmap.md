@@ -87,6 +87,7 @@ Next:
 
 - Add a Codex-specific transcript and keep the cross-CLI inbox probe fixture current.
 - Use the A/B fixture with live Codex, Claude Code, and Copilot sessions, then record which surface produces fewer missed required replies and fewer lost return frames.
+- Dogfood missed-return-frame case, 2026-05-25: a child work item was closed after fixture/test evidence, but the parent denominator was not rechecked or briefed. Existing project rules already required parent evidence re-check and request-compliance evidence; the gap is AgentQ enforcement. Add close/done-check coverage that warns or fails when a narrow child frame closes without `parent contract`, `verified behavior`, `not verified / residual frame`, and `parent evidence rechecked` evidence. For latest user requests that ask for briefing, cause, or plan, require request-compliance evidence before close. After close, `next` should surface the just-closed parent denominator before suggesting unrelated work adoption.
 
 ### 4. Cross-CLI Dogfood
 

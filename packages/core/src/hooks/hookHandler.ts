@@ -18,7 +18,9 @@ import type { AgentKind } from "../domain/types.js";
 import {
   appendActiveWorkTouch,
   planWorkStopContinuation,
+  readActiveWorkStack,
   readActiveWorkState,
+  renderWorkStackSpecLines,
   runWorkDoneCheck
 } from "../work/workStack.js";
 import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
@@ -521,13 +523,15 @@ async function buildPreToolNudge(
   resources: readonly string[],
   now: string
 ): Promise<PreToolNudge | null> {
-  const [ownerNudge, workNudge] = await Promise.all([
+  const [ownerNudge, workNudge, stackNudge] = await Promise.all([
     buildRelatedOwnerNudge(store, actorId, paths, resources, now),
-    buildWorkAdoptionNudge(store, actorId, paths, resources)
+    buildWorkAdoptionNudge(store, actorId, paths, resources),
+    buildActiveWorkStackContext(store, actorId)
   ]);
   const nudges = [
     ownerNudge === null ? null : { kind: "owner-overlap", message: ownerNudge },
-    workNudge === null ? null : { kind: "work-adoption", message: workNudge }
+    workNudge === null ? null : { kind: "work-adoption", message: workNudge },
+    stackNudge === null ? null : { kind: "work-stack", message: stackNudge }
   ].filter((nudge): nudge is { readonly kind: string; readonly message: string } => nudge !== null);
   return nudges.length === 0
     ? null
@@ -535,6 +539,22 @@ async function buildPreToolNudge(
       message: nudges.map((nudge) => nudge.message).join("\n\n"),
       kinds: nudges.map((nudge) => nudge.kind)
     };
+}
+
+async function buildActiveWorkStackContext(store: WorkspaceStore, actorId: string): Promise<string | null> {
+  const stack = await readActiveWorkStack(store, actorId);
+  if (stack.length === 0) {
+    return null;
+  }
+
+  return renderInternalQueueMaintenance({
+    summary: "AgentQ active work stack context.",
+    afterAction: "Keep this stack as context, then resume the user's original request and answer the requested artifact first.",
+    body: [
+      "Current frame is the focus/order slice, not a boundary that can shrink the parent objective.",
+      ...renderWorkStackSpecLines(stack, "Active stack")
+    ]
+  });
 }
 
 async function buildRelatedOwnerNudge(

@@ -798,6 +798,12 @@ describe("CLI work stack", () => {
       "AW-top",
       "--title",
       "Top user request",
+      "--objective",
+      "Restore parent combat-positioning objective",
+      "--denominator",
+      "combat planning residual failures",
+      "--next",
+      "Inspect action-locked route query",
       "--path",
       "AgentQ"
     ], runtime);
@@ -810,6 +816,12 @@ describe("CLI work stack", () => {
       "AW-current",
       "--title",
       "Current interrupt",
+      "--objective",
+      "Verify U-turn child slice",
+      "--slice",
+      "U-turn chain follow regression",
+      "--pass",
+      "focused U-turn fixture passes",
       "--path",
       "AgentQ/packages/cli/src/main.ts"
     ], runtime);
@@ -828,6 +840,19 @@ describe("CLI work stack", () => {
     await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
       stdout: expect.stringContaining("AW-current [current] Current interrupt")
     });
+    const closeChild = await runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--summary",
+      "Child slice closed",
+      "--evidence",
+      "Focused U-turn fixture passed."
+    ], runtime);
+    expect(closeChild.stdout).toContain("returned to parent: AW-top");
+    expect(closeChild.stdout).toContain("objective: Restore parent combat-positioning objective");
+    expect(closeChild.stdout).toContain("next: Inspect action-locked route query");
   });
 
   it("routes non-blocking notes without gating sender or receiver done-check", async () => {
@@ -1189,6 +1214,93 @@ describe("CLI work stack", () => {
     expect(result.stderr).toContain("State is not an AgentQ command");
     expect(result.stderr).toContain(`agentq owners --path AgentQ/packages/cli/src/main.ts --actor ${sender}`);
     expect(result.stderr).toContain("Path/resource queries are owner routing");
+  });
+
+  it("accepts enter --path so a guessed singular option does not register broad scope", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-enter-path-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--path",
+      "ProjectDD/DD.Shared",
+      "--responsibility",
+      "ProjectDD owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    const actors = await runCommand(["actors"], runtime);
+    const next = await runCommand(["next", "--actor", actorId], runtime);
+
+    expect(actors.stdout).toContain("paths: ProjectDD/DD.Shared");
+    expect(next.stdout).not.toContain("broad_path");
+  });
+
+  it("accepts --paths on owners and question for path option consistency", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-paths-consistency-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const sender = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "sender",
+      "--paths",
+      "ProjectDD/DD.Shared",
+      "--responsibility",
+      "sender"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "ProjectDD",
+      "--responsibility",
+      "receiver"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    const owners = await runCommand([
+      "owners",
+      "--actor",
+      sender,
+      "--paths",
+      "ProjectDD/DD.Shared"
+    ], runtime);
+    const question = await runCommand([
+      "question",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--question",
+      "Can I edit?",
+      "--paths",
+      "ProjectDD/DD.Shared"
+    ], runtime);
+
+    expect(owners).toMatchObject({ code: 0, stderr: "" });
+    expect(owners.stdout).toContain(receiver);
+    expect(question).toMatchObject({ code: 0, stderr: "" });
+    expect(question.stdout).toContain("routed");
+  });
+
+  it("adds actor-id recovery guidance when --actor is omitted", async () => {
+    await expect(runCommand(["next"]))
+      .rejects.toThrow(/missing required option --actor.*agentq next --actor <id>/);
   });
 
   it("finds and routes owners from absolute workspace paths", async () => {

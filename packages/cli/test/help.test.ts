@@ -53,6 +53,34 @@ describe("CLI help", () => {
     expect(result.stderr).toContain("agentq owners --path ProjectDD/DD.Shared");
   });
 
+  it("suggests durable commands for common guessed command names", async () => {
+    await expect(runCommand(["list", "--help"])).resolves.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: expect.stringContaining("agentq actors")
+    });
+    await expect(runCommand(["who", "--path", "ProjectDD/DD.Shared"])).resolves.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: expect.stringContaining("agentq owners --path ProjectDD/DD.Shared")
+    });
+    await expect(runCommand(["ask", "--help"])).resolves.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: expect.stringContaining("agentq question --help")
+    });
+    await expect(runCommand(["reply", "--help"])).resolves.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: expect.stringContaining("agentq respond --help")
+    });
+    await expect(runCommand(["queue", "--help"])).resolves.toMatchObject({
+      code: 2,
+      stdout: "",
+      stderr: expect.stringContaining("agentq inbox --actor <id>")
+    });
+  });
+
   it("fails unknown commands before writing runtime state", async () => {
     await expect(runCommand(["unknown"])).resolves.toEqual({
       code: 2,

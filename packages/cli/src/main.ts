@@ -60,6 +60,7 @@ import {
   type Message,
   type Presence,
   type ResponseStatus,
+  type StartWorkFrameSpecInput,
   type WorkState,
   type WorkTerminalStatus
 } from "@agentq/core";
@@ -160,7 +161,7 @@ export function renderCommandHelp(command: CommandSpec): string {
       command.summary,
       "",
       "Usage:",
-      "  agentq work start --actor <id> --title <title> --path <path>... [--resource <resource>...]",
+      "  agentq work start --actor <id> --title <title> --path <path>... [--objective \"...\"] [--slice \"...\"] [--denominator \"...\"] [--pass \"...\"] [--next \"...\"]",
       "  agentq work status --actor <id>",
       "  agentq work touch --actor <id> --path <path>...",
       "  agentq work evidence --actor <id> --evidence \"...\"",
@@ -433,49 +434,105 @@ export function renderCommandHelp(command: CommandSpec): string {
 }
 
 function renderUnknownCommandError(command: string, argv: readonly string[]): string {
-  if (command !== "state") {
-    return `agentq: unknown command: ${command}\n`;
-  }
-
-  const normalizedArgv = argv.map((token) => token === "--paths" ? "--path" : token);
-  const args = parseArgs(normalizedArgv);
+  const args = parseArgs(argv);
   const paths = pathOptionValues(args, "path");
   const resources = optionValues(args, "resource");
   const actorId = optionValue(args, "actor");
   const staleMs = optionValue(args, "stale-ms");
   const hasOwnerQuery = paths.length > 0 || resources.length > 0;
-  const lines = [
-    "agentq: unknown command: state",
-    "",
-    "State is not an AgentQ command. Use the command that matches the question:"
-  ];
 
-  if (hasOwnerQuery) {
+  if (command === "state") {
+    const lines = [
+      "agentq: unknown command: state",
+      "",
+      "State is not an AgentQ command. Use the command that matches the question:"
+    ];
+
+    if (hasOwnerQuery) {
+      lines.push(`  ${formatSuggestedCommand([
+        "agentq",
+        "owners",
+        ...paths.flatMap((value) => ["--path", value]),
+        ...resources.flatMap((value) => ["--resource", value]),
+        ...(actorId === undefined ? [] : ["--actor", actorId]),
+        ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
+      ])}`);
+      lines.push("", "Path/resource queries are owner routing, not workspace state.");
+      return `${lines.join("\n")}\n`;
+    }
+
+    if (actorId !== undefined) {
+      lines.push(`  ${formatSuggestedCommand(["agentq", "next", "--actor", actorId])}`);
+      lines.push("", "Actor-specific recovery should start from the single next action.");
+      return `${lines.join("\n")}\n`;
+    }
+
+    lines.push(`  ${formatSuggestedCommand([
+      "agentq",
+      "status",
+      ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
+    ])}`);
+    lines.push("", "Workspace health summaries use status.");
+    return `${lines.join("\n")}\n`;
+  }
+
+  if (command === "owner" || command === "who" || command === "route") {
+    const lines = [
+      `agentq: unknown command: ${command}`,
+      "",
+      "Owner and route lookups use the owners command:"
+    ];
     lines.push(`  ${formatSuggestedCommand([
       "agentq",
       "owners",
+      ...(paths.length === 0 && resources.length === 0 ? ["--path", "<path>"] : []),
       ...paths.flatMap((value) => ["--path", value]),
       ...resources.flatMap((value) => ["--resource", value]),
-      ...(actorId === undefined ? [] : ["--actor", actorId]),
-      ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
+      ...(actorId === undefined ? [] : ["--actor", actorId])
     ])}`);
-    lines.push("", "Path/resource queries are owner routing, not workspace state.");
     return `${lines.join("\n")}\n`;
   }
 
-  if (actorId !== undefined) {
-    lines.push(`  ${formatSuggestedCommand(["agentq", "next", "--actor", actorId])}`);
-    lines.push("", "Actor-specific recovery should start from the single next action.");
-    return `${lines.join("\n")}\n`;
+  if (command === "ask") {
+    return [
+      "agentq: unknown command: ask",
+      "",
+      "Required questions use:",
+      "  agentq question --help"
+    ].join("\n") + "\n";
   }
 
-  lines.push(`  ${formatSuggestedCommand([
-    "agentq",
-    "status",
-    ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
-  ])}`);
-  lines.push("", "Workspace health summaries use status.");
-  return `${lines.join("\n")}\n`;
+  if (command === "answer" || command === "reply") {
+    return [
+      `agentq: unknown command: ${command}`,
+      "",
+      "Answers to required requests use:",
+      "  agentq respond --help"
+    ].join("\n") + "\n";
+  }
+
+  if (command === "queue" || command === "messages") {
+    return [
+      `agentq: unknown command: ${command}`,
+      "",
+      "Inbox and queue inspection use:",
+      "  agentq inbox --actor <id>",
+      "  agentq status"
+    ].join("\n") + "\n";
+  }
+
+  if (command === "list") {
+    return [
+      "agentq: unknown command: list",
+      "",
+      "Choose the list you need:",
+      "  agentq actors",
+      "  agentq status",
+      "  agentq inbox --actor <id>"
+    ].join("\n") + "\n";
+  }
+
+  return `agentq: unknown command: ${command}\n`;
 }
 
 function formatSuggestedCommand(parts: readonly string[]): string {
@@ -648,7 +705,7 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
         "Manage one explicit actor's internal work stack",
         "",
         "Usage:",
-        "  agentq work start --actor <id> --title <title> --path <path>...",
+        "  agentq work start --actor <id> --title <title> --path <path>... [--objective \"...\"] [--slice \"...\"] [--denominator \"...\"] [--pass \"...\"] [--next \"...\"]",
         "  agentq work status --actor <id>",
         "  agentq work touch --actor <id> --path <path>...",
       "  agentq work evidence --actor <id> --evidence \"...\"",
@@ -668,15 +725,31 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     assertNoUnexpectedPositionals(args, "work start", 0);
     const workId = optionValue(args, "id");
     const goal = await textOption(args, "goal", runtime, "work start");
+    const objective = await textOption(args, "objective", runtime, "work start");
+    const slice = await textOption(args, "slice", runtime, "work start");
+    const denominator = await textOptionValues(args, "denominator", runtime, "work start");
+    const passCriteria = await textOptionValues(args, "pass", runtime, "work start");
+    const nextOperation = await textOption(args, "next", runtime, "work start");
+    const stopCondition = await textOption(args, "stop-condition", runtime, "work start");
+    const specObjective = objective ?? goal;
     const activeResources = optionValues(args, "resource");
     const paths = requiredSpecificPathOptions(args, "path", "work start");
+    const title = await requiredTextOption(args, "title", runtime, "work start");
     const state = await startWork(store, {
       actorId,
-      title: await requiredTextOption(args, "title", runtime, "work start"),
+      title,
       paths,
       now: runtime.now(),
       ...(workId === undefined ? {} : { workId }),
       ...(goal === undefined ? {} : { goal }),
+      spec: workStartSpec({
+        ...(specObjective === undefined ? {} : { objective: specObjective }),
+        ...(slice === undefined ? {} : { slice }),
+        denominator,
+        passCriteria,
+        ...(nextOperation === undefined ? {} : { nextOperation }),
+        ...(stopCondition === undefined ? {} : { stopCondition })
+      }),
       ...(args.flags.has("root") ? { parentWorkId: null } : {})
     });
     await refreshActorPresence(store, {
@@ -750,9 +823,10 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       ...(status === undefined ? {} : { status }),
       now: runtime.now()
     });
+    const returnStack = await readActiveWorkStack(store, actorId);
     return {
       code: 0,
-      stdout: renderWorkState("closed", state),
+      stdout: renderWorkState("closed", state, { returnStack }),
       stderr: ""
     };
   }
@@ -947,7 +1021,7 @@ function renderNextAction(input: NextActionInput): string {
       work.evidence.length === 0
         ? "Action: record context evidence for your active work."
         : "Action: close or update your active work before claiming done.",
-      `Work: ${work.workId} - ${work.title}`,
+      `Work: ${work.workId} - ${work.spec.objective}`,
       ...renderWorkStackLines(stack, "Stack"),
       work.evidence.length === 0
         ? `Run: agentq work evidence --actor ${input.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`
@@ -967,7 +1041,7 @@ function renderNextAction(input: NextActionInput): string {
       `Paths: ${formatList(nudge.latestPaths)}`,
       nudge.latestResources.length === 0 ? "" : `Resources: ${formatList(nudge.latestResources)}`,
       "Run:",
-      `  agentq work start --actor ${input.actorId} --title "<current task>" --path ${firstPath ?? "<specific-path>"}`,
+      `  agentq work start --actor ${input.actorId} --title "<current slice>" --objective "<current objective>" --path ${firstPath ?? "<specific-path>"}`,
       "Then:",
       `  agentq next --actor ${input.actorId}`
     );
@@ -1443,6 +1517,43 @@ function queueStackUxEnabled(env: NodeJS.ProcessEnv): boolean {
   return !["0", "false", "off", "legacy"].includes(raw.trim().toLowerCase());
 }
 
+function workStartSpec(input: {
+  readonly objective?: string;
+  readonly slice?: string;
+  readonly denominator: readonly string[];
+  readonly passCriteria: readonly string[];
+  readonly nextOperation?: string;
+  readonly stopCondition?: string;
+}): StartWorkFrameSpecInput {
+  const spec: {
+    objective?: string;
+    slice?: string;
+    denominator?: readonly string[];
+    passCriteria?: readonly string[];
+    nextOperation?: string;
+    stopCondition?: string;
+  } = {};
+  if (input.objective !== undefined) {
+    spec.objective = input.objective;
+  }
+  if (input.slice !== undefined) {
+    spec.slice = input.slice;
+  }
+  if (input.denominator.length > 0) {
+    spec.denominator = input.denominator;
+  }
+  if (input.passCriteria.length > 0) {
+    spec.passCriteria = input.passCriteria;
+  }
+  if (input.nextOperation !== undefined) {
+    spec.nextOperation = input.nextOperation;
+  }
+  if (input.stopCondition !== undefined) {
+    spec.stopCondition = input.stopCondition;
+  }
+  return spec;
+}
+
 function renderResolveQueueInbox(
   actorId: string,
   openRequests: Awaited<ReturnType<typeof listInboxItems>>,
@@ -1483,7 +1594,8 @@ function renderReturnStackLines(activeStack: readonly WorkState[]): string[] {
 
   return [
     "Return stack:",
-    `  current: ${current.workId} - ${current.title}`,
+    `  current: ${current.workId} - ${current.spec.objective}`,
+    ...(current.spec.nextOperation === undefined ? [] : [`  next: ${current.spec.nextOperation}`]),
     ...renderWorkStackLines(activeStack, "  lineage")
   ];
 }
@@ -1942,13 +2054,18 @@ const GREEDY_TEXT_OPTIONS = new Set([
   "evidence-file",
   "expect",
   "goal",
+  "denominator",
   "note",
   "note-file",
+  "next",
+  "objective",
   "observed",
   "pass",
   "question",
   "question-file",
   "responsibility",
+  "slice",
+  "stop-condition",
   "summary",
   "summary-file",
   "title"
@@ -2028,6 +2145,9 @@ function assertNoUnexpectedPositionals(args: ParsedArgs, commandName: string, al
 function requiredOption(args: ParsedArgs, name: string): string {
   const value = optionValue(args, name);
   if (value === undefined) {
+    if (name === "actor") {
+      throw new Error("missing required option --actor. Use the hook-provided actor id, for example: agentq next --actor <id>");
+    }
     throw new Error(`missing required option --${name}`);
   }
 
@@ -2156,7 +2276,12 @@ function looksLikeBrokenShellText(value: string): boolean {
 }
 
 function pathOptionValues(args: ParsedArgs, name: string): string[] {
-  return optionValues(args, name)
+  const names = name === "path"
+    ? ["path", "paths"]
+    : name === "paths"
+      ? ["paths", "path"]
+      : [name];
+  return names.flatMap((candidate) => optionValues(args, candidate))
     .flatMap((value) => value.split(","))
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
@@ -3126,9 +3251,12 @@ function renderWorkStackStatus(actorId: string, stack: readonly WorkState[]): st
     `current: ${current.workId}`,
     `  status: ${current.status}`,
     `  title: ${current.title}`,
+    `  objective: ${current.spec.objective}`,
+    `  spec: ${current.specStatus}`,
     `  touched: ${current.touchedPaths.join(", ")}`,
     `  evidence: ${current.evidence.length}`
   ];
+  lines.push(...renderWorkSpecDetailLines(current, "  "));
 
   if (current.status === "open" && current.evidence.length === 0) {
     lines.push(`  next: record collaboration context now: agentq work evidence --actor ${current.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`);
@@ -3148,7 +3276,8 @@ function renderWorkStackLines(stack: readonly WorkState[], label: string): strin
     `${label}:`,
     ...stack.map((frame, index) => {
       const marker = index === stack.length - 1 ? "current" : "parent";
-      return `  ${index + 1}. ${frame.workId} [${marker}] ${frame.title} (evidence ${frame.evidence.length})`;
+      const obsolete = frame.specStatus === "legacy-obsolete" ? ", obsolete" : "";
+      return `  ${index + 1}. ${frame.workId} [${marker}] ${frame.title} -> ${frame.spec.objective} (evidence ${frame.evidence.length}${obsolete})`;
     })
   ];
 }
@@ -3162,15 +3291,22 @@ function isNotFoundError(error: unknown): boolean {
   );
 }
 
-function renderWorkState(label: string, work: WorkState): string {
+function renderWorkState(
+  label: string,
+  work: WorkState,
+  options: { readonly returnStack?: readonly WorkState[] } = {}
+): string {
   const lines = [
     `${label}: ${work.workId}`,
     `  actor: ${work.actorId}`,
     `  status: ${work.status}`,
     `  title: ${work.title}`,
+    `  objective: ${work.spec.objective}`,
+    `  spec: ${work.specStatus}`,
     `  touched: ${work.touchedPaths.join(", ")}`,
     `  evidence: ${work.evidence.length}`
   ];
+  lines.push(...renderWorkSpecDetailLines(work, "  "));
   if (work.status === "open" && work.evidence.length === 0) {
     lines.push(`  next: record collaboration context now: agentq work evidence --actor ${work.actorId} --evidence "Context: current frame; observed basis; touched paths/resources; next pass check"`);
   } else if (work.status === "open") {
@@ -3182,8 +3318,42 @@ function renderWorkState(label: string, work: WorkState): string {
   if (work.closeSummary !== null) {
     lines.push(`  summary: ${work.closeSummary}`);
   }
+  const returnStack = options.returnStack ?? [];
+  const returned = returnStack[returnStack.length - 1];
+  if (returned !== undefined) {
+    lines.push(
+      "",
+      `returned to parent: ${returned.workId}`,
+      `  objective: ${returned.spec.objective}`,
+      ...(returned.spec.nextOperation === undefined ? [] : [`  next: ${returned.spec.nextOperation}`]),
+      ...renderWorkStackLines(returnStack, "Return stack")
+    );
+  }
 
   return `${lines.join("\n")}\n`;
+}
+
+function renderWorkSpecDetailLines(work: WorkState, indent: string): string[] {
+  const lines: string[] = [];
+  if (work.spec.slice !== undefined) {
+    lines.push(`${indent}slice: ${work.spec.slice}`);
+  }
+  if (work.spec.denominator !== undefined) {
+    lines.push(`${indent}denominator: ${work.spec.denominator.join("; ")}`);
+  }
+  if (work.spec.passCriteria !== undefined) {
+    lines.push(`${indent}pass: ${work.spec.passCriteria.join("; ")}`);
+  }
+  if (work.spec.nextOperation !== undefined) {
+    lines.push(`${indent}next-operation: ${work.spec.nextOperation}`);
+  }
+  if (work.spec.stopCondition !== undefined) {
+    lines.push(`${indent}stop-condition: ${work.spec.stopCondition}`);
+  }
+  if (work.obsoleteReason !== null) {
+    lines.push(`${indent}obsolete: ${work.obsoleteReason}`);
+  }
+  return lines;
 }
 
 function renderDoctorReport(report: DoctorReport): string {

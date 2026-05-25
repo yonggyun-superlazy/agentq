@@ -68,7 +68,7 @@ const SCOPED_MARKER_BODY = [
   "- For edits, handoffs, or active work, ask for the next operation before the first edit.",
   "- Claude Code/Copilot CLI: on edit nudges, run printed next; start/refresh active work.",
   "- Let shared-work helper print exact next operations; read `docs/rules/shared-work-commands.md` only for syntax.",
-  "- Track active work with context, evidence, final evidence, and scope/done checks.",
+  "- Track active work with spec-bearing stack frames, context, evidence, final evidence, and scope/done checks.",
   "- Initial evidence: frame, basis, touched paths/resources, next pass check.",
   "- Owners route responsibility; they do not lock. Use questions for overlap and notes for context.",
   "- Required replies block completion until answered.",
@@ -80,7 +80,8 @@ const SCOPED_MARKER_BODY = [
   "- Claude Code: edit nudges require active work/evidence adoption before stopping.",
   "- Copilot CLI: report local samples separately; one small sample is advisory, not aggregate proof.",
   "- Answer the requested artifact first; no evidence-free judgment or permission-question ending for local diagnostics.",
-  "- active frame is focus/order, not scope shrink; keep parent denominator and same-row delete+replacement pass criteria.",
+  "- active frame is focus/order, not scope shrink; keep parent objective, parent denominator, next operation, and same-row delete+replacement pass criteria.",
+  "- Title-only legacy work frames are obsolete context; close or rebase them before relying on them as parent-goal evidence.",
   "- Keep internal system names, command names, ids, queue/work-stack labels out of user answers unless requested.",
   "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");

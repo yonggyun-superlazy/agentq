@@ -11,7 +11,9 @@ import {
   readActiveWorkState,
   resolveWorkspaceStore,
   runWorkDoneCheck,
-  startWork
+  startWork,
+  writeAtomicYaml,
+  writeOnceYaml
 } from "../src/index.js";
 
 describe("AgentQ work stack", () => {
@@ -72,6 +74,11 @@ describe("AgentQ work stack", () => {
       actorId,
       workId: "AW-parent",
       title: "Parent frame",
+      spec: {
+        objective: "Restore parent objective",
+        denominator: ["parent pass criteria remains after child close"],
+        nextOperation: "Continue parent after child pop"
+      },
       paths: ["AgentQ"],
       now: "2026-05-18T00:00:00.000Z"
     });
@@ -79,6 +86,11 @@ describe("AgentQ work stack", () => {
       actorId,
       workId: "AW-child",
       title: "Child frame",
+      spec: {
+        objective: "Verify child slice",
+        slice: "child regression lane",
+        passCriteria: ["child fixture passes"]
+      },
       paths: ["AgentQ/packages/core"],
       now: "2026-05-18T00:01:00.000Z"
     });
@@ -94,12 +106,49 @@ describe("AgentQ work stack", () => {
     const active = await readActiveWorkState(store, actorId);
     expect(active).toMatchObject({
       workId: "AW-parent",
-      status: "open"
+      status: "open",
+      spec: {
+        objective: "Restore parent objective",
+        nextOperation: "Continue parent after child pop"
+      }
     });
     await expect(runWorkDoneCheck(store, actorId)).resolves.toMatchObject({
       ok: false,
       activeWork: expect.objectContaining({ workId: "AW-parent" })
     });
+  });
+
+  it("keeps legacy title/goal frames visible as obsolete stack frames", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await writeOnceYaml(store.layout.workEventPath("AW-legacy", "WE-legacy"), {
+      kind: "work_started",
+      id: "WE-legacy",
+      workId: "AW-legacy",
+      actorId,
+      parentWorkId: null,
+      title: "Title-only frame",
+      goal: "Goal alias",
+      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
+      at: "2026-05-18T00:00:00.000Z"
+    });
+    await writeAtomicYaml(store.layout.actorWorkPointerPath(actorId), {
+      actorId,
+      activeWorkId: "AW-legacy",
+      updatedAt: "2026-05-18T00:00:00.000Z"
+    });
+
+    const active = await readActiveWorkState(store, actorId);
+    expect(active).toMatchObject({
+      workId: "AW-legacy",
+      specStatus: "legacy-obsolete",
+      spec: {
+        objective: "Goal alias",
+        slice: "Title-only frame"
+      }
+    });
+    expect(active?.obsoleteReason).toContain("Legacy work_started event has no v2 frame spec");
   });
 
   it("reads the active work lineage from root to current", async () => {

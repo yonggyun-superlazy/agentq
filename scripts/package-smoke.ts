@@ -43,6 +43,8 @@ assert(installedAgents.includes("agentq:begin"), "install missed AGENTS marker")
 assert(installedScopedInstructions.includes("Answer the requested artifact first"), "install missed AgentQ answer-quality instruction");
 assert(installedScopedInstructions.includes("no evidence-free judgment"), "install missed AgentQ evidence-quality instruction");
 assert(installedScopedInstructions.includes("active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
+assert(installedScopedInstructions.includes("spec-bearing stack frames"), "install missed AgentQ spec-bearing stack instruction");
+assert(installedScopedInstructions.includes("Title-only legacy work frames are obsolete context"), "install missed AgentQ legacy-frame instruction");
 assert(installedScopedInstructions.includes("not stop conditions"), "install missed AgentQ coordination-as-stop guard");
 assert(installedScopedInstructions.includes("Usage diagnostics must classify metrics by agent type"), "install missed AgentQ per-agent diagnostic instruction");
 assert(installedScopedInstructions.includes("Codex: broad session presence is bookkeeping"), "install missed AgentQ Codex diagnostic instruction");
@@ -347,12 +349,12 @@ function findTarball(predicate: (entry: string) => boolean): string {
 function assertPackageMetadata(): void {
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
     name: "agentq",
-    version: "0.1.8",
+    version: "0.1.9",
     bin: true
   });
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
     name: "@agentq/core",
-    version: "0.1.8",
+    version: "0.1.9",
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");
