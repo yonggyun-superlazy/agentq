@@ -1,6 +1,6 @@
 {
   "name": "@agentq/core",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "Core protocol primitives for AgentQ.",
   "license": "MIT",
   "type": "module",

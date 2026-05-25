@@ -432,6 +432,62 @@ export function renderCommandHelp(command: CommandSpec): string {
   ].join("\n");
 }
 
+function renderUnknownCommandError(command: string, argv: readonly string[]): string {
+  if (command !== "state") {
+    return `agentq: unknown command: ${command}\n`;
+  }
+
+  const normalizedArgv = argv.map((token) => token === "--paths" ? "--path" : token);
+  const args = parseArgs(normalizedArgv);
+  const paths = pathOptionValues(args, "path");
+  const resources = optionValues(args, "resource");
+  const actorId = optionValue(args, "actor");
+  const staleMs = optionValue(args, "stale-ms");
+  const hasOwnerQuery = paths.length > 0 || resources.length > 0;
+  const lines = [
+    "agentq: unknown command: state",
+    "",
+    "State is not an AgentQ command. Use the command that matches the question:"
+  ];
+
+  if (hasOwnerQuery) {
+    lines.push(`  ${formatSuggestedCommand([
+      "agentq",
+      "owners",
+      ...paths.flatMap((value) => ["--path", value]),
+      ...resources.flatMap((value) => ["--resource", value]),
+      ...(actorId === undefined ? [] : ["--actor", actorId]),
+      ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
+    ])}`);
+    lines.push("", "Path/resource queries are owner routing, not workspace state.");
+    return `${lines.join("\n")}\n`;
+  }
+
+  if (actorId !== undefined) {
+    lines.push(`  ${formatSuggestedCommand(["agentq", "next", "--actor", actorId])}`);
+    lines.push("", "Actor-specific recovery should start from the single next action.");
+    return `${lines.join("\n")}\n`;
+  }
+
+  lines.push(`  ${formatSuggestedCommand([
+    "agentq",
+    "status",
+    ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
+  ])}`);
+  lines.push("", "Workspace health summaries use status.");
+  return `${lines.join("\n")}\n`;
+}
+
+function formatSuggestedCommand(parts: readonly string[]): string {
+  return parts.map(formatCliToken).join(" ");
+}
+
+function formatCliToken(value: string): string {
+  return /^[A-Za-z0-9_./:@-]+$/.test(value)
+    ? value
+    : JSON.stringify(value);
+}
+
 export async function runCommand(
   argv: readonly string[],
   runtime: CommandRuntime = {
@@ -448,7 +504,7 @@ export async function runCommand(
 
   const commandSpec = COMMANDS.find((candidate) => candidate.name === command);
   if (commandSpec === undefined) {
-    return { code: 2, stdout: "", stderr: `agentq: unknown command: ${command}\n` };
+    return { code: 2, stdout: "", stderr: renderUnknownCommandError(command, argv.slice(1)) };
   }
 
   if (argv[1] === "--help" || argv[1] === "-h") {
