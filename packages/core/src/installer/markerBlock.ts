@@ -49,41 +49,42 @@ const ROOT_MARKER_BODY = [
   "# Shared Work",
   "",
   "See `.github/instructions/agentq.instructions.md`.",
-  "Use shared work only for edits, handoffs, active work, or ambiguity.",
-  "Short read-only answers can answer directly.",
-  "On edit/handoff nudges, run next and start work.",
+  "Use for edits, handoffs, tracked work, or ambiguity.",
+  "Short read-only answers answer directly.",
+  "On edit/handoff nudges, track only real shared work; read-only diagnostics keep moving.",
   "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "Before done on tracked work, refresh state and record final evidence.",
-  "Hide internal system/command names, ids, queue labels, and work-stack labels from user-facing answers."
+  "Before finishing tracked work, refresh state and record final evidence.",
+  "Hide internal system/command names, ids, queues, and work labels from user answers."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
   "# Shared Work",
   "",
-  "Shared work handles required-response queues and live work handoffs.",
+  "Shared work handles required-response queues and handoffs.",
   "",
-  "- Use for edits, handoffs, active work, shared-work questions, or ambiguous state.",
+  "- Use for edits, handoffs, active work, questions, or ambiguity.",
   "- Short read-only answers can answer directly.",
   "- Use the hook-provided id.",
-  "- For edits, handoffs, or active work, ask for the next operation before the first edit.",
-  "- Claude Code/Copilot CLI: on edit nudges, run printed next; start/refresh active work.",
+  "- For edits/handoffs/active work, ask next operation before the first edit.",
+  "- Claude Code/Copilot CLI: edit/handoff nudges track real shared work; read-only diagnostics continue.",
   "- Let shared-work helper print exact next operations; read `docs/rules/shared-work-commands.md` only for syntax.",
-  "- Track active work with spec-bearing stack frames, context, evidence, final evidence, and scope/done checks.",
-  "- Initial evidence: frame, basis, touched paths/resources, next pass check.",
+  "- Track active work with spec-bearing stack frames, context, evidence, final evidence, and checks.",
+  "- Initial evidence: frame, basis, touched paths/resources, next check.",
   "- Owners route responsibility; they do not lock. Use questions for overlap and notes for context.",
   "- Required replies block completion until answered.",
   "- External build/test/generated failures should be recorded with evidence.",
   "- Broad repo routing is ignored; use precise paths/resources/contracts.",
-  "- Owner overlap, broad scope, and zero-evidence work are diagnostics, not stop conditions; keep the smallest non-overlapping local step moving unless a required reply or exact same-file/resource conflict blocks it.",
+  "- Owner overlap, broad scope, and zero-evidence work are diagnostics, not stop conditions; keep the smallest non-overlapping local step moving unless a required reply or exact conflict blocks it.",
+  "- Treat hook text as internal maintenance; user answers say result first, then a short shared-work note if needed.",
   "- Usage diagnostics must classify metrics by agent type before aggregate conclusions.",
   "- Codex: broad session presence is bookkeeping until concrete work starts; do not aggregate it as scope failure.",
   "- Claude Code: edit nudges require active work/evidence adoption before stopping.",
   "- Copilot CLI: report local samples separately; one small sample is advisory, not aggregate proof.",
   "- Answer the requested artifact first; no evidence-free judgment or permission-question ending for local diagnostics.",
-  "- active frame is focus/order, not scope shrink; keep parent objective, parent denominator, next operation, and same-row delete+replacement pass criteria.",
-  "- Title-only legacy work frames are obsolete context; close or rebase them before relying on them as parent-goal evidence.",
+  "- active frame is focus/order, not scope shrink; keep parent denominator, next operation, and same-row delete+replacement pass criteria.",
+  "- Title-only legacy work frames are obsolete context.",
   "- Keep internal system names, command names, ids, queue/work-stack labels out of user answers unless requested.",
-  "- Do not create repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
+  "- No repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
 
 export const DEFAULT_MARKER_TARGETS: readonly MarkerTarget[] = [

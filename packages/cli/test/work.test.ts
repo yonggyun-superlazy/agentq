@@ -54,7 +54,7 @@ describe("CLI work stack", () => {
 
     await expect(runCommand(["done-check", "--actor", actorId], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining(`agentq next --actor ${actorId}`)
+      stderr: expect.stringContaining("Active shared-work item remains open")
     });
     await expect(runCommand([
       "work",
@@ -304,7 +304,7 @@ describe("CLI work stack", () => {
     ], runtime);
     await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("outbound_pending")
+      stderr: expect.stringContaining("outbound required reply: Propagation request")
     });
 
     await expect(runCommand([
@@ -379,7 +379,7 @@ describe("CLI work stack", () => {
     });
     await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("outbound_pending")
+      stderr: expect.stringContaining("outbound required reply: Stale project reference blocks build")
     });
   });
 
@@ -519,7 +519,7 @@ describe("CLI work stack", () => {
     });
     await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("outbound_pending")
+      stderr: expect.stringContaining("outbound required reply: Should status panel badges read from event payload or derived view state?")
     });
     await expect(runCommand(["inbox", "--actor", receiver], runtime)).resolves.toMatchObject({
       code: 0,

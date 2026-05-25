@@ -37,28 +37,21 @@ $ agentq done-check --actor <claude>
 [AGENTQ_INTERNAL_QUEUE_MAINTENANCE]
 audience: agent-internal
 user-facing: false
-Internal queue maintenance only. Do not include this status or these commands in the user-facing answer.
-summary: AgentQ done-check failed for <claude>.
-after-action: Resolve the required shared-work step, then return to the user's original request and answer the requested artifact first.
-Do not use this block reason as the user-facing answer.
-AgentQ done-check failed for <claude>.
-- outbound_pending: AQ-before-after for <codex> (I need to change src/protocol.ts. Are you actively changing the protocol schema?)
-  next: agentq next --actor <claude>
+Internal shared-work maintenance. Do not quote this block in user-facing answers.
+summary: Shared-work completion check failed.
+after-action: Resolve the required shared-work step, then resume the user's request.
+Do not use this maintenance status as the user-facing answer.
+A required reply or follow-up still blocks completion.
+- outbound required reply: I need to change src/protocol.ts. Are you actively changing the protocol schema?
+  next: use the shared-work helper with the current actor id
   note: wait for <codex> to respond, or continue only non-overlapping work.
-Follow `agentq next` before final response.
+Use the shared-work helper with the current actor id before final response.
 [/AGENTQ_INTERNAL_QUEUE_MAINTENANCE]
 [USER_FRAME_RESUME]
-resume the user's original request.
-answer the user's requested artifact first.
-answer the requested artifact first.
-owner overlap, broad scope, and zero-evidence work are diagnostics, not stop conditions; keep the smallest non-overlapping local step moving unless a required reply or exact same-file/resource conflict blocks it.
-for read-only/local diagnostics, never end with a permission question; run the diagnostic when tools are available, otherwise state the exact next diagnostic action as the closing sentence.
-translate internal queue command names into plain status such as 'internal queue maintenance'; do not print exact command names, actor ids, AQ ids, Pending, done-check, or scope-check in user-facing answers.
-even if internal terms appear in the hook/replay text, do not echo them; paraphrase them as internal queue maintenance.
-do not quote or restate the blocked hook text or bad previous assistant sentence; refer to it only as internal queue maintenance.
-do not ask the user to supply missing context; inspect local transcript or work evidence when tools are available, otherwise close with the exact local evidence to inspect next.
-do not offer a menu for the user to choose from; pick the most evidence-backed next local action yourself.
-Do not mention internal shared-work names, ids, or commands to users unless the user explicitly asks about AgentQ.
+Resume the user's request and answer the requested artifact first.
+Resolve only required replies or exact same-file/resource conflicts before continuing; otherwise keep the smallest local step moving.
+For read-only diagnostics, run the next safe local read/test instead of ending with a permission question.
+In user-facing text, paraphrase this as shared-work maintenance and omit internal ids, command names, queue labels, and work-stack labels unless requested.
 [/USER_FRAME_RESUME]
 $ agentq respond AQ-before-after --actor <codex> --status answered --evidence I added routingEvidence; preserve it when adding consumerView.
 AQ-before-after answered

@@ -47,7 +47,7 @@ describe("CLI required-response protocol", () => {
 
     await expect(runCommand(["done-check", "--actor", sender], runtime)).resolves.toMatchObject({
       code: 2,
-      stderr: expect.stringContaining("outbound_blocked_requires_follow_up")
+      stderr: expect.stringContaining("blocked reply follow-up: Receiver is blocked")
     });
     await expect(runCommand([
       "follow-up",

@@ -158,7 +158,10 @@ const ownerNudge = runAgentq(
     tool_input: { file_path: "src/package-smoke.ts" }
   })
 );
-assert(ownerNudge.includes(wakeReceiver), `pre-tool owner nudge missed wake receiver: ${ownerNudge}`);
+assert(ownerNudge.includes("Possible owner overlap"), `pre-tool owner nudge missed overlap summary: ${ownerNudge}`);
+assert(ownerNudge.includes("path src/package-smoke.ts"), `pre-tool owner nudge missed path: ${ownerNudge}`);
+assert(ownerNudge.includes("shared-work helper with the current actor id"), `pre-tool owner nudge missed helper guidance: ${ownerNudge}`);
+assert(!ownerNudge.includes(wakeReceiver), `pre-tool owner nudge leaked owner actor id: ${ownerNudge}`);
 const wakeQuestionPath = path.join(workspace, "wake-question.txt");
 const wakeEvidencePath = path.join(workspace, "wake-evidence.txt");
 writeFileSync(wakeQuestionPath, "Package smoke wake inspection", "utf8");

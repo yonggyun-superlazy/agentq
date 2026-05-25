@@ -61,18 +61,18 @@ export function planStopContinuation(
   }
 
   const reason = renderInternalQueueMaintenance({
-    summary: `AgentQ done-check failed for ${result.actorId}.`,
-    afterAction: "Resolve the required shared-work step, then return to the user's original request and answer the requested artifact first.",
+    summary: "Shared-work completion check failed.",
+    afterAction: "Resolve the required shared-work step, then resume the user's request.",
     body: [
-      "Do not use this block reason as the user-facing answer.",
-      `AgentQ done-check failed for ${result.actorId}.`,
+      "Do not use this maintenance status as the user-facing answer.",
+      "A required reply or follow-up still blocks completion.",
       ...result.blocking.map(
-        (item) => `- ${item.kind}: ${item.messageId} for ${item.actorId} (${item.summary})`
+        (item) => `- ${blockingKindLabel(item.kind)}: ${item.summary}`
       ),
-      ...result.blocking.flatMap((item) => doneCheckNextLines(result.actorId, item)),
+      ...result.blocking.flatMap((item) => doneCheckNextLines(item)),
       stopHookActive
-        ? "Stop hook is already active; follow `agentq next` before trying to finish again."
-        : "Follow `agentq next` before final response."
+        ? "A previous stop check is already active; resolve the shared-work step before trying to finish again."
+        : "Use the shared-work helper with the current actor id before final response."
     ]
   });
 
@@ -83,8 +83,8 @@ export function planStopContinuation(
   };
 }
 
-function doneCheckNextLines(actorId: string, item: DoneCheckBlockingItem): string[] {
-  const nextLine = `  next: agentq next --actor ${actorId}`;
+function doneCheckNextLines(item: DoneCheckBlockingItem): string[] {
+  const nextLine = "  next: use the shared-work helper with the current actor id";
 
   if (item.kind === "inbound_pending") {
     return [nextLine];
@@ -101,6 +101,16 @@ function doneCheckNextLines(actorId: string, item: DoneCheckBlockingItem): strin
     nextLine,
     `  note: the blocked reply needs follow-up or explicit acceptance.`
   ];
+}
+
+function blockingKindLabel(kind: BlockingKind): string {
+  if (kind === "inbound_pending") {
+    return "inbound required reply";
+  }
+  if (kind === "outbound_pending") {
+    return "outbound required reply";
+  }
+  return "blocked reply follow-up";
 }
 
 function blockingItemsForState(

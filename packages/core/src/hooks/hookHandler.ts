@@ -20,7 +20,7 @@ import {
   planWorkStopContinuation,
   readActiveWorkStack,
   readActiveWorkState,
-  renderWorkStackSpecLines,
+  renderWorkStackCompactLines,
   runWorkDoneCheck
 } from "../work/workStack.js";
 import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
@@ -593,11 +593,11 @@ async function buildActiveWorkStackContext(store: WorkspaceStore, actorId: strin
   }
 
   return renderInternalQueueMaintenance({
-    summary: "AgentQ active work stack context.",
-    afterAction: "Keep this stack as context, then resume the user's original request and answer the requested artifact first.",
+    summary: "Active shared-work context.",
+    afterAction: "Keep the active objective in context, then resume the user's request.",
     body: [
-      "Current frame is the focus/order slice, not a boundary that can shrink the parent objective.",
-      ...renderWorkStackSpecLines(stack, "Active stack")
+      "An active work frame exists. It is context for ordering, not a reason to shrink the user's objective.",
+      ...renderWorkStackCompactLines(stack, "Active objective")
     ]
   });
 }
@@ -625,7 +625,7 @@ async function buildRelatedOwnerNudge(
     return null;
   }
 
-  return renderRelatedOwnerNudge(actorId, pathMatches.slice(0, 3), resourceMatches.slice(0, 3));
+  return renderRelatedOwnerNudge(pathMatches.slice(0, 3), resourceMatches.slice(0, 3));
 }
 
 async function buildWorkAdoptionNudge(
@@ -652,49 +652,53 @@ async function buildWorkAdoptionNudge(
   });
   const weaknesses = presence === null ? [] : actorScopeWeaknesses(presence);
   return renderInternalQueueMaintenance({
-    summary: "AgentQ work-adoption nudge.",
-    afterAction: "Run or resolve the shared-work step if it affects the current edit/handoff, then return to the user's original request and answer the requested artifact first.",
+    summary: "Shared-work adoption nudge.",
+    afterAction: "Start or refresh active work only if this is an edit, handoff, or active-work step; otherwise continue the user's request.",
     body: [
       weaknesses.length === 0
-        ? "AgentQ sees concrete shared-work activity with no active work frame for this actor."
-        : "AgentQ sees concrete shared-work activity while this actor still has weak scope and no active work frame.",
-      ...weaknesses.map((weakness) => `- ${weakness.kind}: ${weakness.detail}`),
-      `Run: agentq next --actor ${actorId}`,
-      "It will print the smallest scope/work command before continuing.",
-      "Use the printed command to start or refresh the work frame before the next edit."
+        ? "Concrete shared-work activity has no active work frame yet."
+        : "Concrete shared-work activity has weak scope and no active work frame yet.",
+      ...weaknesses.map((weakness) => `- ${workAdoptionWeaknessLabel(weakness.kind)}: ${weakness.detail}`),
+      "Use the shared-work helper with the current actor id for exact commands when an edit/handoff needs tracking.",
+      "Short read-only diagnostics can continue without creating work."
     ]
   });
 }
 
 function renderRelatedOwnerNudge(
-  actorId: string,
   pathMatches: readonly ActivePathOwnerMatch[],
   resourceMatches: readonly ActiveResourceOwnerMatch[]
 ): string {
   const firstResource = resourceMatches[0]?.queriedResource;
   const firstPath = pathMatches[0]?.queriedPath;
-  const firstTargetActorId = resourceMatches[0]?.actor.actorId ?? pathMatches[0]?.actor.actorId ?? "<target-actor-id>";
-  const routeArg = firstResource !== undefined
-    ? `--resource ${firstResource}`
-    : `--path ${firstPath ?? "<path>"}`;
   return renderInternalQueueMaintenance({
-    summary: "AgentQ owner-overlap nudge.",
-    afterAction: "Ask only if this overlap changes the current edit/handoff; otherwise continue local work and answer the user's requested artifact first.",
+    summary: "Possible owner overlap.",
+    afterAction: "Ask only if this overlap changes the edit, handoff, or resource contract; otherwise continue the user's request.",
     body: [
-      "AgentQ related active actor detected for this tool path or resource.",
+      "A related active owner exists for this tool path or resource.",
       ...pathMatches.map(
         (match) =>
-          `- ${match.actor.actorId} owns ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
+          `- path ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
       ),
       ...resourceMatches.map(
         (match) =>
-          `- ${match.actor.actorId} uses ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
+          `- resource ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
       ),
-      "Ownership is a routing signal, not a lock. Ask the owner to classify overlap; do not wait silently from presence alone.",
-      "If this changes their contract or unblocks their work, ask before local-only resolution:",
-      `agentq question --actor ${actorId} --to ${firstTargetActorId} ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`
+      "Ownership is a routing signal, not a lock.",
+      "If this changes another actor's contract or blocks their work, route a required question with evidence; otherwise continue locally.",
+      `For exact routing, use the shared-work helper with the current actor id and ${firstResource !== undefined ? `resource ${firstResource}` : `path ${firstPath ?? "<path>"}`}.`
     ]
   });
+}
+
+function workAdoptionWeaknessLabel(kind: string): string {
+  if (kind === "broad_path") {
+    return "scope";
+  }
+  if (kind === "generic_responsibility") {
+    return "responsibility";
+  }
+  return "scope";
 }
 
 function extractActivePaths(payload: PayloadObject, cwd: string): string[] {

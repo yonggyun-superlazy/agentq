@@ -130,7 +130,7 @@ describe("done-check engine", () => {
     expect(planStopContinuation(result, true)).toMatchObject({
       decision: "block",
       loopGuard: "stop-hook-active",
-      reason: expect.stringContaining("Stop hook is already active")
+      reason: expect.stringContaining("previous stop check is already active")
     });
   });
 });

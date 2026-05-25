@@ -91,7 +91,7 @@ async function runRequiredPathHandshake(): Promise<ScenarioResult> {
   assertIncludes(question.stdout, `AQ-eval-path routed to ${ownerActor}`, "question should route to owner");
 
   const pending = await runAndRecord(["done-check", "--actor", targetActor], 2);
-  assertIncludes(pending.stderr, "outbound_pending: AQ-eval-path", "pending question should block done-check");
+  assertIncludes(pending.stderr, "outbound required reply: What protocol fields must I preserve?", "pending question should block done-check");
 
   const inbox = await runAndRecord(["inbox", "--actor", ownerActor]);
   assertIncludes(inbox.stdout, "respond: agentq respond AQ-eval-path", "owner inbox should show respond command");

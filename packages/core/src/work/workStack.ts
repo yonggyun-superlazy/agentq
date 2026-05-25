@@ -295,17 +295,35 @@ export function planWorkStopContinuation(result: WorkCheckResult): string {
 
   const stack = result.activeStack ?? [result.activeWork];
   return renderInternalQueueMaintenance({
-    summary: `AgentQ work-check failed for ${result.actorId}.`,
-    afterAction: "Record evidence or close the active work item, then return to the user's original request and answer the requested artifact first.",
+    summary: "Active shared-work item remains open.",
+    afterAction: "Record evidence or close the active work before claiming done, then resume the user's request.",
     body: [
-      "Do not use this work-check reason as the user-facing answer.",
-      `AgentQ work-check failed for ${result.actorId}.`,
-      `Active work ${result.activeWork.workId} is still open: ${result.activeWork.spec.objective}.`,
-      ...renderWorkStackSpecLines(stack, "Active stack"),
-      `Run: agentq next --actor ${result.actorId}`,
-      "It will print the exact evidence or close command before claiming done."
+      "Do not use this maintenance status as the user-facing answer.",
+      "A tracked work frame is still open.",
+      ...renderWorkStackCompactLines(stack, "Open objective"),
+      "Use the shared-work helper with the current actor id for the exact evidence or close step before claiming done."
     ]
   });
+}
+
+export function renderWorkStackCompactLines(stack: readonly WorkState[], label = "Work context"): string[] {
+  if (stack.length === 0) {
+    return [`${label}: none`];
+  }
+
+  return [
+    `${label}:`,
+    ...stack.flatMap((frame, index) => {
+      const marker = index === stack.length - 1 ? "current" : "parent";
+      const lines = [
+        `  ${index + 1}. ${marker}: ${frame.spec.objective}`
+      ];
+      if (frame.spec.nextOperation !== undefined) {
+        lines.push(`     next: ${frame.spec.nextOperation}`);
+      }
+      return lines;
+    })
+  ];
 }
 
 export function renderWorkStackSpecLines(stack: readonly WorkState[], label = "Work stack"): string[] {
