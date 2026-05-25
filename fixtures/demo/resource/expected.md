@@ -42,6 +42,7 @@ Follow `agentq next` before final response.
 resume the user's original request.
 answer the user's requested artifact first.
 answer the requested artifact first.
+owner overlap, broad scope, and zero-evidence work are diagnostics, not stop conditions; keep the smallest non-overlapping local step moving unless a required reply or exact same-file/resource conflict blocks it.
 for read-only/local diagnostics, never end with a permission question; run the diagnostic when tools are available, otherwise state the exact next diagnostic action as the closing sentence.
 translate internal queue command names into plain status such as 'internal queue maintenance'; do not print exact command names, actor ids, AQ ids, Pending, done-check, or scope-check in user-facing answers.
 even if internal terms appear in the hook/replay text, do not echo them; paraphrase them as internal queue maintenance.

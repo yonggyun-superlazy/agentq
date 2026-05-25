@@ -74,6 +74,7 @@ const SCOPED_MARKER_BODY = [
   "- Required replies block completion until answered.",
   "- External build/test/generated failures should be recorded with evidence.",
   "- Broad repo routing is ignored; use precise paths/resources/contracts.",
+  "- Owner overlap, broad scope, and zero-evidence work are diagnostics, not stop conditions; keep the smallest non-overlapping local step moving unless a required reply or exact same-file/resource conflict blocks it.",
   "- Answer the requested artifact first; no evidence-free judgment or permission-question ending for local diagnostics.",
   "- active frame is focus/order, not scope shrink; keep parent denominator and same-row delete+replacement pass criteria.",
   "- Keep internal system names, command names, ids, queue/work-stack labels out of user answers unless requested.",

@@ -45,6 +45,8 @@ describe("AgentQ hook handler", () => {
     expect(start.stdout).toContain("[USER_FRAME_RESUME]");
     expect(start.stdout).toContain("resume the user's original request");
     expect(start.stdout).toContain("answer the requested artifact first");
+    expect(start.stdout).toContain("not stop conditions");
+    expect(start.stdout).toContain("smallest non-overlapping local step");
     expect(start.stdout).toContain("never end with a permission question");
     expect(start.stdout).toContain("translate internal queue command names");
     expect(start.stdout).toContain("do not echo them");
@@ -88,6 +90,7 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(stop.stdout).reason).toContain("[USER_FRAME_RESUME]");
     expect(JSON.parse(stop.stdout).reason).toContain("Do not use this block reason as the user-facing answer");
     expect(JSON.parse(stop.stdout).reason).toContain("answer the requested artifact first");
+    expect(JSON.parse(stop.stdout).reason).toContain("not stop conditions");
     expect(JSON.parse(stop.stdout).reason).toContain("never end with a permission question");
     expect(JSON.parse(stop.stdout).reason).toContain("translate internal queue command names");
     expect(JSON.parse(stop.stdout).reason).toContain("do not echo them");
@@ -226,6 +229,7 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("Internal queue maintenance only");
     expect(output.hookSpecificOutput?.additionalContext).toContain("answer the requested artifact first");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("not stop conditions");
     expect(output.hookSpecificOutput?.additionalContext).toContain("never end with a permission question");
     expect(output.hookSpecificOutput?.additionalContext).toContain("translate internal queue command names");
     expect(output.hookSpecificOutput?.additionalContext).toContain("do not echo them");
@@ -631,6 +635,7 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("Internal queue maintenance only");
     expect(output.hookSpecificOutput?.additionalContext).toContain("answer the user's requested artifact first");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("not stop conditions");
     expect(output.hookSpecificOutput?.additionalContext).toContain("never end with a permission question");
   });
 
