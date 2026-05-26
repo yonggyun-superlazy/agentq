@@ -603,6 +603,20 @@ async function buildActiveWorkStackContext(store: WorkspaceStore, actorId: strin
     return null;
   }
 
+  const current = stack[stack.length - 1];
+  if (current !== undefined && current.evidence.length === 0) {
+    return renderInternalQueueMaintenance({
+      summary: "Active shared-work evidence required.",
+      afterAction: "Record initial context evidence for the active work, then resume the user's request.",
+      body: [
+        "An active work frame has no context evidence yet.",
+        `Events recorded on the active frame: ${current.eventCount}.`,
+        "Record evidence naming the current frame, observed basis, touched paths/resources, and next pass check before more mutating work.",
+        ...renderWorkStackCompactLines(stack, "Active objective")
+      ]
+    });
+  }
+
   return renderInternalQueueMaintenance({
     summary: "Active shared-work context.",
     afterAction: "Keep the active objective in context, then resume the user's request.",

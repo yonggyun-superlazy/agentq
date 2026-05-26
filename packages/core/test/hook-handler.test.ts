@@ -240,6 +240,100 @@ describe("AgentQ hook handler", () => {
     });
   });
 
+  it("requires initial context evidence when active work receives mutating activity", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-active-evidence-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const start = await runHookHandler({
+      adapter: "codex",
+      event: "session-start",
+      payload: {
+        session_id: "S-active-evidence",
+        cwd: workspace,
+        hook_event_name: "SessionStart"
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    const actorId = actorIdFromContext(start.stdout);
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await ensureWorkspaceStore(store);
+    await startWork(store, {
+      actorId,
+      workId: "AW-active-evidence",
+      title: "Active evidence test",
+      paths: ["src/protocol.ts"],
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    const zeroEvidence = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-active-evidence",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "apply_patch",
+        tool_input: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/protocol.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:02.000Z"
+    });
+
+    const zeroEvidenceOutput = JSON.parse(zeroEvidence.stdout) as {
+      readonly hookSpecificOutput?: { readonly additionalContext?: string };
+    };
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Active shared-work evidence required");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("no context evidence yet");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Events recorded on the active frame: 2");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Record initial context evidence");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).not.toContain("no active work frame");
+
+    await appendWorkEvidence(store, {
+      actorId,
+      evidence: ["Context: current frame; observed basis; touched src/protocol.ts; next pass check"],
+      now: "2026-05-18T00:00:03.000Z"
+    });
+    const evidenced = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-active-evidence",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "apply_patch",
+        tool_input: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/protocol.ts",
+            "@@",
+            "-new",
+            "+newer",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:04.000Z"
+    });
+    const evidencedOutput = JSON.parse(evidenced.stdout) as {
+      readonly hookSpecificOutput?: { readonly additionalContext?: string };
+    };
+    expect(evidencedOutput.hookSpecificOutput?.additionalContext).toContain("Active shared-work context");
+    expect(evidencedOutput.hookSpecificOutput?.additionalContext).not.toContain("Active shared-work evidence required");
+  });
+
   it("records read-only shell paths without ownership nudges", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-shell-paths-"));
     const workspace = path.join(tempRoot, "workspace");
