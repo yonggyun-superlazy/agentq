@@ -2,7 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { appendDiagnosticEvent, foldMessageState, resolveWorkspaceStore } from "@agentq/core";
+import { appendDiagnosticEvent, foldMessageState, resolveWorkspaceStore, startWork } from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI work stack", () => {
@@ -1140,11 +1140,16 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, operational-active 1, bookkeeping-active 1, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 0, routeable-no-work 1, broad-presence-only 1");
     expect(result.stdout).toContain("pending inbox: 1");
     expect(result.stdout).toContain("open work: 1");
+    expect(result.stdout).toContain("orphan open work: 0");
     expect(result.stdout).toContain("zero-evidence open work: 1");
+    expect(result.stdout).toContain("started-only stale work: 0");
     expect(result.stdout).toContain("Zero-evidence open work:");
     expect(result.stdout).toContain(`next: agentq next --actor ${sender}`);
-    expect(result.stdout).toContain("Open work without context evidence remains");
-    expect(result.stdout).toContain("Broad presence-only actors are session bookkeeping");
+    expect(result.stdout).toContain("Next:");
+    expect(result.stdout).toContain("Signals:");
+    expect(result.stdout).not.toContain("Recommendations:");
+    expect(result.stdout).toContain("zero-evidence-work: 1 open work item(s) have no context evidence.");
+    expect(result.stdout).toContain("bookkeeping-presence: 1 broad presence-only actor(s) are audit/session context.");
     expect(result.stdout).toContain("agentq next --actor <id>");
     expect(result.stdout).toContain("recent messages 24h: 1");
     expect(result.stdout).toContain("weak-scope actors: 1");
@@ -1152,6 +1157,49 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("Audit/bookkeeping active actors:");
     expect(result.stdout).toContain("AW-status");
     expect(result.stdout).toContain("AQ-status");
+  });
+
+  it("reports orphan active work pointers that have no actor presence", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-orphan-work-"));
+    const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };
+    const actorId = "codex@superlazy@orphan-smoke@123456";
+    const startRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const viewRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T02:00:00.000Z"
+    };
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await startWork(store, {
+      actorId,
+      workId: "AW-orphan-smoke",
+      title: "Install smoke",
+      paths: ["AgentQ/scripts/package-smoke.ts"],
+      now: startRuntime.now()
+    });
+
+    const result = await runCommand(["status"], viewRuntime);
+
+    expect(result).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(result.stdout).toContain("actors: 0");
+    expect(result.stdout).toContain("open work: 1");
+    expect(result.stdout).toContain("orphan open work: 1");
+    expect(result.stdout).toContain("stale open work: 1");
+    expect(result.stdout).toContain("zero-evidence open work: 1");
+    expect(result.stdout).toContain("started-only stale work: 1");
+    expect(result.stdout).toContain("Orphan open work:");
+    expect(result.stdout).toContain("actorPresence: missing");
+    expect(result.stdout).toContain("events: 1");
+    expect(result.stdout).toContain("Started-only stale work:");
+    expect(result.stdout).toContain("started-only-stale-work: 1 item(s) look like interrupted sessions or smoke residue.");
   });
 
   it("prompts active work after a recent concrete edit nudge", async () => {
@@ -1196,7 +1244,10 @@ describe("CLI work stack", () => {
     const status = await runCommand(["status"], runtime);
     expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
     expect(status.stdout).toContain("ignored work-adoption nudges: 1");
-    expect(status.stdout).toContain("Some actors received concrete edit work-adoption nudges");
+    expect(status.stdout).toContain("Next:");
+    expect(status.stdout).toContain("Start active work for actors that already received concrete edit nudges");
+    expect(status.stdout).toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
+    expect(status.stdout).not.toContain("Recommendations:");
   });
 
   it("finds active path owners and excludes the current actor when requested", async () => {

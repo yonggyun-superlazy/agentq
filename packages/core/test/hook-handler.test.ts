@@ -708,12 +708,28 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:02.000Z"
     });
+    const statusResult = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-meta",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "rtk node AgentQ/packages/cli/dist/main.js status"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:03.000Z"
+    });
 
     const actors = await listActorPresences(store);
     expect(actors).toHaveLength(1);
     expect(actors[0]?.activeResources).toBeUndefined();
+    expect(statusResult.stdout).toBe("{}\n");
     const events = await readDiagnosticEvents(store, 5);
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events[0]).toMatchObject({
       event: "pre-tool",
       toolName: "Bash",
@@ -725,6 +741,14 @@ describe("AgentQ hook handler", () => {
       toolName: "Bash",
       resources: [],
       ignoredCommands: ["node AgentQ/packages/cli/dist/main.js owners --resource unity:ProjectDD/DDUnity"]
+    });
+    expect(events[2]).toMatchObject({
+      event: "pre-tool",
+      toolName: "Bash",
+      toolMode: "read-only",
+      resources: [],
+      ignoredCommands: ["rtk node AgentQ/packages/cli/dist/main.js status"],
+      nudge: false
     });
   });
 

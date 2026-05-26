@@ -26,6 +26,7 @@ import {
   listInboxItems,
   listPendingInboxItems,
   listActorPresences,
+  listActiveWorkInventory,
   readDiagnosticEvents,
   planHookConfigInstall,
   planHookConfigUninstall,
@@ -62,6 +63,7 @@ import {
   type Presence,
   type ResponseStatus,
   type StartWorkFrameSpecInput,
+  type ActiveWorkInventoryItem,
   type WorkState,
   type WorkTerminalStatus
 } from "@agentq/core";
@@ -924,11 +926,17 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
       };
     })
   );
+  const detailsByActor = new Map(details.map((detail) => [detail.summary.actor.actorId, detail]));
+  const workInventory = (await listActiveWorkInventory(store)).map((item): WorkspaceStatusWorkItem => ({
+    pointer: item.pointer,
+    activeWork: item.activeWork,
+    actor: detailsByActor.get(item.pointer.actorId) ?? null
+  }));
   const recentMessages = await listRecentMessageSummaries(store, nowMs, 86_400_000);
 
   return {
     code: report.summary === "fail" ? 2 : 0,
-    stdout: renderWorkspaceStatus(report, details, staleAfterMs, recentMessages),
+    stdout: renderWorkspaceStatus(report, details, workInventory, nowMs, staleAfterMs, recentMessages),
     stderr: ""
   };
 }
@@ -2382,6 +2390,12 @@ interface WorkspaceStatusActor {
   readonly recentWorkAdoptionNudge: RecentWorkAdoptionNudge | null;
 }
 
+interface WorkspaceStatusWorkItem {
+  readonly pointer: ActiveWorkInventoryItem["pointer"];
+  readonly activeWork: WorkState | null;
+  readonly actor: WorkspaceStatusActor | null;
+}
+
 interface RecentWorkAdoptionNudge {
   readonly count: number;
   readonly latestAt: string;
@@ -2490,6 +2504,8 @@ function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): Acto
 function renderWorkspaceStatus(
   report: DoctorReport,
   details: readonly WorkspaceStatusActor[],
+  workInventory: readonly WorkspaceStatusWorkItem[],
+  nowMs: number,
   staleAfterMs: number,
   recentMessages: readonly RecentMessageSummary[]
 ): string {
@@ -2504,13 +2520,20 @@ function renderWorkspaceStatus(
     (count, detail) => count + detail.pendingInbox.length,
     0
   );
-  const openWorkCount = details.filter((detail) => detail.activeWork !== null).length;
-  const staleOpenWorkCount = details.filter(
-    (detail) => detail.activeWork !== null && detail.summary.status === "stale"
-  ).length;
-  const zeroEvidenceOpenWorkCount = details.filter(
-    (detail) => detail.activeWork !== null && detail.activeWork.evidence.length === 0
-  ).length;
+  const openWorkItems = workInventory.filter(isOpenWorkInventoryItem);
+  const orphanOpenWorkItems = openWorkItems.filter((item) => item.actor === null);
+  const staleOpenWorkItems = openWorkItems.filter((item) => isStaleOpenWorkInventoryItem(item, nowMs, staleAfterMs));
+  const zeroEvidenceOpenWorkItems = openWorkItems.filter(
+    (item) => item.activeWork !== null && item.activeWork.evidence.length === 0
+  );
+  const startedOnlyStaleOpenWorkItems = staleOpenWorkItems.filter(
+    (item) => item.activeWork !== null && item.activeWork.eventCount === 1 && item.activeWork.evidence.length === 0
+  );
+  const nullWorkPointers = workInventory.filter((item) => item.activeWork === null);
+  const orphanNullWorkPointers = nullWorkPointers.filter((item) => item.actor === null);
+  const openWorkCount = openWorkItems.length;
+  const staleOpenWorkCount = staleOpenWorkItems.length;
+  const zeroEvidenceOpenWorkCount = zeroEvidenceOpenWorkItems.length;
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
   const routeableActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length > 0).length;
@@ -2528,11 +2551,15 @@ function renderWorkspaceStatus(
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
   const operationalActorLines = operationalActiveDetails.map(renderStatusActorLine);
   const auditOnlyActorLines = auditOnlyActiveDetails.map(renderStatusActorLine);
-  const openWorkLines = details.flatMap(renderStatusWorkLines);
-  const zeroEvidenceOpenWorkLines = details.flatMap(renderZeroEvidenceWorkLines);
+  const openWorkLines = openWorkItems.map(renderStatusWorkInventoryLine);
+  const orphanOpenWorkLines = orphanOpenWorkItems.map(renderStatusWorkInventoryLine);
+  const startedOnlyStaleWorkLines = startedOnlyStaleOpenWorkItems.map(renderStatusWorkInventoryLine);
+  const zeroEvidenceOpenWorkLines = zeroEvidenceOpenWorkItems.map(renderZeroEvidenceWorkInventoryLine);
   const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
-  const recommendationLines = statusRecommendations({
+  const guidanceInput = {
     pendingInboxCount,
+    orphanOpenWorkCount: orphanOpenWorkItems.length,
+    startedOnlyStaleOpenWorkCount: startedOnlyStaleOpenWorkItems.length,
     routeableActiveCount,
     scopeRefreshNeededCount,
     broadPresenceOnlyCount,
@@ -2541,7 +2568,8 @@ function renderWorkspaceStatus(
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
     zeroEvidenceOpenWorkCount
-  });
+  };
+  const signalLines = statusSignals(guidanceInput);
 
   const lines = [
     "AgentQ status",
@@ -2561,8 +2589,12 @@ function renderWorkspaceStatus(
     `broad presence-only actors: ${broadPresenceOnlyCount}`,
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
+    `orphan open work: ${orphanOpenWorkItems.length}`,
     `stale open work: ${staleOpenWorkCount}`,
     `zero-evidence open work: ${zeroEvidenceOpenWorkCount}`,
+    `started-only stale work: ${startedOnlyStaleOpenWorkItems.length}`,
+    `null work pointers: ${nullWorkPointers.length}`,
+    `orphan null work pointers: ${orphanNullWorkPointers.length}`,
     `weak-scope actors: ${weakScopeActorCount}`,
     `recent messages 24h: ${recentMessages.length}${recentMessages[0] === undefined ? "" : ` (latest ${recentMessages[0].updatedAt})`}`
   ];
@@ -2583,23 +2615,17 @@ function renderWorkspaceStatus(
     );
   }
 
-  if (recommendationLines.length > 0) {
+  lines.push(
+    "",
+    "Next:",
+    `  ${statusNextAction(guidanceInput)}`
+  );
+
+  if (signalLines.length > 0) {
     lines.push(
       "",
-      "Next:",
-      `  ${statusNextAction({
-        pendingInboxCount,
-        scopeRefreshNeededCount,
-        ignoredWorkNudgeActorCount,
-        routeableNoWorkCount,
-        zeroEvidenceOpenWorkCount,
-        staleOpenWorkCount,
-        routeableActiveCount,
-        recentMessageCount: recentMessages.length
-      })}`,
-      "",
-      "Recommendations:",
-      ...recommendationLines.map((line) => `  ${line}`)
+      "Signals:",
+      ...signalLines.map((line) => `  ${line}`)
     );
   }
 
@@ -2613,6 +2639,12 @@ function renderWorkspaceStatus(
     "",
     "Open work:",
     ...(openWorkLines.length === 0 ? ["  none"] : openWorkLines),
+    "",
+    "Orphan open work:",
+    ...(orphanOpenWorkLines.length === 0 ? ["  none"] : orphanOpenWorkLines),
+    "",
+    "Started-only stale work:",
+    ...(startedOnlyStaleWorkLines.length === 0 ? ["  none"] : startedOnlyStaleWorkLines),
     "",
     "Zero-evidence open work:",
     ...(zeroEvidenceOpenWorkLines.length === 0 ? ["  none"] : zeroEvidenceOpenWorkLines),
@@ -2974,8 +3006,10 @@ function agentKindOrder(kind: string): number {
   return index === -1 ? order.length : index;
 }
 
-function statusRecommendations(input: {
+function statusSignals(input: {
   readonly pendingInboxCount: number;
+  readonly orphanOpenWorkCount: number;
+  readonly startedOnlyStaleOpenWorkCount: number;
   readonly routeableActiveCount: number;
   readonly scopeRefreshNeededCount: number;
   readonly broadPresenceOnlyCount: number;
@@ -2988,35 +3022,43 @@ function statusRecommendations(input: {
   const lines: string[] = [];
 
   if (input.pendingInboxCount > 0) {
-    lines.push("Required inbox items are pending; run `agentq next --actor <id>` for the affected actor.");
+    lines.push(`pending-inbox: ${input.pendingInboxCount} required item(s) still need a response.`);
+  }
+
+  if (input.orphanOpenWorkCount > 0) {
+    lines.push(`orphan-open-work: ${input.orphanOpenWorkCount} open work item(s) have no actor presence.`);
+  }
+
+  if (input.startedOnlyStaleOpenWorkCount > 0) {
+    lines.push(`started-only-stale-work: ${input.startedOnlyStaleOpenWorkCount} item(s) look like interrupted sessions or smoke residue.`);
   }
 
   if (input.ignoredWorkNudgeActorCount > 0) {
-    lines.push("Some actors received concrete edit work-adoption nudges but still have no active work; run `agentq next --actor <id>` for those actors before the next edit.");
+    lines.push(`work-adoption: ${input.ignoredWorkNudgeActorCount} actor(s) received edit nudges without active work.`);
   }
 
   if (input.scopeRefreshNeededCount > 0) {
-    lines.push("Weak-scoped actors with inbox/work/nudges need scope refresh; run `agentq next --actor <id>` for each affected actor.");
+    lines.push(`scope-refresh: ${input.scopeRefreshNeededCount} weak-scoped actor(s) also have inbox, work, or nudges.`);
   }
 
   if (input.broadPresenceOnlyCount > 0) {
-    lines.push("Broad presence-only actors are session bookkeeping; classify them by adapter and refresh scope only when concrete work starts.");
+    lines.push(`bookkeeping-presence: ${input.broadPresenceOnlyCount} broad presence-only actor(s) are audit/session context.`);
   }
 
   if (input.routeableNoWorkCount > 0) {
-    lines.push("Routeable actors without active work may miss stack/evidence benefits; run `agentq next --actor <id>` before the next edit or handoff.");
+    lines.push(`routeable-no-work: ${input.routeableNoWorkCount} routeable actor(s) have no active work frame.`);
   }
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
-    lines.push("No recent inter-agent messages; run `agentq owners --path <path>` or `agentq owners --resource <resource>` before editing shared surfaces or using exclusive tools, then ask/block when another active owner overlaps.");
+    lines.push(`coordination: ${input.routeableActiveCount} routeable active actor(s), but no recent inter-agent messages.`);
   }
 
   if (input.staleOpenWorkCount > 0) {
-    lines.push("Stale open work remains; inspect the responsible actor with `agentq next --actor <id>` and close or abandon only with ownership evidence.");
+    lines.push(`stale-open-work: ${input.staleOpenWorkCount} open work item(s) are past the stale window.`);
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
-    lines.push("Open work without context evidence remains; run `agentq next --actor <id>` before it reaches the stop gate.");
+    lines.push(`zero-evidence-work: ${input.zeroEvidenceOpenWorkCount} open work item(s) have no context evidence.`);
   }
 
   return lines;
@@ -3024,6 +3066,8 @@ function statusRecommendations(input: {
 
 function statusNextAction(input: {
   readonly pendingInboxCount: number;
+  readonly orphanOpenWorkCount: number;
+  readonly startedOnlyStaleOpenWorkCount: number;
   readonly scopeRefreshNeededCount: number;
   readonly ignoredWorkNudgeActorCount: number;
   readonly routeableNoWorkCount: number;
@@ -3034,6 +3078,14 @@ function statusNextAction(input: {
 }): string {
   if (input.pendingInboxCount > 0) {
     return "Resolve pending inbox first with `agentq next --actor <id>` for the affected actor.";
+  }
+
+  if (input.orphanOpenWorkCount > 0) {
+    return "Review orphan open work from the work inventory and close or abandon stale pointers with evidence.";
+  }
+
+  if (input.startedOnlyStaleOpenWorkCount > 0) {
+    return "Review started-only stale work and classify it as real unfinished work or smoke residue before cleanup.";
   }
 
   if (input.ignoredWorkNudgeActorCount > 0) {
@@ -3314,39 +3366,64 @@ function renderStatusActorLine(detail: WorkspaceStatusActor): string {
   ].join(" | ");
 }
 
-function renderStatusWorkLines(detail: WorkspaceStatusActor): string[] {
-  if (detail.activeWork === null) {
-    return [];
-  }
-
-  return [
-    [
-      `  ${detail.activeWork.workId}`,
-      `actor: ${detail.summary.actor.actorId}`,
-      `actorStatus: ${detail.summary.status}`,
-      `status: ${detail.activeWork.status}`,
-      `title: ${detail.activeWork.title}`,
-      `evidence: ${detail.activeWork.evidence.length}`,
-      ...(detail.activeWork.evidence.length === 0
-        ? [`next: agentq next --actor ${detail.summary.actor.actorId}`]
-        : [])
-    ].join(" | ")
-  ];
+function isOpenWorkInventoryItem(item: WorkspaceStatusWorkItem): boolean {
+  return item.activeWork?.status === "open";
 }
 
-function renderZeroEvidenceWorkLines(detail: WorkspaceStatusActor): string[] {
-  if (detail.activeWork === null || detail.activeWork.evidence.length > 0) {
-    return [];
+function isStaleOpenWorkInventoryItem(
+  item: WorkspaceStatusWorkItem,
+  nowMs: number,
+  staleAfterMs: number
+): boolean {
+  if (item.activeWork?.status !== "open") {
+    return false;
+  }
+  if (item.actor !== null) {
+    return item.actor.summary.status === "stale";
   }
 
+  const updatedAtMs = Date.parse(item.activeWork.updatedAt);
+  return Number.isFinite(nowMs) &&
+    Number.isFinite(updatedAtMs) &&
+    Math.max(0, nowMs - updatedAtMs) > staleAfterMs;
+}
+
+function renderStatusWorkInventoryLine(item: WorkspaceStatusWorkItem): string {
+  const work = item.activeWork;
   return [
-    [
-      `  ${detail.activeWork.workId}`,
-      `actor: ${detail.summary.actor.actorId}`,
-      `title: ${detail.activeWork.title}`,
-      `next: agentq next --actor ${detail.summary.actor.actorId}`
-    ].join(" | ")
-  ];
+    `  ${work?.workId ?? "(no active work)"}`,
+    `actor: ${item.pointer.actorId}`,
+    `actorPresence: ${item.actor === null ? "missing" : item.actor.summary.status}`,
+    `pointerUpdated: ${item.pointer.updatedAt}`,
+    ...(work === null
+      ? [`pointer: ${item.pointer.activeWorkId === null ? "null" : item.pointer.activeWorkId}`]
+      : [
+        `status: ${work.status}`,
+        `title: ${work.title}`,
+        `events: ${work.eventCount}`,
+        `evidence: ${work.evidence.length}`
+      ]),
+    ...(work !== null && work.evidence.length === 0 && item.actor !== null
+      ? [`next: agentq next --actor ${item.pointer.actorId}`]
+      : [])
+  ].join(" | ");
+}
+
+function renderZeroEvidenceWorkInventoryLine(item: WorkspaceStatusWorkItem): string {
+  const work = item.activeWork;
+  return [
+    `  ${work?.workId ?? item.pointer.activeWorkId ?? "(null)"}`,
+    `actor: ${item.pointer.actorId}`,
+    `actorPresence: ${item.actor === null ? "missing" : item.actor.summary.status}`,
+    ...(work === null
+      ? ["pointer: null"]
+      : [
+        `title: ${work.title}`,
+        `events: ${work.eventCount}`,
+        `updated: ${work.updatedAt}`
+      ]),
+    ...(item.actor === null ? ["next: inspect or abandon stale work pointer with evidence"] : [`next: agentq next --actor ${item.pointer.actorId}`])
+  ].join(" | ");
 }
 
 function renderStatusPendingInboxLines(detail: WorkspaceStatusActor): string[] {

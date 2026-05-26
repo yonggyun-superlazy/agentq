@@ -31,11 +31,17 @@ export interface WorkState {
   readonly paths: readonly string[];
   readonly touchedPaths: readonly string[];
   readonly evidence: readonly string[];
+  readonly eventCount: number;
   readonly status: WorkStatus;
   readonly startedAt: string;
   readonly updatedAt: string;
   readonly closedAt: string | null;
   readonly closeSummary: string | null;
+}
+
+export interface ActiveWorkInventoryItem {
+  readonly pointer: ActorWorkPointer;
+  readonly activeWork: WorkState | null;
 }
 
 export interface WorkCheckResult {
@@ -230,6 +236,47 @@ export async function readActiveWorkState(
   return workId === null ? null : await readWorkState(store, workId);
 }
 
+export async function listActiveWorkPointers(store: WorkspaceStore): Promise<readonly ActorWorkPointer[]> {
+  const entries = await readdir(store.layout.workActorsDir, { withFileTypes: true }).catch((error: unknown) => {
+    if (isNotFoundError(error)) {
+      return [];
+    }
+
+    throw error;
+  });
+
+  const pointers = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => parseYamlWithSchema(
+        ActorWorkPointerSchema,
+        await readFile(store.layout.actorWorkPointerPath(entry.name), "utf8")
+      ))
+  );
+
+  return pointers.sort((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt) ||
+    left.actorId.localeCompare(right.actorId)
+  );
+}
+
+export async function listActiveWorkInventory(store: WorkspaceStore): Promise<readonly ActiveWorkInventoryItem[]> {
+  const pointers = await listActiveWorkPointers(store);
+  const inventory = await Promise.all(
+    pointers.map(async (pointer): Promise<ActiveWorkInventoryItem> => ({
+      pointer,
+      activeWork: pointer.activeWorkId === null ? null : await readWorkState(store, pointer.activeWorkId)
+    }))
+  );
+
+  return inventory.sort((left, right) => {
+    const leftUpdatedAt = left.activeWork?.updatedAt ?? left.pointer.updatedAt;
+    const rightUpdatedAt = right.activeWork?.updatedAt ?? right.pointer.updatedAt;
+    return rightUpdatedAt.localeCompare(leftUpdatedAt) ||
+      left.pointer.actorId.localeCompare(right.pointer.actorId);
+  });
+}
+
 export async function readActiveWorkStack(
   store: WorkspaceStore,
   actorId: string
@@ -421,6 +468,7 @@ export async function readWorkState(store: WorkspaceStore, workId: string): Prom
     paths: [...paths].sort(),
     touchedPaths: [...touchedPaths].sort(),
     evidence,
+    eventCount: events.length,
     status,
     startedAt: first.at,
     updatedAt,
