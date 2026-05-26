@@ -236,6 +236,25 @@ export async function readActiveWorkState(
   return workId === null ? null : await readWorkState(store, workId);
 }
 
+export async function clearTerminalActiveWorkPointer(
+  store: WorkspaceStore,
+  actorId: string,
+  now: string
+): Promise<WorkState | null> {
+  const pointer = await readActiveWorkPointer(store, actorId);
+  if (pointer?.activeWorkId === undefined || pointer.activeWorkId === null) {
+    return null;
+  }
+
+  const activeWork = await readWorkState(store, pointer.activeWorkId);
+  if (activeWork.status === "open") {
+    return null;
+  }
+
+  await writeActivePointer(store, actorId, null, now);
+  return activeWork;
+}
+
 export async function listActiveWorkPointers(store: WorkspaceStore): Promise<readonly ActorWorkPointer[]> {
   const entries = await readdir(store.layout.workActorsDir, { withFileTypes: true }).catch((error: unknown) => {
     if (isNotFoundError(error)) {

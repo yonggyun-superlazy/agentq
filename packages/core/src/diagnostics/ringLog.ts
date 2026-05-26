@@ -18,6 +18,7 @@ export const DiagnosticEventSchema = z
     ignoredCommands: z.array(z.string()).optional(),
     nudge: z.boolean().optional(),
     nudgeKinds: z.array(z.string().min(1)).optional(),
+    decision: z.enum(["allow", "block", "context"]).optional(),
     note: z.string().min(1).optional()
   })
   .strict();

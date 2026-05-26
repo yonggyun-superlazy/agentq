@@ -10,7 +10,7 @@ import {
 import type { Message, Presence, RequiredRequest } from "../domain/types.js";
 import type { WorkspaceStore } from "../store/workspaceStore.js";
 import { writeOnceYaml } from "../store/writeOnce.js";
-import { isBookkeepingPresence } from "../state/presenceClassification.js";
+import { isBookkeepingPresence, isNoisyPresencePath } from "../state/presenceClassification.js";
 
 export type RoutingEvidence = z.infer<typeof RoutingEvidenceSchema>;
 
@@ -170,7 +170,7 @@ export async function findActivePathOwners(
       continue;
     }
 
-    for (const activePath of expandPathCandidates(actor.activePaths)) {
+    for (const activePath of expandPathCandidates(actor.activePaths).filter((candidate) => !isNoisyPresencePath(candidate))) {
       for (const queriedPath of queriedPaths) {
         if (pathPatternsOverlap(activePath, queriedPath, store.workspaceRoot)) {
           matches.push({ actor, activePath, queriedPath });
@@ -355,7 +355,7 @@ function addPathRoutes(
 ): void {
   const queriedPaths = expandPathCandidates(messagePaths);
   for (const presence of presences) {
-    for (const activePath of expandPathCandidates(presence.activePaths)) {
+    for (const activePath of expandPathCandidates(presence.activePaths).filter((candidate) => !isNoisyPresencePath(candidate))) {
       if (queriedPaths.some((messagePath) => pathPatternOverlaps(activePath, messagePath, workspaceRoot))) {
         addEvidence(routeMap, presence.actorId, {
           kind: "path",

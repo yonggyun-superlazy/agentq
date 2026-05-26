@@ -239,7 +239,8 @@ describe("AgentQ hook handler", () => {
       paths: ["src/protocol.ts"],
       toolMode: "mutating",
       nudge: true,
-      nudgeKinds: ["work-adoption"]
+      nudgeKinds: ["work-adoption"],
+      decision: "block"
     });
   });
 
@@ -375,6 +376,74 @@ describe("AgentQ hook handler", () => {
       nudge: false
     });
     expect(events[0]?.nudgeKinds).toBeUndefined();
+  });
+
+  it("allows standalone AgentQ control commands to bootstrap active work", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-control-command-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "AgentQ/packages/cli/src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-control-command",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "rtk agentq work start --actor codex@workspace@session --title Bootstrap --path AgentQ/packages/cli/src/main.ts"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).not.toMatchObject({ decision: "block" });
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      toolName: "Bash",
+      toolMode: "read-only",
+      ignoredCommands: [
+        "rtk agentq work start --actor codex@workspace@session --title Bootstrap --path AgentQ/packages/cli/src/main.ts"
+      ],
+      nudge: false,
+      decision: "allow"
+    });
+  });
+
+  it("still blocks AgentQ control commands mixed with workspace mutation", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-control-command-mixed-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "AgentQ/packages/cli/src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-control-command-mixed",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "rtk agentq work start --actor codex@workspace@session --title Bootstrap --path AgentQ/packages/cli/src/main.ts; Set-Content -Path AgentQ/packages/cli/src/main.ts -Value changed"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      readonly decision?: string;
+      readonly reason?: string;
+    };
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("no active work frame");
   });
 
   it("normalizes punctuated file paths and rejects conceptual slash tokens", async () => {

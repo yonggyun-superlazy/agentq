@@ -121,6 +121,11 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     const preToolNudge = mutatingTool
       ? await buildPreToolNudge(store, actorId, hookPaths, hookResources, options.now)
       : null;
+    const preToolDecision = preToolNudge?.kinds.includes("work-adoption") === true
+      ? "block"
+      : preToolNudge === null
+        ? "allow"
+        : "context";
     await writeHookDiagnostic(store, {
       actorId,
       adapter: options.adapter,
@@ -133,6 +138,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       ignoredCommands: resourceInference.ignoredCommands,
       nudge: preToolNudge !== null,
       nudgeKinds: preToolNudge?.kinds ?? [],
+      decision: preToolDecision,
       at: options.now
     });
     if (preToolNudge?.kinds.includes("work-adoption") === true) {
@@ -512,7 +518,12 @@ function shouldNudgeForTool(payload: PayloadObject): boolean {
     return true;
   }
 
-  return ![...commands].every(isReadOnlyShellCommand);
+  const commandList = [...commands];
+  if (commandList.every(isStandaloneAgentQControlCommand)) {
+    return false;
+  }
+
+  return !commandList.every(isReadOnlyShellCommand);
 }
 
 function isReadOnlyShellCommand(command: string): boolean {
@@ -538,6 +549,17 @@ function isReadOnlyAgentQMetaCommand(command: string): boolean {
     new RegExp(`(^|[\\s"';&|])(?:node(?:\\.exe)?|tsx(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?)\\s+[^\\s"';&|]*agentq[^\\s"';&|]*/packages/cli/(?:dist/main\\.js|src/main\\.ts)\\s+(${readOnlySubcommands})\\b`, "i").test(normalizedCommand);
 }
 
+function isStandaloneAgentQControlCommand(command: string): boolean {
+  const normalizedCommand = command.replace(/\\/g, "/").replace(/\s+/g, " ").trim();
+  if (normalizedCommand.length === 0 || /(?:&&|\|\||[;|])/.test(normalizedCommand)) {
+    return false;
+  }
+
+  const controlSubcommands = "accept-blocked|actors|block|diag|doctor|done-check|enter|follow-up|inbox|next|note|owners|question|respond|scope-check|status|supersede|wake|work";
+  return new RegExp(`(^|[\\s"'])agentq(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?\\s+(${controlSubcommands})\\b`, "i").test(normalizedCommand) ||
+    new RegExp(`(^|[\\s"'])(?:node(?:\\.exe)?|tsx(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?)\\s+[^\\s"']*agentq[^\\s"']*/packages/cli/(?:dist/main\\.js|src/main\\.ts)\\s+(${controlSubcommands})\\b`, "i").test(normalizedCommand);
+}
+
 async function writeHookDiagnostic(
   store: WorkspaceStore,
   input: {
@@ -552,6 +574,7 @@ async function writeHookDiagnostic(
     readonly ignoredCommands: readonly string[];
     readonly nudge?: boolean;
     readonly nudgeKinds?: readonly string[];
+    readonly decision?: "allow" | "block" | "context";
     readonly at: string;
   }
 ): Promise<void> {
@@ -570,6 +593,7 @@ async function writeHookDiagnostic(
     ...(input.nudgeKinds === undefined || input.nudgeKinds.length === 0
       ? {}
       : { nudgeKinds: [...input.nudgeKinds] }),
+    ...(input.decision === undefined ? {} : { decision: input.decision }),
     at: input.at
   });
 }

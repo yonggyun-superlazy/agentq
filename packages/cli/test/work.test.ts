@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   appendDiagnosticEvent,
   appendWorkEvidence,
+  closeWork,
   foldMessageState,
   readActiveWorkState,
   resolveWorkspaceStore,
-  startWork
+  startWork,
+  writeAtomicYaml
 } from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
@@ -1209,6 +1211,67 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("started-only-stale-work: 1 item(s) look like interrupted sessions or smoke residue.");
   });
 
+  it("reports terminal active work pointers without counting them as open active work", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-terminal-pointer-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "terminal-pointer",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ status accounting"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await startWork(store, {
+      actorId,
+      workId: "AW-terminal-pointer",
+      title: "Closed pointer residue",
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId,
+      evidence: ["Terminal pointer fixture has close evidence."],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+    await closeWork(store, {
+      actorId,
+      workId: "AW-terminal-pointer",
+      summary: "Closed but legacy pointer restored for status accounting.",
+      evidence: [],
+      now: "2026-05-18T00:02:00.000Z"
+    });
+    await writeAtomicYaml(store.layout.actorWorkPointerPath(actorId), {
+      actorId,
+      activeWorkId: "AW-terminal-pointer",
+      updatedAt: "2026-05-18T00:03:00.000Z"
+    });
+
+    const result = await runCommand(["status"], runtime);
+
+    expect(result).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(result.stdout).toContain("active work actors: 0");
+    expect(result.stdout).toContain("open work: 0");
+    expect(result.stdout).toContain("terminal active work pointers: 1");
+    expect(result.stdout).toContain("Terminal active work pointers:");
+    expect(result.stdout).toContain("status: closed");
+
+    const cleanup = await runCommand(["work", "cleanup-stale", "--yes"], runtime);
+    expect(cleanup.stdout).toContain("terminal pointers cleared: 1");
+    expect(await readActiveWorkState(store, actorId)).toBeNull();
+  });
+
   it("previews and abandons only started-only stale work residue", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-cleanup-stale-"));
     const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };
@@ -1342,11 +1405,153 @@ describe("CLI work stack", () => {
 
     const status = await runCommand(["status"], runtime);
     expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
+    expect(status.stdout).toContain("blocked work-adoption attempts: 0");
     expect(status.stdout).toContain("ignored work-adoption nudges: 1");
     expect(status.stdout).toContain("Next:");
     expect(status.stdout).toContain("Start active work for actors that already received concrete edit nudges");
     expect(status.stdout).toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
     expect(status.stdout).not.toContain("Recommendations:");
+  });
+
+  it("does not label blocked work-adoption attempts as ignored", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-next-blocked-nudge-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "blocked-nudge",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ CLI blocked adoption diagnostics"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:09:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "apply_patch",
+      toolMode: "mutating",
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      nudge: true,
+      nudgeKinds: ["work-adoption"],
+      decision: "block"
+    });
+
+    const status = await runCommand(["status"], runtime);
+
+    expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
+    expect(status.stdout).toContain("blocked work-adoption attempts: 1");
+    expect(status.stdout).toContain("ignored work-adoption nudges: 0");
+    expect(status.stdout).toContain("work-adoption-blocked: 1 actor(s) had mutating attempts blocked until active work exists.");
+    expect(status.stdout).not.toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
+  });
+
+  it("does not label a completed post-nudge work adoption as ignored", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-resolved-nudge-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "resolved-nudge",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ resolved adoption diagnostics"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:01:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "apply_patch",
+      toolMode: "mutating",
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      nudge: true,
+      nudgeKinds: ["work-adoption"]
+    });
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-resolved-nudge",
+      "--title",
+      "Resolved adoption",
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], { ...runtime, now: () => "2026-05-18T00:02:00.000Z" });
+    await runCommand([
+      "work",
+      "evidence",
+      "--actor",
+      actorId,
+      "--evidence",
+      "Context recorded after adoption nudge."
+    ], { ...runtime, now: () => "2026-05-18T00:03:00.000Z" });
+    await runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--summary",
+      "Resolved adoption closed."
+    ], { ...runtime, now: () => "2026-05-18T00:04:00.000Z" });
+
+    const status = await runCommand(["status"], runtime);
+
+    expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
+    expect(status.stdout).toContain("blocked work-adoption attempts: 0");
+    expect(status.stdout).toContain("ignored work-adoption nudges: 0");
+    expect(status.stdout).not.toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
+  });
+
+  it("classifies legacy noisy paths as scope refresh instead of routeable no-work", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-noisy-path-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "noisy-path",
+      "--paths",
+      "+AGENTS.md",
+      "--paths",
+      "Shared/.gitignore\"",
+      "--paths",
+      "Shared/.codegraph/codegraph.db).Length",
+      "--responsibility",
+      "Loop snapshot eval"
+    ], runtime);
+
+    const status = await runCommand(["status"], runtime);
+
+    expect(status.stdout).toContain("routeable active actors: 0");
+    expect(status.stdout).toContain("scope-refresh-needed actors: 1");
+    expect(status.stdout).toContain("legacy/noisy path actors: 1");
+    expect(status.stdout).toContain("routeable no-work actors: 0");
+    expect(status.stdout).toContain("scope-refresh: 1 weak-scoped actor(s) also have inbox, work, nudges, or noisy paths.");
+    expect(status.stdout).toContain("noisy_path");
   });
 
   it("finds active path owners and excludes the current actor when requested", async () => {

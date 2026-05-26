@@ -10,6 +10,7 @@ import {
   applyHookConfigUninstall,
   appendActiveWorkTouch,
   appendWorkEvidence,
+  clearTerminalActiveWorkPointer,
   createOrRefreshSessionBinding,
   createRoutedBlocker,
   createRoutedNote,
@@ -46,6 +47,7 @@ import {
   startWork,
   actorScopeWeaknesses,
   isBookkeepingPresence,
+  isNoisyPresencePath,
   type DoctorReport,
   type HookAdapter,
   type HookConfigPlan,
@@ -873,8 +875,10 @@ async function workCleanupStaleCommand(args: ParsedArgs, runtime: CommandRuntime
   const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs);
   const workInventory = await readWorkspaceStatusWorkInventory(store, details);
   const candidates = collectStartedOnlyStaleWorkCleanupCandidates(workInventory, nowMs, staleAfterMs);
+  const terminalPointers = workInventory.filter(isTerminalActiveWorkPointerItem);
 
   const abandoned: WorkState[] = [];
+  const terminalCleared: WorkState[] = [];
   if (mutate) {
     for (const candidate of candidates) {
       const work = candidate.item.activeWork;
@@ -890,6 +894,12 @@ async function workCleanupStaleCommand(args: ParsedArgs, runtime: CommandRuntime
         now
       }));
     }
+    for (const item of terminalPointers) {
+      const cleared = await clearTerminalActiveWorkPointer(store, item.pointer.actorId, now);
+      if (cleared !== null) {
+        terminalCleared.push(cleared);
+      }
+    }
   }
 
   return {
@@ -898,7 +908,9 @@ async function workCleanupStaleCommand(args: ParsedArgs, runtime: CommandRuntime
       mutate,
       staleAfterMs,
       candidates,
-      abandonedCount: abandoned.length
+      terminalPointerCount: terminalPointers.length,
+      abandonedCount: abandoned.length,
+      terminalClearedCount: terminalCleared.length
     }),
     stderr: ""
   };
@@ -2496,12 +2508,17 @@ interface StaleWorkCleanupRenderInput {
   readonly mutate: boolean;
   readonly staleAfterMs: number;
   readonly candidates: readonly StaleWorkCleanupCandidate[];
+  readonly terminalPointerCount: number;
   readonly abandonedCount: number;
+  readonly terminalClearedCount: number;
 }
 
 interface RecentWorkAdoptionNudge {
   readonly count: number;
+  readonly blockedCount: number;
+  readonly unblockedCount: number;
   readonly latestAt: string;
+  readonly latestDecision: DiagnosticEvent["decision"] | null;
   readonly latestPaths: readonly string[];
   readonly latestResources: readonly string[];
 }
@@ -2547,6 +2564,7 @@ interface DiagnosticActivityRow {
   readonly adoption: string;
   readonly nudgeCount: number;
   readonly workAdoptionNudgeCount: number;
+  readonly blockedWorkAdoptionNudgeCount: number;
   readonly ownerOverlapNudgeCount: number;
   readonly stackContextNudgeCount: number;
   readonly readOnlyEventCount: number;
@@ -2573,6 +2591,7 @@ interface DiagnosticAgentActivityRow {
   readonly nudgeCount: number;
   readonly readOnlyNudgeCount: number;
   readonly workAdoptionNudgeCount: number;
+  readonly blockedWorkAdoptionNudgeCount: number;
   readonly ownerOverlapNudgeCount: number;
   readonly stackContextNudgeCount: number;
   readonly pathfulEventCount: number;
@@ -2615,6 +2634,7 @@ function renderWorkspaceStatus(
   const activeDetails = details.filter((detail) => detail.summary.status === "active");
   const auditOnlyActiveDetails = activeDetails.filter(isAuditOnlyActor);
   const operationalActiveDetails = activeDetails.filter((detail) => !isAuditOnlyActor(detail));
+  const workItemsByActor = new Map(workInventory.map((item) => [item.pointer.actorId, item]));
   const activeCount = activeDetails.length;
   const operationalActiveCount = operationalActiveDetails.length;
   const auditOnlyActiveCount = auditOnlyActiveDetails.length;
@@ -2624,6 +2644,7 @@ function renderWorkspaceStatus(
     0
   );
   const openWorkItems = workInventory.filter(isOpenWorkInventoryItem);
+  const terminalActiveWorkItems = workInventory.filter(isTerminalActiveWorkPointerItem);
   const orphanOpenWorkItems = openWorkItems.filter((item) => item.actor === null);
   const staleOpenWorkItems = openWorkItems.filter((item) => isStaleOpenWorkInventoryItem(item, nowMs, staleAfterMs));
   const zeroEvidenceOpenWorkItems = openWorkItems.filter(
@@ -2641,20 +2662,32 @@ function renderWorkspaceStatus(
   const routeableActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length > 0).length;
   const scopeRefreshNeededCount = operationalActiveDetails.filter(isScopeRefreshNeededActor).length;
-  const activeWorkActorCount = activeDetails.filter((detail) => detail.activeWork !== null).length;
+  const noisyPathActorCount = activeDetails.filter(hasNoisyPresencePath).length;
+  const activeWorkActorCount = activeDetails.filter(hasOpenActiveWork).length;
   const routeableNoWorkCount = operationalActiveDetails.filter(isRouteableNoWorkActor).length;
+  const routeableIdleNoWorkCount = operationalActiveDetails.filter(isRouteableIdleNoWorkActor).length;
   const broadPresenceOnlyCount = activeDetails.filter(isBroadPresenceOnlyActor).length;
   const recentWorkNudgeActorCount = operationalActiveDetails.filter(
     (detail) => detail.recentWorkAdoptionNudge !== null
   ).length;
+  const blockedWorkNudgeActorCount = operationalActiveDetails.filter(
+    (detail) =>
+      !hasOpenActiveWork(detail) &&
+      !hasRecentWorkAdoptionResolution(detail, workItemsByActor) &&
+      (detail.recentWorkAdoptionNudge?.blockedCount ?? 0) > 0
+  ).length;
   const ignoredWorkNudgeActorCount = operationalActiveDetails.filter(
-    (detail) => detail.activeWork === null && detail.recentWorkAdoptionNudge !== null
+    (detail) =>
+      !hasOpenActiveWork(detail) &&
+      !hasRecentWorkAdoptionResolution(detail, workItemsByActor) &&
+      (detail.recentWorkAdoptionNudge?.unblockedCount ?? 0) > 0
   ).length;
   const kindBreakdown = buildKindBreakdown(details);
   const doctorIssues = report.checks.filter((check) => check.level !== "ok");
   const operationalActorLines = operationalActiveDetails.map(renderStatusActorLine);
   const auditOnlyActorLines = auditOnlyActiveDetails.map(renderStatusActorLine);
   const openWorkLines = openWorkItems.map(renderStatusWorkInventoryLine);
+  const terminalActiveWorkLines = terminalActiveWorkItems.map(renderStatusWorkInventoryLine);
   const orphanOpenWorkLines = orphanOpenWorkItems.map(renderStatusWorkInventoryLine);
   const startedOnlyStaleWorkLines = startedOnlyStaleOpenWorkItems.map(renderStatusWorkInventoryLine);
   const zeroEvidenceOpenWorkLines = zeroEvidenceOpenWorkItems.map(renderZeroEvidenceWorkInventoryLine);
@@ -2667,10 +2700,13 @@ function renderWorkspaceStatus(
     scopeRefreshNeededCount,
     broadPresenceOnlyCount,
     routeableNoWorkCount,
+    routeableIdleNoWorkCount,
+    blockedWorkNudgeActorCount,
     ignoredWorkNudgeActorCount,
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
-    zeroEvidenceOpenWorkCount
+    zeroEvidenceOpenWorkCount,
+    terminalActiveWorkPointerCount: terminalActiveWorkItems.length
   };
   const signalLines = statusSignals(guidanceInput);
 
@@ -2687,15 +2723,19 @@ function renderWorkspaceStatus(
     `scope-refresh-needed actors: ${scopeRefreshNeededCount}`,
     `active work actors: ${activeWorkActorCount}`,
     `routeable no-work actors: ${routeableNoWorkCount}`,
+    `routeable idle actors: ${routeableIdleNoWorkCount}`,
     `recent work-adoption nudged actors: ${recentWorkNudgeActorCount}`,
+    `blocked work-adoption attempts: ${blockedWorkNudgeActorCount}`,
     `ignored work-adoption nudges: ${ignoredWorkNudgeActorCount}`,
     `broad presence-only actors: ${broadPresenceOnlyCount}`,
+    `legacy/noisy path actors: ${noisyPathActorCount}`,
     `pending inbox: ${pendingInboxCount}`,
     `open work: ${openWorkCount}`,
     `orphan open work: ${orphanOpenWorkItems.length}`,
     `stale open work: ${staleOpenWorkCount}`,
     `zero-evidence open work: ${zeroEvidenceOpenWorkCount}`,
     `started-only stale work: ${startedOnlyStaleOpenWorkItems.length}`,
+    `terminal active work pointers: ${terminalActiveWorkItems.length}`,
     `null work pointers: ${nullWorkPointers.length}`,
     `orphan null work pointers: ${orphanNullWorkPointers.length}`,
     `weak-scope actors: ${weakScopeActorCount}`,
@@ -2743,6 +2783,9 @@ function renderWorkspaceStatus(
     "Open work:",
     ...(openWorkLines.length === 0 ? ["  none"] : openWorkLines),
     "",
+    "Terminal active work pointers:",
+    ...(terminalActiveWorkLines.length === 0 ? ["  none"] : terminalActiveWorkLines),
+    "",
     "Orphan open work:",
     ...(orphanOpenWorkLines.length === 0 ? ["  none"] : orphanOpenWorkLines),
     "",
@@ -2777,7 +2820,7 @@ function buildKindBreakdown(details: readonly WorkspaceStatusActor[]): Workspace
       routeableActive: existing.routeableActive + (operationalActive && detail.weaknesses.length === 0 ? 1 : 0),
       weakActive: existing.weakActive + (weakActive ? 1 : 0),
       scopeRefreshNeeded: existing.scopeRefreshNeeded + (isScopeRefreshNeededActor(detail) ? 1 : 0),
-      activeWork: existing.activeWork + (active && detail.activeWork !== null ? 1 : 0),
+      activeWork: existing.activeWork + (active && hasOpenActiveWork(detail) ? 1 : 0),
       routeableNoWork: existing.routeableNoWork + (isRouteableNoWorkActor(detail) ? 1 : 0),
       broadPresenceOnly: existing.broadPresenceOnly + (isBroadPresenceOnlyActor(detail) ? 1 : 0)
     });
@@ -2814,10 +2857,15 @@ function isRouteableNoWorkActor(detail: WorkspaceStatusActor): boolean {
   );
 }
 
+function isRouteableIdleNoWorkActor(detail: WorkspaceStatusActor): boolean {
+  return isRouteableNoWorkActor(detail) && detail.recentWorkAdoptionNudge === null;
+}
+
 function isBroadPresenceOnlyActor(detail: WorkspaceStatusActor): boolean {
   return (
     detail.summary.status === "active" &&
     detail.weaknesses.length > 0 &&
+    detail.weaknesses.every(isBookkeepingScopeWeakness) &&
     detail.pendingInbox.length === 0 &&
     detail.activeWork === null &&
     detail.recentWorkAdoptionNudge === null
@@ -2841,6 +2889,39 @@ function isAuditOnlyActor(detail: WorkspaceStatusActor): boolean {
     detail.activeWork === null &&
     detail.recentWorkAdoptionNudge === null
   );
+}
+
+function hasOpenActiveWork(detail: WorkspaceStatusActor): boolean {
+  return detail.activeWork?.status === "open";
+}
+
+function hasNoisyPresencePath(detail: WorkspaceStatusActor): boolean {
+  return detail.weaknesses.some((weakness) => weakness.kind === "noisy_path");
+}
+
+function hasRecentWorkAdoptionResolution(
+  detail: WorkspaceStatusActor,
+  workItemsByActor: ReadonlyMap<string, WorkspaceStatusWorkItem>
+): boolean {
+  const nudge = detail.recentWorkAdoptionNudge;
+  if (nudge === null) {
+    return false;
+  }
+
+  const item = workItemsByActor.get(detail.summary.actor.actorId);
+  if (item === undefined) {
+    return false;
+  }
+
+  const nudgeAt = Date.parse(nudge.latestAt);
+  const pointerUpdatedAt = Date.parse(item.pointer.updatedAt);
+  return Number.isFinite(nudgeAt) &&
+    Number.isFinite(pointerUpdatedAt) &&
+    pointerUpdatedAt >= nudgeAt;
+}
+
+function isBookkeepingScopeWeakness(weakness: WorkspaceStatusActor["weaknesses"][number]): boolean {
+  return weakness.kind === "broad_path" || weakness.kind === "generic_responsibility";
 }
 
 function renderKindBreakdownLine(row: WorkspaceKindBreakdown): string {
@@ -2950,10 +3031,11 @@ async function buildDiagnosticActivityRows(
           listPendingInboxItems(store, actor.actorId),
           readActiveWorkState(store, actor.actorId)
         ]);
-      const hasOpenWork = activeWork !== null;
+      const hasOpenWork = activeWork?.status === "open";
       const lastEventMs = eventTimes[eventTimes.length - 1];
       const lastSeenMs = actor === undefined ? Number.NaN : Date.parse(actor.lastSeen);
       const workAdoptionNudgeEvents = actorEvents.filter(eventHasWorkAdoptionNudge);
+      const blockedWorkAdoptionNudgeEvents = workAdoptionNudgeEvents.filter((event) => event.decision === "block");
       const nudgeEvents = actorEvents.filter((event) => event.nudge === true);
       const ownerOverlapNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("owner-overlap") === true);
       const stackContextNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("work-stack") === true);
@@ -2982,9 +3064,16 @@ async function buildDiagnosticActivityRows(
         hasOpenWork,
         openWorkEvidenceCount: activeWork?.evidence.length ?? null,
         openWorkTitle: activeWork?.title ?? null,
-        adoption: classifyActivityAdoption(actor, hasOpenWork, actorEvents.length, workAdoptionNudgeEvents.length),
+        adoption: classifyActivityAdoption(
+          actor,
+          hasOpenWork,
+          actorEvents.length,
+          workAdoptionNudgeEvents.length,
+          blockedWorkAdoptionNudgeEvents.length
+        ),
         nudgeCount: nudgeEvents.length,
         workAdoptionNudgeCount: workAdoptionNudgeEvents.length,
+        blockedWorkAdoptionNudgeCount: blockedWorkAdoptionNudgeEvents.length,
         ownerOverlapNudgeCount: ownerOverlapNudgeEvents.length,
         stackContextNudgeCount: stackContextNudgeEvents.length,
         readOnlyEventCount: readOnlyEvents.length,
@@ -2994,7 +3083,7 @@ async function buildDiagnosticActivityRows(
         pathfulEventCount: pathfulEvents.length,
         broadEventCount: actorEvents.length - pathfulEvents.length,
         ignoredCommandEventCount: ignoredCommandEvents.length,
-        ignoredWorkAdoptionNudge: workAdoptionNudgeEvents.length > 0 && !hasOpenWork,
+        ignoredWorkAdoptionNudge: workAdoptionNudgeEvents.some((event) => event.decision !== "block") && !hasOpenWork,
         paths: actor?.activePaths ?? [],
         observedPaths: actor?.observedPaths ?? [],
         resources: actor?.activeResources ?? [],
@@ -3024,6 +3113,7 @@ function buildDiagnosticAgentActivityRows(rows: readonly DiagnosticActivityRow[]
       nudgeCount: existing.nudgeCount + row.nudgeCount,
       readOnlyNudgeCount: existing.readOnlyNudgeCount + row.readOnlyNudgeCount,
       workAdoptionNudgeCount: existing.workAdoptionNudgeCount + row.workAdoptionNudgeCount,
+      blockedWorkAdoptionNudgeCount: existing.blockedWorkAdoptionNudgeCount + row.blockedWorkAdoptionNudgeCount,
       ownerOverlapNudgeCount: existing.ownerOverlapNudgeCount + row.ownerOverlapNudgeCount,
       stackContextNudgeCount: existing.stackContextNudgeCount + row.stackContextNudgeCount,
       pathfulEventCount: existing.pathfulEventCount + row.pathfulEventCount,
@@ -3055,6 +3145,7 @@ function emptyDiagnosticAgentActivityRow(agentKind: string): Omit<DiagnosticAgen
     nudgeCount: 0,
     readOnlyNudgeCount: 0,
     workAdoptionNudgeCount: 0,
+    blockedWorkAdoptionNudgeCount: 0,
     ownerOverlapNudgeCount: 0,
     stackContextNudgeCount: 0,
     pathfulEventCount: 0,
@@ -3075,8 +3166,12 @@ function classifyDiagnosticAgentActivity(row: Omit<DiagnosticAgentActivityRow, "
     return "agent-scope-missing";
   }
 
-  if (row.workAdoptionNudgeCount > 0 && row.openWorkCount === 0) {
+  if (row.workAdoptionNudgeCount > row.blockedWorkAdoptionNudgeCount && row.openWorkCount === 0) {
     return "policy-work-adoption-unresolved";
+  }
+
+  if (row.blockedWorkAdoptionNudgeCount > 0) {
+    return "policy-work-adoption-blocked";
   }
 
   if (row.ownerOverlapNudgeCount > 0) {
@@ -3117,10 +3212,13 @@ function statusSignals(input: {
   readonly scopeRefreshNeededCount: number;
   readonly broadPresenceOnlyCount: number;
   readonly routeableNoWorkCount: number;
+  readonly routeableIdleNoWorkCount: number;
+  readonly blockedWorkNudgeActorCount: number;
   readonly ignoredWorkNudgeActorCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
+  readonly terminalActiveWorkPointerCount: number;
 }): string[] {
   const lines: string[] = [];
 
@@ -3136,20 +3234,28 @@ function statusSignals(input: {
     lines.push(`started-only-stale-work: ${input.startedOnlyStaleOpenWorkCount} item(s) look like interrupted sessions or smoke residue.`);
   }
 
+  if (input.terminalActiveWorkPointerCount > 0) {
+    lines.push(`terminal-active-pointer: ${input.terminalActiveWorkPointerCount} pointer(s) still reference closed work.`);
+  }
+
+  if (input.blockedWorkNudgeActorCount > 0) {
+    lines.push(`work-adoption-blocked: ${input.blockedWorkNudgeActorCount} actor(s) had mutating attempts blocked until active work exists.`);
+  }
+
   if (input.ignoredWorkNudgeActorCount > 0) {
     lines.push(`work-adoption: ${input.ignoredWorkNudgeActorCount} actor(s) received edit nudges without active work.`);
   }
 
   if (input.scopeRefreshNeededCount > 0) {
-    lines.push(`scope-refresh: ${input.scopeRefreshNeededCount} weak-scoped actor(s) also have inbox, work, or nudges.`);
+    lines.push(`scope-refresh: ${input.scopeRefreshNeededCount} weak-scoped actor(s) also have inbox, work, nudges, or noisy paths.`);
   }
 
   if (input.broadPresenceOnlyCount > 0) {
     lines.push(`bookkeeping-presence: ${input.broadPresenceOnlyCount} broad presence-only actor(s) are audit/session context.`);
   }
 
-  if (input.routeableNoWorkCount > 0) {
-    lines.push(`routeable-no-work: ${input.routeableNoWorkCount} routeable actor(s) have no active work frame.`);
+  if (input.routeableIdleNoWorkCount > 0) {
+    lines.push(`routeable-idle: ${input.routeableIdleNoWorkCount} routeable actor(s) are idle/read-only without active work.`);
   }
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
@@ -3172,8 +3278,10 @@ function statusNextAction(input: {
   readonly orphanOpenWorkCount: number;
   readonly startedOnlyStaleOpenWorkCount: number;
   readonly scopeRefreshNeededCount: number;
+  readonly terminalActiveWorkPointerCount: number;
+  readonly blockedWorkNudgeActorCount: number;
   readonly ignoredWorkNudgeActorCount: number;
-  readonly routeableNoWorkCount: number;
+  readonly routeableIdleNoWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
   readonly staleOpenWorkCount: number;
   readonly routeableActiveCount: number;
@@ -3191,16 +3299,24 @@ function statusNextAction(input: {
     return "Preview started-only stale work with `agentq work cleanup-stale`; inspect any non-candidate stale work manually.";
   }
 
+  if (input.terminalActiveWorkPointerCount > 0) {
+    return "Preview terminal pointer residue with `agentq work cleanup-stale`; apply with `--yes` to clear closed active pointers.";
+  }
+
   if (input.ignoredWorkNudgeActorCount > 0) {
     return "Start active work for actors that already received concrete edit nudges with `agentq next --actor <id>`.";
+  }
+
+  if (input.blockedWorkNudgeActorCount > 0) {
+    return "Start active work for actors with blocked mutating attempts, then retry the blocked tool.";
   }
 
   if (input.scopeRefreshNeededCount > 0) {
     return "Refresh weak-scoped actors that have inbox/work/nudges with `agentq next --actor <id>`.";
   }
 
-  if (input.routeableNoWorkCount > 0) {
-    return "Start or confirm active work for routeable actors with `agentq next --actor <id>` before the next edit or handoff.";
+  if (input.routeableIdleNoWorkCount > 0) {
+    return "No urgent action for idle routeable actors; run `agentq next --actor <id>` before their next edit or handoff.";
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
@@ -3222,7 +3338,8 @@ function classifyActivityAdoption(
   actor: Presence | undefined,
   hasOpenWork: boolean,
   eventCount: number,
-  workAdoptionNudgeCount: number
+  workAdoptionNudgeCount: number,
+  blockedWorkAdoptionNudgeCount: number
 ): string {
   if (actor === undefined) {
     return "diagnostic-only";
@@ -3230,6 +3347,10 @@ function classifyActivityAdoption(
 
   if (hasOpenWork) {
     return "tracked-work";
+  }
+
+  if (blockedWorkAdoptionNudgeCount > 0 && blockedWorkAdoptionNudgeCount === workAdoptionNudgeCount) {
+    return "blocked-work-adoption";
   }
 
   if (workAdoptionNudgeCount > 0) {
@@ -3268,7 +3389,10 @@ function findRecentWorkAdoptionNudge(
 
   return {
     count: matches.length,
+    blockedCount: matches.filter((event) => event.decision === "block").length,
+    unblockedCount: matches.filter((event) => event.decision !== "block").length,
     latestAt: latest.at,
+    latestDecision: latest.decision ?? null,
     latestPaths: latest.paths ?? [],
     latestResources: latest.resources ?? []
   };
@@ -3289,7 +3413,7 @@ function eventHasWorkAdoptionNudge(event: DiagnosticEvent): boolean {
 }
 
 function isSpecificDiagnosticPath(value: string): boolean {
-  return value.trim().length > 0 && value.trim() !== ".";
+  return value.trim().length > 0 && value.trim() !== "." && !isNoisyPresencePath(value);
 }
 
 function renderOwners(
@@ -3373,7 +3497,8 @@ function renderDiagnosticEvents(events: readonly DiagnosticEvent[]): string {
         event.nudge === undefined ? undefined : `nudge:${event.nudge ? "yes" : "no"}`,
         event.nudgeKinds === undefined || event.nudgeKinds.length === 0
           ? undefined
-          : `nudgeKinds:${formatList(event.nudgeKinds)}`
+          : `nudgeKinds:${formatList(event.nudgeKinds)}`,
+        event.decision === undefined ? undefined : `decision:${event.decision}`
       ].filter((part): part is string => part !== undefined).join(" | ")
     );
   }
@@ -3417,6 +3542,7 @@ function renderDiagnosticActivity(
         `adoption:${row.adoption}`,
         row.nudgeCount === 0 ? undefined : `nudges:${row.nudgeCount}`,
         row.workAdoptionNudgeCount === 0 ? undefined : `workNudges:${row.workAdoptionNudgeCount}`,
+        row.blockedWorkAdoptionNudgeCount === 0 ? undefined : `blockedWorkNudges:${row.blockedWorkAdoptionNudgeCount}`,
         row.ownerOverlapNudgeCount === 0 ? undefined : `ownerNudges:${row.ownerOverlapNudgeCount}`,
         row.stackContextNudgeCount === 0 ? undefined : `stackContexts:${row.stackContextNudgeCount}`,
         row.readOnlyNudgeCount === 0 ? undefined : `readOnlyNudges:${row.readOnlyNudgeCount}`,
@@ -3445,6 +3571,7 @@ function renderDiagnosticAgentActivityRow(row: DiagnosticAgentActivityRow): stri
     `nudges:${row.nudgeCount}`,
     `readOnlyNudges:${row.readOnlyNudgeCount}`,
     `workNudges:${row.workAdoptionNudgeCount}`,
+    `blockedWorkNudges:${row.blockedWorkAdoptionNudgeCount}`,
     `ownerNudges:${row.ownerOverlapNudgeCount}`,
     `stackContexts:${row.stackContextNudgeCount}`,
     `pathful:${row.pathfulEventCount}`,
@@ -3465,12 +3592,19 @@ function renderStatusActorLine(detail: WorkspaceStatusActor): string {
     `paths: ${formatList(actor.activePaths)}`,
     ...(actor.observedPaths === undefined ? [] : [`observing: ${formatList(actor.observedPaths)}`]),
     ...(actor.activeResources === undefined ? [] : [`resources: ${formatList(actor.activeResources)}`]),
+    ...(detail.weaknesses.length === 0
+      ? []
+      : [`scopeIssues: ${formatList(detail.weaknesses.map((weakness) => `${weakness.kind}:${weakness.detail}`))}`]),
     `responsibilities: ${formatList(actor.responsibilities)}`
   ].join(" | ");
 }
 
 function isOpenWorkInventoryItem(item: WorkspaceStatusWorkItem): boolean {
   return item.activeWork?.status === "open";
+}
+
+function isTerminalActiveWorkPointerItem(item: WorkspaceStatusWorkItem): boolean {
+  return item.activeWork !== null && item.activeWork.status !== "open";
 }
 
 function isStaleOpenWorkInventoryItem(
@@ -3532,6 +3666,8 @@ function renderStaleWorkCleanupResult(input: StaleWorkCleanupRenderInput): strin
     `staleAfter: ${formatDuration(input.staleAfterMs)}`,
     `candidates: ${input.candidates.length}`,
     `abandoned: ${input.abandonedCount}`,
+    `terminal pointers: ${input.terminalPointerCount}`,
+    `terminal pointers cleared: ${input.terminalClearedCount}`,
     "",
     "Candidates:",
     ...(input.candidates.length === 0
@@ -3539,11 +3675,11 @@ function renderStaleWorkCleanupResult(input: StaleWorkCleanupRenderInput): strin
       : input.candidates.map(renderStaleWorkCleanupCandidate))
   ];
 
-  if (!input.mutate && input.candidates.length > 0) {
+  if (!input.mutate && (input.candidates.length > 0 || input.terminalPointerCount > 0)) {
     lines.push(
       "",
       "Next:",
-      "  Run `agentq work cleanup-stale --yes` to abandon these started-only stale work items with evidence."
+      "  Run `agentq work cleanup-stale --yes` to abandon started-only stale work with evidence and clear terminal pointer residue."
     );
   }
 

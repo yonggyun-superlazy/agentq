@@ -2,11 +2,12 @@ import { readFile } from "node:fs/promises";
 import { parseYamlWithSchema, PresenceSchema } from "../domain/schema.js";
 import type { Presence } from "../domain/types.js";
 import type { WorkspaceStore } from "../store/workspaceStore.js";
-import { isBroadPresencePath, isGenericResponsibility } from "./presenceClassification.js";
+import { isBroadPresencePath, isGenericResponsibility, isNoisyPresencePath } from "./presenceClassification.js";
 
 export type ScopeWeaknessKind =
   | "missing_presence"
   | "broad_path"
+  | "noisy_path"
   | "generic_responsibility";
 
 export interface ScopeWeakness {
@@ -60,7 +61,9 @@ export function actorScopeWeaknesses(presence: Presence): ScopeWeakness[] {
   const hasConcreteResource = (presence.activeResources ?? []).length > 0;
 
   for (const activePath of presence.activePaths) {
-    if (isBroadPresencePath(activePath) && !hasConcreteResource) {
+    if (isNoisyPresencePath(activePath)) {
+      weaknesses.push({ kind: "noisy_path", detail: activePath });
+    } else if (isBroadPresencePath(activePath) && !hasConcreteResource) {
       weaknesses.push({ kind: "broad_path", detail: activePath });
     }
   }
