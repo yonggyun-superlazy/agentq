@@ -135,6 +135,13 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       nudgeKinds: preToolNudge?.kinds ?? [],
       at: options.now
     });
+    if (preToolNudge?.kinds.includes("work-adoption") === true) {
+      return {
+        code: 0,
+        stdout: `${JSON.stringify(blockOutput(options.adapter, preToolNudge.message))}\n`,
+        stderr: ""
+      };
+    }
 
     return {
       code: 0,
@@ -677,15 +684,15 @@ async function buildWorkAdoptionNudge(
   });
   const weaknesses = presence === null ? [] : actorScopeWeaknesses(presence);
   return renderInternalQueueMaintenance({
-    summary: "Shared-work adoption nudge.",
-    afterAction: "Start or refresh active work only if this is an edit, handoff, or active-work step; otherwise continue the user's request.",
+    summary: "Active shared-work required.",
+    afterAction: "Start or refresh active work for this mutating step, retry the tool, then resume the user's request.",
     body: [
       weaknesses.length === 0
-        ? "Concrete shared-work activity has no active work frame yet."
-        : "Concrete shared-work activity has weak scope and no active work frame yet.",
+        ? "Concrete mutating activity has no active work frame yet."
+        : "Concrete mutating activity has weak scope and no active work frame yet.",
       ...weaknesses.map((weakness) => `- ${workAdoptionWeaknessLabel(weakness.kind)}: ${weakness.detail}`),
-      "Use the shared-work helper with the current actor id for exact commands when an edit/handoff needs tracking.",
-      "Short read-only diagnostics can continue without creating work."
+      "Use the shared-work helper with the current actor id for exact commands, or start work directly for this path/resource.",
+      "Do not continue this mutating tool until active work exists."
     ]
   });
 }
@@ -1005,9 +1012,11 @@ function stripPathBoundaryQuotes(value: string): string {
 
   const first = value[0];
   const last = value[value.length - 1];
-  return (first === "\"" || first === "'") && last === first
-    ? value.slice(1, -1).trim()
-    : value;
+  if ((first === "\"" || first === "'") && last === first) {
+    return value.slice(1, -1).trim();
+  }
+
+  return value.replace(/^["']+|["']+$/g, "").trim();
 }
 
 function stripPathTrailingPunctuation(value: string): string {
@@ -1034,7 +1043,15 @@ function hasConcretePathShape(value: string): boolean {
 }
 
 function isSafePathCandidate(value: string): boolean {
-  if (/[<>{}`$*?\[\]\r\n;|&]/.test(value)) {
+  if (/[<>{}`$*?\[\]\r\n;|&"']/.test(value)) {
+    return false;
+  }
+
+  if (/^[+!]/.test(value)) {
+    return false;
+  }
+
+  if (/[()]/.test(value)) {
     return false;
   }
 

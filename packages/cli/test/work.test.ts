@@ -2,7 +2,14 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { appendDiagnosticEvent, foldMessageState, resolveWorkspaceStore, startWork } from "@agentq/core";
+import {
+  appendDiagnosticEvent,
+  appendWorkEvidence,
+  foldMessageState,
+  readActiveWorkState,
+  resolveWorkspaceStore,
+  startWork
+} from "@agentq/core";
 import { runCommand } from "../src/main.js";
 
 describe("CLI work stack", () => {
@@ -1200,6 +1207,98 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("events: 1");
     expect(result.stdout).toContain("Started-only stale work:");
     expect(result.stdout).toContain("started-only-stale-work: 1 item(s) look like interrupted sessions or smoke residue.");
+  });
+
+  it("previews and abandons only started-only stale work residue", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-cleanup-stale-"));
+    const env = { LOCALAPPDATA: path.join(workspace, "local-app-data") };
+    const staleActor = "codex@superlazy@cleanup-stale@123456";
+    const evidencedActor = "codex@superlazy@cleanup-evidenced@123456";
+    const activeRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T02:00:00.000Z"
+    };
+    const viewRuntime = {
+      cwd: workspace,
+      env,
+      now: () => "2026-05-18T03:00:00.000Z"
+    };
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    await startWork(store, {
+      actorId: staleActor,
+      workId: "AW-cleanup-stale",
+      title: "Interrupted install smoke",
+      paths: ["AgentQ/scripts/package-smoke.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await startWork(store, {
+      actorId: evidencedActor,
+      workId: "AW-cleanup-evidenced",
+      title: "Evidenced stale investigation",
+      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId: evidencedActor,
+      evidence: ["Evidence exists, so stale cleanup must leave this work for manual review."],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+    const activeActor = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "active-cleanup",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "Active cleanup implementation"
+    ], activeRuntime)).stdout.trim().replace(/ registered$/, "");
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      activeActor,
+      "--id",
+      "AW-cleanup-active",
+      "--title",
+      "Fresh active implementation",
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], activeRuntime);
+
+    const preview = await runCommand(["work", "cleanup-stale"], viewRuntime);
+
+    expect(preview).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(preview.stdout).toContain("Mode: dry-run");
+    expect(preview.stdout).toContain("candidates: 1");
+    expect(preview.stdout).toContain("AW-cleanup-stale");
+    expect(preview.stdout).not.toContain("AW-cleanup-evidenced");
+    expect(preview.stdout).not.toContain("AW-cleanup-active");
+    expect((await readActiveWorkState(store, staleActor))?.workId).toBe("AW-cleanup-stale");
+
+    const applied = await runCommand(["work", "cleanup-stale", "--yes"], viewRuntime);
+
+    expect(applied).toMatchObject({
+      code: 0,
+      stderr: ""
+    });
+    expect(applied.stdout).toContain("Mode: applied");
+    expect(applied.stdout).toContain("candidates: 1");
+    expect(applied.stdout).toContain("abandoned: 1");
+    expect(await readActiveWorkState(store, staleActor)).toBeNull();
+    expect((await readActiveWorkState(store, evidencedActor))?.workId).toBe("AW-cleanup-evidenced");
+    expect((await readActiveWorkState(store, activeActor))?.workId).toBe("AW-cleanup-active");
+
+    const status = await runCommand(["status"], viewRuntime);
+    expect(status.stdout).toContain("open work: 2");
+    expect(status.stdout).toContain("orphan open work: 1");
+    expect(status.stdout).toContain("started-only stale work: 0");
   });
 
   it("prompts active work after a recent concrete edit nudge", async () => {

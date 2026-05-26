@@ -98,7 +98,7 @@ export const COMMANDS: readonly CommandSpec[] = [
   { name: "actors", summary: "List workspace actors by recent presence" },
   { name: "owners", summary: "Find active actors responsible for paths or resources" },
   { name: "enter", summary: "Register actor presence and responsibilities" },
-  { name: "work", summary: "Manage one explicit actor's internal work stack" },
+  { name: "work", summary: "Manage actor work stacks and stale residue" },
   { name: "block", summary: "Create a required-response blocker" },
   { name: "question", summary: "Ask an actor a required-response question" },
   { name: "note", summary: "Send a non-blocking inbox note" },
@@ -169,8 +169,12 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq work touch --actor <id> --path <path>...",
       "  agentq work evidence --actor <id> --evidence \"...\"",
       "  agentq work evidence --actor <id> --evidence-file <path>",
-      "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"]",
-      "  agentq work close --actor <id> --summary-file <path> [--evidence-file <path>]"
+      "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"] [--status closed|abandoned|superseded]",
+      "  agentq work close --actor <id> --summary-file <path> [--evidence-file <path>] [--status closed|abandoned|superseded]",
+      "  agentq work cleanup-stale [--stale-ms <ms>] [--dry-run]",
+      "  agentq work cleanup-stale --yes [--stale-ms <ms>]",
+      "",
+      "cleanup-stale previews by default and only abandons started-only stale work with zero evidence."
     ].join("\n");
   }
 
@@ -705,22 +709,31 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
       code: 0,
       stdout: [
         "agentq work",
-        "Manage one explicit actor's internal work stack",
+        "Manage actor work stacks and stale residue",
         "",
         "Usage:",
         "  agentq work start --actor <id> --title <title> --path <path>... [--objective \"...\"] [--slice \"...\"] [--denominator \"...\"] [--pass \"...\"] [--next \"...\"]",
         "  agentq work status --actor <id>",
         "  agentq work touch --actor <id> --path <path>...",
-      "  agentq work evidence --actor <id> --evidence \"...\"",
-      "  agentq work evidence --actor <id> --evidence-file <path>",
-      "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"] [--status closed|abandoned|superseded]",
-      "  agentq work close --actor <id> --summary-file <path> [--evidence-file <path>] [--status closed|abandoned|superseded]"
+        "  agentq work evidence --actor <id> --evidence \"...\"",
+        "  agentq work evidence --actor <id> --evidence-file <path>",
+        "  agentq work close --actor <id> --summary \"...\" [--evidence \"...\"] [--status closed|abandoned|superseded]",
+        "  agentq work close --actor <id> --summary-file <path> [--evidence-file <path>] [--status closed|abandoned|superseded]",
+        "  agentq work cleanup-stale [--stale-ms <ms>] [--dry-run]",
+        "  agentq work cleanup-stale --yes [--stale-ms <ms>]",
+        "",
+        "cleanup-stale previews by default and only abandons started-only stale work with zero evidence."
       ].join("\n") + "\n",
       stderr: ""
     };
   }
 
   const args = parseArgs(argv.slice(1));
+
+  if (subcommand === "cleanup-stale") {
+    return await workCleanupStaleCommand(args, runtime);
+  }
+
   const actorId = requiredOption(args, "actor");
   const store = await openStore(runtime);
 
@@ -841,6 +854,56 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   };
 }
 
+async function workCleanupStaleCommand(args: ParsedArgs, runtime: CommandRuntime): Promise<CommandResult> {
+  assertNoUnexpectedPositionals(args, "work cleanup-stale", 0);
+  if (args.flags.has("dry-run") && args.flags.has("yes")) {
+    throw new Error("work cleanup-stale accepts either --dry-run or --yes, not both.");
+  }
+
+  const staleAfterMs = parseNonNegativeMsOption(
+    args,
+    "stale-ms",
+    DEFAULT_ACTOR_STALE_AFTER_MS,
+    "work cleanup-stale"
+  );
+  const mutate = args.flags.has("yes");
+  const store = await openStore(runtime);
+  const now = runtime.now();
+  const nowMs = Date.parse(now);
+  const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs);
+  const workInventory = await readWorkspaceStatusWorkInventory(store, details);
+  const candidates = collectStartedOnlyStaleWorkCleanupCandidates(workInventory, nowMs, staleAfterMs);
+
+  const abandoned: WorkState[] = [];
+  if (mutate) {
+    for (const candidate of candidates) {
+      const work = candidate.item.activeWork;
+      if (work === null) {
+        continue;
+      }
+      abandoned.push(await closeWork(store, {
+        actorId: candidate.item.pointer.actorId,
+        workId: work.workId,
+        status: "abandoned",
+        summary: "Abandoned stale started-only work residue after workspace cleanup review.",
+        evidence: [renderStaleWorkCleanupEvidence(candidate, now)],
+        now
+      }));
+    }
+  }
+
+  return {
+    code: 0,
+    stdout: renderStaleWorkCleanupResult({
+      mutate,
+      staleAfterMs,
+      candidates,
+      abandonedCount: abandoned.length
+    }),
+    stderr: ""
+  };
+}
+
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const result = await runCommand(argv);
   process.stdout.write(result.stdout);
@@ -894,18 +957,32 @@ async function doctorCommand(runtime: CommandRuntime): Promise<CommandResult> {
 
 async function statusCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
   const args = parseArgs(argv);
-  const staleAfterMs = Number(optionValue(args, "stale-ms") ?? String(DEFAULT_ACTOR_STALE_AFTER_MS));
-  if (!Number.isFinite(staleAfterMs) || staleAfterMs < 0) {
-    throw new Error("status --stale-ms must be a non-negative number.");
-  }
+  const staleAfterMs = parseNonNegativeMsOption(args, "stale-ms", DEFAULT_ACTOR_STALE_AFTER_MS, "status");
 
   const store = await openStore(runtime);
   const report = await runDoctor(runtime.cwd, { env: runtime.env });
-  const actors = await listActorPresences(store);
   const now = runtime.now();
   const nowMs = Date.parse(now);
+  const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs);
+  const workInventory = await readWorkspaceStatusWorkInventory(store, details);
+  const recentMessages = await listRecentMessageSummaries(store, nowMs, 86_400_000);
+
+  return {
+    code: report.summary === "fail" ? 2 : 0,
+    stdout: renderWorkspaceStatus(report, details, workInventory, nowMs, staleAfterMs, recentMessages),
+    stderr: ""
+  };
+}
+
+async function readWorkspaceStatusDetails(
+  store: Awaited<ReturnType<typeof openStore>>,
+  nowMs: number,
+  staleAfterMs: number
+): Promise<readonly WorkspaceStatusActor[]> {
+  const actors = await listActorPresences(store);
   const diagnosticEvents = await readDiagnosticEvents(store, 10_000);
-  const details = await Promise.all(
+
+  return await Promise.all(
     actors.map(async (actor) => {
       const summary = actorStatus(actor, nowMs, staleAfterMs);
       const [pendingInbox, activeWork] = await Promise.all([
@@ -926,19 +1003,18 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
       };
     })
   );
+}
+
+async function readWorkspaceStatusWorkInventory(
+  store: Awaited<ReturnType<typeof openStore>>,
+  details: readonly WorkspaceStatusActor[]
+): Promise<readonly WorkspaceStatusWorkItem[]> {
   const detailsByActor = new Map(details.map((detail) => [detail.summary.actor.actorId, detail]));
-  const workInventory = (await listActiveWorkInventory(store)).map((item): WorkspaceStatusWorkItem => ({
+  return (await listActiveWorkInventory(store)).map((item): WorkspaceStatusWorkItem => ({
     pointer: item.pointer,
     activeWork: item.activeWork,
     actor: detailsByActor.get(item.pointer.actorId) ?? null
   }));
-  const recentMessages = await listRecentMessageSummaries(store, nowMs, 86_400_000);
-
-  return {
-    code: report.summary === "fail" ? 2 : 0,
-    stdout: renderWorkspaceStatus(report, details, workInventory, nowMs, staleAfterMs, recentMessages),
-    stderr: ""
-  };
 }
 
 async function nextCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {
@@ -2181,6 +2257,20 @@ function optionValues(args: ParsedArgs, name: string): string[] {
   return [...(args.options.get(name) ?? [])];
 }
 
+function parseNonNegativeMsOption(
+  args: ParsedArgs,
+  name: string,
+  defaultValue: number,
+  commandName: string
+): number {
+  const value = Number(optionValue(args, name) ?? String(defaultValue));
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${commandName} --${name} must be a non-negative number.`);
+  }
+
+  return value;
+}
+
 function cleanInlineTextValues(args: ParsedArgs, name: string, commandName: string): string[] {
   return optionValues(args, name).map((value) => cleanTextOption(value, name, commandName));
 }
@@ -2394,6 +2484,19 @@ interface WorkspaceStatusWorkItem {
   readonly pointer: ActiveWorkInventoryItem["pointer"];
   readonly activeWork: WorkState | null;
   readonly actor: WorkspaceStatusActor | null;
+}
+
+interface StaleWorkCleanupCandidate {
+  readonly item: WorkspaceStatusWorkItem;
+  readonly ageMs: number | null;
+  readonly reasons: readonly string[];
+}
+
+interface StaleWorkCleanupRenderInput {
+  readonly mutate: boolean;
+  readonly staleAfterMs: number;
+  readonly candidates: readonly StaleWorkCleanupCandidate[];
+  readonly abandonedCount: number;
 }
 
 interface RecentWorkAdoptionNudge {
@@ -3081,11 +3184,11 @@ function statusNextAction(input: {
   }
 
   if (input.orphanOpenWorkCount > 0) {
-    return "Review orphan open work from the work inventory and close or abandon stale pointers with evidence.";
+    return "Preview stale started-only cleanup with `agentq work cleanup-stale`; apply with `--yes` only after reviewing the candidates.";
   }
 
   if (input.startedOnlyStaleOpenWorkCount > 0) {
-    return "Review started-only stale work and classify it as real unfinished work or smoke residue before cleanup.";
+    return "Preview started-only stale work with `agentq work cleanup-stale`; inspect any non-candidate stale work manually.";
   }
 
   if (input.ignoredWorkNudgeActorCount > 0) {
@@ -3386,6 +3489,93 @@ function isStaleOpenWorkInventoryItem(
   return Number.isFinite(nowMs) &&
     Number.isFinite(updatedAtMs) &&
     Math.max(0, nowMs - updatedAtMs) > staleAfterMs;
+}
+
+function collectStartedOnlyStaleWorkCleanupCandidates(
+  workInventory: readonly WorkspaceStatusWorkItem[],
+  nowMs: number,
+  staleAfterMs: number
+): StaleWorkCleanupCandidate[] {
+  return workInventory.flatMap((item) => {
+    const work = item.activeWork;
+    if (
+      work === null ||
+      work.status !== "open" ||
+      work.eventCount !== 1 ||
+      work.evidence.length !== 0 ||
+      !isStaleOpenWorkInventoryItem(item, nowMs, staleAfterMs)
+    ) {
+      return [];
+    }
+
+    const updatedAtMs = Date.parse(work.updatedAt);
+    const ageMs = Number.isFinite(nowMs) && Number.isFinite(updatedAtMs)
+      ? Math.max(0, nowMs - updatedAtMs)
+      : null;
+    return [{
+      item,
+      ageMs,
+      reasons: [
+        "started-only",
+        "zero evidence",
+        item.actor === null ? "missing actor presence" : "stale actor presence",
+        ...(ageMs === null ? [] : [`work age ${formatDuration(ageMs)}`])
+      ]
+    }];
+  });
+}
+
+function renderStaleWorkCleanupResult(input: StaleWorkCleanupRenderInput): string {
+  const lines = [
+    "AgentQ stale work cleanup",
+    `Mode: ${input.mutate ? "applied" : "dry-run"}`,
+    `staleAfter: ${formatDuration(input.staleAfterMs)}`,
+    `candidates: ${input.candidates.length}`,
+    `abandoned: ${input.abandonedCount}`,
+    "",
+    "Candidates:",
+    ...(input.candidates.length === 0
+      ? ["  none"]
+      : input.candidates.map(renderStaleWorkCleanupCandidate))
+  ];
+
+  if (!input.mutate && input.candidates.length > 0) {
+    lines.push(
+      "",
+      "Next:",
+      "  Run `agentq work cleanup-stale --yes` to abandon these started-only stale work items with evidence."
+    );
+  }
+
+  return `${lines.join("\n")}\n`;
+}
+
+function renderStaleWorkCleanupCandidate(candidate: StaleWorkCleanupCandidate): string {
+  const work = candidate.item.activeWork;
+  return [
+    `  ${work?.workId ?? "(no active work)"}`,
+    `actor: ${candidate.item.pointer.actorId}`,
+    `actorPresence: ${candidate.item.actor === null ? "missing" : candidate.item.actor.summary.status}`,
+    ...(work === null
+      ? []
+      : [
+        `updated: ${work.updatedAt}`,
+        `title: ${work.title}`
+      ]),
+    `reason: ${candidate.reasons.join(", ")}`
+  ].join(" | ");
+}
+
+function renderStaleWorkCleanupEvidence(candidate: StaleWorkCleanupCandidate, now: string): string {
+  const work = candidate.item.activeWork;
+  const actorPresence = candidate.item.actor === null ? "missing" : candidate.item.actor.summary.status;
+  return [
+    `Cleanup review at ${now}: classified stale started-only work as residue.`,
+    `Actor presence: ${actorPresence}.`,
+    `Events: ${work?.eventCount ?? 0}.`,
+    `Prior evidence: ${work?.evidence.length ?? 0}.`,
+    `Reasons: ${candidate.reasons.join(", ")}.`
+  ].join(" ");
 }
 
 function renderStatusWorkInventoryLine(item: WorkspaceStatusWorkItem): string {

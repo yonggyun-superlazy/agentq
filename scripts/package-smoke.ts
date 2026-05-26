@@ -132,6 +132,26 @@ const preTool = runAgentq(
   })
 );
 assert(preTool.trim() === "{}", `PreTool hook should pass, got ${preTool}`);
+runAgentq([
+  "work",
+  "start",
+  "--actor",
+  actorId,
+  "--id",
+  "AW-package-smoke",
+  "--title",
+  "Package smoke verification",
+  "--path",
+  "src/package-smoke.ts"
+], workspace);
+runAgentq([
+  "work",
+  "evidence",
+  "--actor",
+  actorId,
+  "--evidence",
+  "Package smoke context evidence before mutating owner-overlap check."
+], workspace);
 
 const wakeReceiver = runAgentq([
   "enter",
@@ -352,12 +372,12 @@ function findTarball(predicate: (entry: string) => boolean): string {
 function assertPackageMetadata(): void {
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
     name: "agentq",
-    version: "0.1.12",
+    version: "0.1.13",
     bin: true
   });
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
     name: "@agentq/core",
-    version: "0.1.12",
+    version: "0.1.13",
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");

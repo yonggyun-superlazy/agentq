@@ -180,7 +180,7 @@ describe("AgentQ hook handler", () => {
     expect(presence).toContain("src/protocol.ts");
   });
 
-  it("extracts apply_patch file headers and nudges missing work adoption", async () => {
+  it("extracts apply_patch file headers and blocks missing work adoption", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-patch-paths-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "src"), { recursive: true });
@@ -211,17 +211,20 @@ describe("AgentQ hook handler", () => {
 
     expect(result.code).toBe(0);
     const output = JSON.parse(result.stdout) as {
-      readonly hookSpecificOutput?: { readonly additionalContext?: string };
+      readonly decision?: string;
+      readonly reason?: string;
     };
-    expect(output.hookSpecificOutput?.additionalContext).toContain("no active work frame");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("shared-work helper with the current actor id");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("Internal shared-work maintenance");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("answer the requested artifact first");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("required replies or exact same-file/resource conflicts");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("run the next safe local read/test");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("omit internal ids, command names");
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("no active work frame");
+    expect(output.reason).toContain("shared-work helper with the current actor id");
+    expect(output.reason).toContain("Do not continue this mutating tool until active work exists");
+    expect(output.reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
+    expect(output.reason).toContain("[USER_FRAME_RESUME]");
+    expect(output.reason).toContain("Internal shared-work maintenance");
+    expect(output.reason).toContain("answer the requested artifact first");
+    expect(output.reason).toContain("required replies or exact same-file/resource conflicts");
+    expect(output.reason).toContain("run the next safe local read/test");
+    expect(output.reason).toContain("omit internal ids, command names");
 
     const store = await resolveWorkspaceStore(workspace, { env });
     const session = await readFile(
@@ -688,6 +691,27 @@ describe("AgentQ hook handler", () => {
       summary: "protocol owner",
       now: "2026-05-18T00:00:00.000Z"
     });
+    const actor = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "S7",
+      cwd: workspace,
+      activePaths: ["src/protocol.ts"],
+      responsibilities: ["current protocol edit"],
+      summary: "current protocol edit",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await startWork(store, {
+      actorId: actor.actorId,
+      workId: "AW-owner-overlap-current",
+      title: "Current protocol edit",
+      paths: ["src/protocol.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId: actor.actorId,
+      evidence: ["Context exists so this test exercises owner overlap without work-adoption blocking."],
+      now: "2026-05-18T00:00:00.500Z"
+    });
 
     const result = await runHookHandler({
       adapter: "codex",
@@ -737,6 +761,28 @@ describe("AgentQ hook handler", () => {
       responsibilities: ["DD setup watcher"],
       summary: "DD setup watcher",
       now: "2026-05-18T00:00:00.000Z"
+    });
+    const actor = await createOrRefreshSessionBinding(store, {
+      adapter: "codex",
+      sessionId: "S-resource",
+      cwd: workspace,
+      activePaths: ["ProjectDD"],
+      activeResources: ["setup-watcher:ProjectDD/DDSetup"],
+      responsibilities: ["current setup edit"],
+      summary: "current setup edit",
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await startWork(store, {
+      actorId: actor.actorId,
+      workId: "AW-resource-overlap-current",
+      title: "Current setup edit",
+      paths: ["ProjectDD"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId: actor.actorId,
+      evidence: ["Context exists so this test exercises resource overlap without work-adoption blocking."],
+      now: "2026-05-18T00:00:00.500Z"
     });
 
     const result = await runHookHandler({
@@ -844,6 +890,44 @@ describe("AgentQ hook handler", () => {
       ignoredCommands: ["rtk node AgentQ/packages/cli/dist/main.js status"],
       nudge: false
     });
+  });
+
+  it("rejects shell and diff noise while preserving concrete hook paths", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-path-noise-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "Shared"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-path-noise",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "Set-Content -Path Shared/Good.md -Value ok; echo !docs/quality-experiments/IMPROVEMENT_REPORT.md +AGENTS.md Shared/.codegraph/codegraph.db).Length",
+          paths: [
+            "Shared/.gitignore\"",
+            "!docs/quality-experiments/RESEARCH_NOTES_KO.md",
+            "+AGENTS.md"
+          ]
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:01.000Z"
+    });
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const actors = await listActorPresences(store);
+    expect(actors).toHaveLength(1);
+    expect(actors[0]?.activePaths).toContain("Shared/Good.md");
+    expect(actors[0]?.activePaths).toContain("Shared/.gitignore");
+    expect(actors[0]?.activePaths).not.toContain("Shared/.gitignore\"");
+    expect(actors[0]?.activePaths).not.toContain("Shared/.codegraph/codegraph.db).Length");
+    expect(actors[0]?.activePaths.some((activePath) => activePath.startsWith("!"))).toBe(false);
+    expect(actors[0]?.activePaths.some((activePath) => activePath.startsWith("+"))).toBe(false);
   });
 
   it("does not nudge on read-only pre-tool overlap", async () => {
