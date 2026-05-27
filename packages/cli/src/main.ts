@@ -3206,16 +3206,24 @@ function classifyDiagnosticAgentActivity(row: Omit<DiagnosticAgentActivityRow, "
     return "agent-scope-missing";
   }
 
-  if (row.ignoredWorkAdoptionNudgeCount > 0) {
-    return "policy-work-adoption-unresolved";
-  }
-
   if (row.unresolvedBlockedWorkAdoptionNudgeCount > 0) {
-    return "policy-work-adoption-blocked";
+    return "shared-goal-context-blocked";
   }
 
   if (row.ownerOverlapNudgeCount > 0) {
-    return "shared-owner-routing";
+    return "coordination-owner-routing";
+  }
+
+  if (row.zeroEvidenceOpenWorkCount > 0) {
+    return "shared-goal-evidence-missing";
+  }
+
+  if (row.openWorkCount > 0) {
+    return "shared-goal-tracked";
+  }
+
+  if (row.ignoredWorkAdoptionNudgeCount > 0) {
+    return "shared-goal-context-missing";
   }
 
   if (row.broadPresenceOnlyCount > 0 && row.pathfulEventCount === 0) {
@@ -3343,12 +3351,12 @@ function statusNextAction(input: {
     return "Preview terminal pointer residue with `agentq work cleanup-stale`; apply with `--yes` to clear closed active pointers.";
   }
 
-  if (input.ignoredWorkNudgeActorCount > 0) {
-    return "Start active work for actors that already received concrete edit nudges with `agentq next --actor <id>`.";
-  }
-
   if (input.unresolvedBlockedWorkNudgeActorCount > 0) {
     return "Start active work for actors with blocked mutating attempts, then retry the blocked tool.";
+  }
+
+  if (input.ignoredWorkNudgeActorCount > 0) {
+    return "Start active work for actors that already received concrete edit nudges with `agentq next --actor <id>`.";
   }
 
   if (input.scopeRefreshNeededCount > 0) {

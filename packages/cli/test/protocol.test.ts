@@ -481,7 +481,7 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("mutating:1");
     expect(result.stdout).toContain("stop:1");
     expect(result.stdout).toContain("ownerNudges:1");
-    expect(result.stdout).toContain("diagnosis:shared-owner-routing");
+    expect(result.stdout).toContain("diagnosis:coordination-owner-routing");
     expect(result.stdout).toContain("diagnosis:agent-scope-missing");
     expect(result.stdout).toContain("agent:codex");
     expect(result.stdout).toContain("events:3");
