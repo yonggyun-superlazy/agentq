@@ -870,8 +870,11 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain("related active owner");
     expect(output.hookSpecificOutput?.additionalContext).not.toContain(owner.actorId);
     expect(output.hookSpecificOutput?.additionalContext).toContain("Ownership is a routing signal, not a lock");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Preserve the user's requested artifact");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Do not replace the user's requested artifact with coordination work");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("continue the original request");
     expect(output.hookSpecificOutput?.additionalContext).toContain("route a required question with evidence");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("Convert real overlap into a message");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("When this overlap is a real blocker or contract change");
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq owners --actor ${actor.actorId} --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq question --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq note --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);

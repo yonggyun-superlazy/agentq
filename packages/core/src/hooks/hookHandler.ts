@@ -748,7 +748,7 @@ function renderRelatedOwnerNudge(
     : `--path ${firstPath ?? "<path>"}`;
   return renderInternalQueueMaintenance({
     summary: "Possible owner overlap.",
-    afterAction: "Ask only if this overlap changes the edit, handoff, or resource contract; otherwise continue the user's request.",
+    afterAction: "Preserve the user's requested artifact; ask only if this overlap changes the edit, handoff, or resource contract.",
     body: [
       "A related active owner exists for this tool path or resource.",
       ...pathMatches.map(
@@ -760,8 +760,9 @@ function renderRelatedOwnerNudge(
           `- resource ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
       ),
       "Ownership is a routing signal, not a lock.",
+      "Do not replace the user's requested artifact with coordination work. If this overlap does not change the task, continue the original request.",
       "If this changes another actor's contract or blocks their work, route a required question with evidence; otherwise continue locally.",
-      "Convert real overlap into a message, not just an observation:",
+      "When this overlap is a real blocker or contract change, convert it into a message:",
       `- inspect owners: agentq owners --actor ${actorId} ${routeArg}`,
       `- required decision: agentq question --actor ${actorId} --to <owner-actor-id> ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`,
       `- non-blocking context: agentq note --actor ${actorId} --to <owner-actor-id> ${routeArg} --note "<context or handoff evidence>"`

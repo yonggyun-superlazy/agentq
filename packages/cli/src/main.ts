@@ -3388,7 +3388,7 @@ function statusNextAction(input: {
   }
 
   if (input.recentOwnerOverlapNudgeCount > 0 && input.recentMessageCount === 0) {
-    return "Convert owner-overlap into `agentq owners ...`, then `agentq question ...` for decisions or `agentq note ...` for context.";
+    return "Preserve the current user request. If owner-overlap changes the edit, handoff, or contract, run `agentq owners ...`, then `agentq question ...` for decisions or `agentq note ...` for context.";
   }
 
   if (input.routeableIdleNoWorkCount > 0) {
