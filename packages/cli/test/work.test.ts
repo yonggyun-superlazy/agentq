@@ -1144,6 +1144,8 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("routeable no-work actors: 1");
     expect(result.stdout).toContain("recent work-adoption nudged actors: 0");
     expect(result.stdout).toContain("ignored work-adoption nudges: 0");
+    expect(result.stdout).toContain("owner-overlap nudges 24h: 0");
+    expect(result.stdout).toContain("owner-message conversion 24h: none");
     expect(result.stdout).toContain("broad presence-only actors: 1");
     expect(result.stdout).toContain("codex: total 1, active 1, stale 0, operational-active 1, bookkeeping-active 0, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 1, routeable-no-work 0, broad-presence-only 0");
     expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, operational-active 1, bookkeeping-active 1, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 0, routeable-no-work 1, broad-presence-only 1");
@@ -1166,6 +1168,56 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("Audit/bookkeeping active actors:");
     expect(result.stdout).toContain("AW-status");
     expect(result.stdout).toContain("AQ-status");
+  });
+
+  it("reports owner-overlap signals that did not turn into messages", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-owner-conversion-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "owner-conversion",
+      "--paths",
+      "README.md",
+      "--responsibility",
+      "Owner overlap conversion diagnostics"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "owner-peer",
+      "--paths",
+      "README.md",
+      "--responsibility",
+      "README ownership"
+    ], runtime);
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:09:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "Bash",
+      toolMode: "mutating",
+      paths: ["README.md"],
+      nudge: true,
+      nudgeKinds: ["owner-overlap"]
+    });
+
+    const status = await runCommand(["status"], runtime);
+
+    expect(status.stdout).toContain("owner-overlap nudges 24h: 1");
+    expect(status.stdout).toContain("owner-message conversion 24h: missing");
+    expect(status.stdout).toContain("recent messages 24h: 0");
+    expect(status.stdout).toContain("coordination-conversion: 1 owner-overlap nudge(s), but no recent inter-agent messages.");
   });
 
   it("reports orphan active work pointers that have no actor presence", async () => {

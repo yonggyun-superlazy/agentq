@@ -872,7 +872,8 @@ async function workCleanupStaleCommand(args: ParsedArgs, runtime: CommandRuntime
   const store = await openStore(runtime);
   const now = runtime.now();
   const nowMs = Date.parse(now);
-  const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs);
+  const diagnosticEvents = await readDiagnosticEvents(store, 10_000);
+  const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs, diagnosticEvents);
   const workInventory = await readWorkspaceStatusWorkInventory(store, details);
   const candidates = collectStartedOnlyStaleWorkCleanupCandidates(workInventory, nowMs, staleAfterMs);
   const terminalPointers = workInventory.filter(isTerminalActiveWorkPointerItem);
@@ -975,13 +976,23 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
   const report = await runDoctor(runtime.cwd, { env: runtime.env });
   const now = runtime.now();
   const nowMs = Date.parse(now);
-  const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs);
+  const diagnosticEvents = await readDiagnosticEvents(store, 10_000);
+  const details = await readWorkspaceStatusDetails(store, nowMs, staleAfterMs, diagnosticEvents);
   const workInventory = await readWorkspaceStatusWorkInventory(store, details);
   const recentMessages = await listRecentMessageSummaries(store, nowMs, 86_400_000);
+  const recentOwnerOverlapNudgeCount = countRecentOwnerOverlapNudges(diagnosticEvents, nowMs, 86_400_000);
 
   return {
     code: report.summary === "fail" ? 2 : 0,
-    stdout: renderWorkspaceStatus(report, details, workInventory, nowMs, staleAfterMs, recentMessages),
+    stdout: renderWorkspaceStatus(
+      report,
+      details,
+      workInventory,
+      nowMs,
+      staleAfterMs,
+      recentMessages,
+      recentOwnerOverlapNudgeCount
+    ),
     stderr: ""
   };
 }
@@ -989,10 +1000,10 @@ async function statusCommand(argv: readonly string[], runtime: CommandRuntime): 
 async function readWorkspaceStatusDetails(
   store: Awaited<ReturnType<typeof openStore>>,
   nowMs: number,
-  staleAfterMs: number
+  staleAfterMs: number,
+  diagnosticEvents: readonly DiagnosticEvent[]
 ): Promise<readonly WorkspaceStatusActor[]> {
   const actors = await listActorPresences(store);
-  const diagnosticEvents = await readDiagnosticEvents(store, 10_000);
 
   return await Promise.all(
     actors.map(async (actor) => {
@@ -1374,6 +1385,7 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
   const actors = await listActorPresences(store);
   const rows = await buildDiagnosticActivityRows(store, actors, windowEvents, nowMs, windowMs);
   const agentRows = buildDiagnosticAgentActivityRows(rows);
+  const recentMessages = await listRecentMessageSummaries(store, nowMs, windowMs);
 
   return {
     code: 0,
@@ -1382,7 +1394,8 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
       eventCount: windowEvents.length,
       rowCount: rows.length,
       limit,
-      agentRows
+      agentRows,
+      recentMessageCount: recentMessages.length
     }),
     stderr: ""
   };
@@ -2615,6 +2628,7 @@ interface DiagnosticActivityRenderInput {
   readonly rowCount: number;
   readonly limit: number;
   readonly agentRows: readonly DiagnosticAgentActivityRow[];
+  readonly recentMessageCount: number;
 }
 
 function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
@@ -2635,7 +2649,8 @@ function renderWorkspaceStatus(
   workInventory: readonly WorkspaceStatusWorkItem[],
   nowMs: number,
   staleAfterMs: number,
-  recentMessages: readonly RecentMessageSummary[]
+  recentMessages: readonly RecentMessageSummary[],
+  recentOwnerOverlapNudgeCount: number
 ): string {
   const activeDetails = details.filter((detail) => detail.summary.status === "active");
   const auditOnlyActiveDetails = activeDetails.filter(isAuditOnlyActor);
@@ -2717,6 +2732,7 @@ function renderWorkspaceStatus(
     routeableIdleNoWorkCount,
     unresolvedBlockedWorkNudgeActorCount,
     ignoredWorkNudgeActorCount,
+    recentOwnerOverlapNudgeCount,
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
     zeroEvidenceOpenWorkCount,
@@ -2743,6 +2759,8 @@ function renderWorkspaceStatus(
     `resolved blocked work-adoption attempts: ${resolvedBlockedWorkNudgeActorCount}`,
     `unresolved blocked work-adoption attempts: ${unresolvedBlockedWorkNudgeActorCount}`,
     `ignored work-adoption nudges: ${ignoredWorkNudgeActorCount}`,
+    `owner-overlap nudges 24h: ${recentOwnerOverlapNudgeCount}`,
+    `owner-message conversion 24h: ${classifyOwnerMessageConversion(recentOwnerOverlapNudgeCount, recentMessages.length)}`,
     `broad presence-only actors: ${broadPresenceOnlyCount}`,
     `legacy/noisy path actors: ${noisyPathActorCount}`,
     `pending inbox: ${pendingInboxCount}`,
@@ -3065,7 +3083,7 @@ async function buildDiagnosticActivityRows(
       const unresolvedBlockedWorkAdoptionNudge = blockedWorkAdoptionNudgeEvents.length > 0 &&
         !resolvedBlockedWorkAdoptionNudge;
       const nudgeEvents = actorEvents.filter((event) => event.nudge === true);
-      const ownerOverlapNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("owner-overlap") === true);
+      const ownerOverlapNudgeEvents = actorEvents.filter(eventHasOwnerOverlapNudge);
       const stackContextNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("work-stack") === true);
       const readOnlyEvents = actorEvents.filter((event) => event.toolMode === "read-only");
       const mutatingEvents = actorEvents.filter((event) => event.toolMode === "mutating");
@@ -3263,6 +3281,7 @@ function statusSignals(input: {
   readonly routeableIdleNoWorkCount: number;
   readonly unresolvedBlockedWorkNudgeActorCount: number;
   readonly ignoredWorkNudgeActorCount: number;
+  readonly recentOwnerOverlapNudgeCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
@@ -3308,6 +3327,10 @@ function statusSignals(input: {
 
   if (input.routeableActiveCount > 1 && input.recentMessageCount === 0) {
     lines.push(`coordination: ${input.routeableActiveCount} routeable active actor(s), but no recent inter-agent messages.`);
+  }
+
+  if (input.recentOwnerOverlapNudgeCount > 0 && input.recentMessageCount === 0) {
+    lines.push(`coordination-conversion: ${input.recentOwnerOverlapNudgeCount} owner-overlap nudge(s), but no recent inter-agent messages.`);
   }
 
   if (input.staleOpenWorkCount > 0) {
@@ -3487,6 +3510,33 @@ function eventHasWorkAdoptionNudge(event: DiagnosticEvent): boolean {
     ((event.paths ?? []).some(isSpecificDiagnosticPath) || (event.resources ?? []).length > 0);
 }
 
+function eventHasOwnerOverlapNudge(event: DiagnosticEvent): boolean {
+  return event.nudgeKinds?.includes("owner-overlap") === true;
+}
+
+function countRecentOwnerOverlapNudges(
+  events: readonly DiagnosticEvent[],
+  nowMs: number,
+  windowMs: number
+): number {
+  return events.filter((event) => {
+    const atMs = Date.parse(event.at);
+    return eventHasOwnerOverlapNudge(event) &&
+      Number.isFinite(nowMs) &&
+      Number.isFinite(atMs) &&
+      nowMs - atMs >= 0 &&
+      nowMs - atMs <= windowMs;
+  }).length;
+}
+
+function classifyOwnerMessageConversion(ownerOverlapNudgeCount: number, recentMessageCount: number): string {
+  if (ownerOverlapNudgeCount === 0) {
+    return "none";
+  }
+
+  return recentMessageCount === 0 ? "missing" : "observed";
+}
+
 function isSpecificDiagnosticPath(value: string): boolean {
   return value.trim().length > 0 && value.trim() !== "." && !isNoisyPresencePath(value);
 }
@@ -3585,11 +3635,15 @@ function renderDiagnosticActivity(
   rows: readonly DiagnosticActivityRow[],
   input: DiagnosticActivityRenderInput
 ): string {
+  const ownerOverlapNudgeCount = input.agentRows.reduce((sum, row) => sum + row.ownerOverlapNudgeCount, 0);
   const lines = [
     "AgentQ diagnostic activity",
     `Window: ${formatDuration(input.windowMs)}`,
     `Hook events in window: ${input.eventCount}`,
     `Actors shown: ${rows.length}/${input.rowCount}${input.rowCount > input.limit ? ` (limit ${input.limit})` : ""}`,
+    "",
+    "Coordination:",
+    `  ownerNudges:${ownerOverlapNudgeCount} | recentMessages:${input.recentMessageCount} | ownerMessageConversion:${classifyOwnerMessageConversion(ownerOverlapNudgeCount, input.recentMessageCount)}`,
     "",
     "Agents:",
     ...(input.agentRows.length === 0 ? ["  none"] : input.agentRows.map(renderDiagnosticAgentActivityRow)),

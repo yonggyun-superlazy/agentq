@@ -481,6 +481,8 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("mutating:1");
     expect(result.stdout).toContain("stop:1");
     expect(result.stdout).toContain("ownerNudges:1");
+    expect(result.stdout).toContain("Coordination:");
+    expect(result.stdout).toContain("ownerNudges:1 | recentMessages:0 | ownerMessageConversion:missing");
     expect(result.stdout).toContain("diagnosis:coordination-owner-routing");
     expect(result.stdout).toContain("diagnosis:agent-scope-missing");
     expect(result.stdout).toContain("agent:codex");
@@ -495,6 +497,46 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("evidence:0");
     expect(result.stdout).toContain("workTitle:Diagnose activity output");
     expect(result.stdout).toContain("paths:README.md");
+  });
+
+  it("reports owner-overlap conversion when a recent message exists", async () => {
+    const workspace = await createWorkspace("agentq-cli-diag-conversion-");
+    const runtime = createRuntime(workspace, "2026-05-18T00:10:00.000Z");
+    const sender = await enter(runtime, "codex", "conversion-sender");
+    const receiver = await enter(runtime, "claude-code", "conversion-receiver");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:09:00.000Z",
+      actorId: sender,
+      adapter: "codex",
+      event: "pre-tool",
+      toolName: "Bash",
+      toolMode: "mutating",
+      paths: ["README.md"],
+      nudge: true,
+      nudgeKinds: ["owner-overlap"]
+    });
+    await runCommand([
+      "question",
+      "--id",
+      "AQ-owner-conversion",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "README.md",
+      "--question",
+      "Can I edit README without overlapping your work?",
+      "--expect",
+      "Answer with current ownership evidence"
+    ], runtime);
+
+    const result = await runCommand(["diag", "activity", "--window", "1h"], runtime);
+
+    expect(result.stdout).toContain("ownerNudges:1 | recentMessages:1 | ownerMessageConversion:observed");
   });
 
   it.each(["typo", "superseded"])(
