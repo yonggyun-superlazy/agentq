@@ -446,6 +446,71 @@ describe("AgentQ hook handler", () => {
     expect(output.reason).toContain("no active work frame");
   });
 
+  it("allows the quality scorecard summary command as read-only when bytecode writes are disabled", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-scorecard-summary-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "docs/quality-experiments/scorecards"), { recursive: true });
+    const env = testEnv(tempRoot);
+    const command = "rtk python -B docs/quality-experiments/summarize_quality_scorecard.py --config docs/quality-experiments/scorecards/quality-scorecard-compact-full-vs-vanilla.json";
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-scorecard-summary",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).not.toMatchObject({ decision: "block" });
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      toolName: "Bash",
+      toolMode: "read-only",
+      ignoredCommands: [],
+      nudge: false,
+      decision: "allow"
+    });
+  });
+
+  it("does not treat scorecard scripts as read-only when bytecode writes are possible", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-scorecard-summary-unsafe-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "docs/quality-experiments/scorecards"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-scorecard-summary-unsafe",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {
+          command: "rtk python docs/quality-experiments/summarize_quality_scorecard.py --config docs/quality-experiments/scorecards/quality-scorecard-compact-full-vs-vanilla.json"
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      readonly decision?: string;
+      readonly reason?: string;
+    };
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("no active work frame");
+  });
+
   it("normalizes punctuated file paths and rejects conceptual slash tokens", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-path-quality-"));
     const workspace = path.join(tempRoot, "workspace");

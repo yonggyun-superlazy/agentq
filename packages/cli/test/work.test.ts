@@ -1406,6 +1406,8 @@ describe("CLI work stack", () => {
     const status = await runCommand(["status"], runtime);
     expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
     expect(status.stdout).toContain("blocked work-adoption attempts: 0");
+    expect(status.stdout).toContain("resolved blocked work-adoption attempts: 0");
+    expect(status.stdout).toContain("unresolved blocked work-adoption attempts: 0");
     expect(status.stdout).toContain("ignored work-adoption nudges: 1");
     expect(status.stdout).toContain("Next:");
     expect(status.stdout).toContain("Start active work for actors that already received concrete edit nudges");
@@ -1449,9 +1451,68 @@ describe("CLI work stack", () => {
 
     expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
     expect(status.stdout).toContain("blocked work-adoption attempts: 1");
+    expect(status.stdout).toContain("resolved blocked work-adoption attempts: 0");
+    expect(status.stdout).toContain("unresolved blocked work-adoption attempts: 1");
     expect(status.stdout).toContain("ignored work-adoption nudges: 0");
-    expect(status.stdout).toContain("work-adoption-blocked: 1 actor(s) had mutating attempts blocked until active work exists.");
+    expect(status.stdout).toContain("work-adoption-blocked: 1 actor(s) still have unresolved blocked mutating attempts.");
     expect(status.stdout).not.toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
+  });
+
+  it("reports blocked work-adoption attempts as resolved after work starts", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-resolved-blocked-nudge-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:10:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "resolved-blocked-nudge",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ resolved blocked adoption diagnostics"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await appendDiagnosticEvent(store, {
+      kind: "hook",
+      at: "2026-05-18T00:01:00.000Z",
+      actorId,
+      event: "pre-tool",
+      toolName: "apply_patch",
+      toolMode: "mutating",
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      nudge: true,
+      nudgeKinds: ["work-adoption"],
+      decision: "block"
+    });
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-resolved-blocked-nudge",
+      "--title",
+      "Resolved blocked adoption",
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], { ...runtime, now: () => "2026-05-18T00:02:00.000Z" });
+
+    const status = await runCommand(["status"], runtime);
+    const activity = await runCommand(["diag", "activity", "--window", "1h"], runtime);
+
+    expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
+    expect(status.stdout).toContain("blocked work-adoption attempts: 1");
+    expect(status.stdout).toContain("resolved blocked work-adoption attempts: 1");
+    expect(status.stdout).toContain("unresolved blocked work-adoption attempts: 0");
+    expect(status.stdout).not.toContain("work-adoption-blocked: 1 actor(s) still have unresolved blocked mutating attempts.");
+    expect(activity.stdout).toContain("blockedWorkNudges:1");
+    expect(activity.stdout).toContain("blockedWorkResolved");
+    expect(activity.stdout).not.toContain("blockedWorkUnresolved");
   });
 
   it("does not label a completed post-nudge work adoption as ignored", async () => {
@@ -1517,6 +1578,8 @@ describe("CLI work stack", () => {
 
     expect(status.stdout).toContain("recent work-adoption nudged actors: 1");
     expect(status.stdout).toContain("blocked work-adoption attempts: 0");
+    expect(status.stdout).toContain("resolved blocked work-adoption attempts: 0");
+    expect(status.stdout).toContain("unresolved blocked work-adoption attempts: 0");
     expect(status.stdout).toContain("ignored work-adoption nudges: 0");
     expect(status.stdout).not.toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
   });
