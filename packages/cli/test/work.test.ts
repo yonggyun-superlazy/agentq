@@ -1217,6 +1217,7 @@ describe("CLI work stack", () => {
     expect(status.stdout).toContain("owner-overlap nudges 24h: 1");
     expect(status.stdout).toContain("owner-message conversion 24h: missing");
     expect(status.stdout).toContain("recent messages 24h: 0");
+    expect(status.stdout).toContain("Convert owner-overlap into `agentq owners ...`, then `agentq question ...` for decisions or `agentq note ...` for context.");
     expect(status.stdout).toContain("coordination-conversion: 1 owner-overlap nudge(s), but no recent inter-agent messages.");
   });
 

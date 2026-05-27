@@ -696,7 +696,7 @@ async function buildRelatedOwnerNudge(
     return null;
   }
 
-  return renderRelatedOwnerNudge(pathMatches.slice(0, 3), resourceMatches.slice(0, 3));
+  return renderRelatedOwnerNudge(actorId, pathMatches.slice(0, 3), resourceMatches.slice(0, 3));
 }
 
 async function buildWorkAdoptionNudge(
@@ -737,11 +737,15 @@ async function buildWorkAdoptionNudge(
 }
 
 function renderRelatedOwnerNudge(
+  actorId: string,
   pathMatches: readonly ActivePathOwnerMatch[],
   resourceMatches: readonly ActiveResourceOwnerMatch[]
 ): string {
-  const firstResource = resourceMatches[0]?.queriedResource;
+  const firstResource = resourceMatches[0]?.activeResource;
   const firstPath = pathMatches[0]?.queriedPath;
+  const routeArg = firstResource !== undefined
+    ? `--resource ${firstResource}`
+    : `--path ${firstPath ?? "<path>"}`;
   return renderInternalQueueMaintenance({
     summary: "Possible owner overlap.",
     afterAction: "Ask only if this overlap changes the edit, handoff, or resource contract; otherwise continue the user's request.",
@@ -757,7 +761,10 @@ function renderRelatedOwnerNudge(
       ),
       "Ownership is a routing signal, not a lock.",
       "If this changes another actor's contract or blocks their work, route a required question with evidence; otherwise continue locally.",
-      `For exact routing, use the shared-work helper with the current actor id and ${firstResource !== undefined ? `resource ${firstResource}` : `path ${firstPath ?? "<path>"}`}.`
+      "Convert real overlap into a message, not just an observation:",
+      `- inspect owners: agentq owners --actor ${actorId} ${routeArg}`,
+      `- required decision: agentq question --actor ${actorId} --to <owner-actor-id> ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`,
+      `- non-blocking context: agentq note --actor ${actorId} --to <owner-actor-id> ${routeArg} --note "<context or handoff evidence>"`
     ]
   });
 }

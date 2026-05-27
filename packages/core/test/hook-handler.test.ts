@@ -871,6 +871,10 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).not.toContain(owner.actorId);
     expect(output.hookSpecificOutput?.additionalContext).toContain("Ownership is a routing signal, not a lock");
     expect(output.hookSpecificOutput?.additionalContext).toContain("route a required question with evidence");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Convert real overlap into a message");
+    expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq owners --actor ${actor.actorId} --path src/protocol.ts`);
+    expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq question --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
+    expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq note --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("Internal shared-work maintenance");
@@ -941,7 +945,9 @@ describe("AgentQ hook handler", () => {
     };
     expect(output.hookSpecificOutput?.additionalContext).not.toContain(owner.actorId);
     expect(output.hookSpecificOutput?.additionalContext).toContain("resource setup-watcher:ProjectDD/DDSetup");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("For exact routing");
+    expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq owners --actor ${actor.actorId} --resource setup-watcher:ProjectDD/DDSetup`);
+    expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq question --actor ${actor.actorId} --to <owner-actor-id> --resource setup-watcher:ProjectDD/DDSetup`);
+    expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq note --actor ${actor.actorId} --to <owner-actor-id> --resource setup-watcher:ProjectDD/DDSetup`);
   });
 
   it("does not infer resources from AgentQ meta commands and records diagnostics", async () => {

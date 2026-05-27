@@ -3356,6 +3356,7 @@ function statusNextAction(input: {
   readonly zeroEvidenceOpenWorkCount: number;
   readonly staleOpenWorkCount: number;
   readonly routeableActiveCount: number;
+  readonly recentOwnerOverlapNudgeCount: number;
   readonly recentMessageCount: number;
 }): string {
   if (input.pendingInboxCount > 0) {
@@ -3384,6 +3385,10 @@ function statusNextAction(input: {
 
   if (input.scopeRefreshNeededCount > 0) {
     return "Refresh weak-scoped actors that have inbox/work/nudges with `agentq next --actor <id>`.";
+  }
+
+  if (input.recentOwnerOverlapNudgeCount > 0 && input.recentMessageCount === 0) {
+    return "Convert owner-overlap into `agentq owners ...`, then `agentq question ...` for decisions or `agentq note ...` for context.";
   }
 
   if (input.routeableIdleNoWorkCount > 0) {
