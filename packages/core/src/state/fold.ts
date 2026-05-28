@@ -88,9 +88,16 @@ async function readRequestFiles(requestsDir: string): Promise<RequiredRequest[]>
 
 async function readEventFiles(eventsDir: string): Promise<AgentQEvent[]> {
   const files = await readYamlFiles(eventsDir);
-  return await Promise.all(
-    files.map(async (file) => parseYamlWithSchema(EventSchema, await readFile(file, "utf8")))
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        return parseYamlWithSchema(EventSchema, await readFile(file, "utf8"));
+      } catch {
+        return null;
+      }
+    })
   );
+  return results.filter((e): e is AgentQEvent => e !== null);
 }
 
 async function readYamlFiles(dir: string): Promise<string[]> {

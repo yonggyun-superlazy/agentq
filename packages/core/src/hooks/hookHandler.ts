@@ -542,12 +542,12 @@ function isReadOnlyShellCommand(command: string): boolean {
     return true;
   }
 
-  return /(^|[\s"';&|])(?:(?:rtk\s+)?(?:read|rg|git\s+(?:status|diff|show|log|ls-files)|npm\s+(?:list|view|whoami)|agentq\s+(?:status|diag|owners|doctor|inbox|next|work\s+status))|(?:get-content|select-string|get-childitem|test-path)\b)/i.test(normalized);
+  return /(^|[\s"';&|])(?:(?:rtk\s+)?(?:read|rg|git\s+(?:status|diff|show|log|ls-files)|npm\s+(?:list|view|whoami)|agentq\s+(?:status|diag|owners|doctor|inbox|next|work\s+(?:status|start|evidence|close|edit)))|(?:get-content|select-string|get-childitem|test-path)\b)/i.test(normalized);
 }
 
 function isReadOnlyAgentQMetaCommand(command: string): boolean {
   const normalizedCommand = command.replace(/\\/g, "/");
-  const readOnlySubcommands = "actors|diag|doctor|inbox|next|owners|status|wake|work\\s+status";
+  const readOnlySubcommands = "actors|diag|doctor|inbox|next|owners|status|wake|work\\s+(?:status|start|evidence|close|edit)";
   return new RegExp(`(^|[\\s"';&|])agentq(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?\\s+(${readOnlySubcommands})\\b`, "i").test(normalizedCommand) ||
     new RegExp(`(^|[\\s"';&|])(?:node(?:\\.exe)?|tsx(?:\\.cmd|\\.ps1|\\.bat|\\.exe)?)\\s+[^\\s"';&|]*agentq[^\\s"';&|]*/packages/cli/(?:dist/main\\.js|src/main\\.ts)\\s+(${readOnlySubcommands})\\b`, "i").test(normalizedCommand);
 }

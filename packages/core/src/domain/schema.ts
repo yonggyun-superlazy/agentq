@@ -32,7 +32,7 @@ export const PresenceSchema = z
     summary: NonEmptyStringSchema,
     lastSeen: NonEmptyStringSchema
   })
-  .strict();
+  .strip();
 
 const BaseMessageSchema = z
   .object({
