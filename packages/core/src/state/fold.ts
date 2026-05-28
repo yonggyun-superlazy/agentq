@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import { parse } from "yaml";
 import {
   EventSchema,
   MessageSchema,
@@ -8,6 +9,14 @@ import {
 } from "../domain/schema.js";
 import type { AgentQEvent, Message, RequiredRequest, ResponseStatus } from "../domain/types.js";
 import type { WorkspaceStore } from "../store/workspaceStore.js";
+
+const KNOWN_EVENT_KINDS = new Set([
+  "response",
+  "follow_up",
+  "accept_blocked",
+  "supersede",
+  "delivery_attempt"
+]);
 
 export type FoldedRequestStatus = "pending" | ResponseStatus | "superseded";
 
@@ -90,14 +99,25 @@ async function readEventFiles(eventsDir: string): Promise<AgentQEvent[]> {
   const files = await readYamlFiles(eventsDir);
   const results = await Promise.all(
     files.map(async (file) => {
-      try {
-        return parseYamlWithSchema(EventSchema, await readFile(file, "utf8"));
-      } catch {
+      const parsed = parse(await readFile(file, "utf8"));
+      if (hasLegacyEventKind(parsed)) {
         return null;
       }
+
+      return EventSchema.parse(parsed);
     })
   );
   return results.filter((e): e is AgentQEvent => e !== null);
+}
+
+function hasLegacyEventKind(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "kind" in value &&
+    typeof value.kind === "string" &&
+    !KNOWN_EVENT_KINDS.has(value.kind)
+  );
 }
 
 async function readYamlFiles(dir: string): Promise<string[]> {
