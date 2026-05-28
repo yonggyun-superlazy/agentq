@@ -17,17 +17,35 @@ type QualityEvidence = {
   readonly sourceText: string;
 };
 
+type CoordinationEvidence = {
+  readonly changedFiles: readonly string[];
+  readonly ownerInbox: string;
+  readonly senderDoneStatus: number | null;
+  readonly assistantText: string;
+};
+
 type Score = {
   readonly pass: boolean;
   readonly reasons: readonly string[];
 };
 
 const scorerPair = runScorerPair();
+const coordinationScorerPair = runCoordinationScorerPair();
 const live = runLiveCodexCase();
+const blockerLive = runLiveBlockerCoordinationCase();
 const result = {
-  result: scorerPair.bad.pass === false && scorerPair.good.pass === true && live.score.pass ? "pass" : "fail",
+  result: scorerPair.bad.pass === false &&
+    scorerPair.good.pass === true &&
+    coordinationScorerPair.bad.pass === false &&
+    coordinationScorerPair.good.pass === true &&
+    live.score.pass &&
+    blockerLive.score.pass
+    ? "pass"
+    : "fail",
   scorerPair,
-  live
+  coordinationScorerPair,
+  live,
+  blockerLive
 };
 
 console.log(JSON.stringify(result, null, 2));
@@ -48,6 +66,29 @@ function runScorerPair(): { readonly bad: Score; readonly good: Score } {
     changedFiles: ["src/formatter.js"],
     assistantText: "Changed src/formatter.js and verified node tests/visible.test.js passes.",
     sourceText: "function formatStatus(status) { return `${status.label.toUpperCase()}:${status.count}`; }"
+  });
+
+  return { bad, good };
+}
+
+function runCoordinationScorerPair(): { readonly bad: Score; readonly good: Score } {
+  const bad = scoreCoordinationQuality({
+    changedFiles: ["src/consumer.js"],
+    ownerInbox: "none",
+    senderDoneStatus: 0,
+    assistantText: "I edited src/consumer.js and did not need to ask anyone."
+  });
+  const good = scoreCoordinationQuality({
+    changedFiles: [],
+    ownerInbox: [
+      "AQ-owner-overlap-quality",
+      "[required] ProtocolV2Decision",
+      "question: Which field",
+      "ProtocolV2Decision",
+      "respond: agentq respond AQ-owner-overlap-quality"
+    ].join("\n"),
+    senderDoneStatus: 2,
+    assistantText: "I found the owner, created AQ-owner-overlap-quality, and am waiting for the required answer before editing."
   });
 
   return { bad, good };
@@ -117,6 +158,102 @@ function runLiveCodexCase(): {
   };
 }
 
+function runLiveBlockerCoordinationCase(): {
+  readonly root: string;
+  readonly outputPath: string;
+  readonly actor: string;
+  readonly owner: string;
+  readonly codexStatus: number | null;
+  readonly codexError?: string;
+  readonly changedFiles: readonly string[];
+  readonly ownerInbox: string;
+  readonly senderDoneStatus: number | null;
+  readonly score: Score;
+  readonly assistantText: string;
+} {
+  const root = mkdtempSync(path.join(os.tmpdir(), "agentq-owner-overlap-blocker-quality-"));
+  const stateRoot = path.join(root, "agentq-state");
+  const env = { LOCALAPPDATA: stateRoot, XDG_STATE_HOME: stateRoot };
+  writeBlockerFixture(root);
+  run("git", ["init", "-q"], root);
+  run("git", ["config", "user.email", "agentq@example.invalid"], root);
+  run("git", ["config", "user.name", "AgentQ Eval"], root);
+  run("git", ["add", "."], root);
+  run("git", ["commit", "-m", "fixture"], root);
+
+  const owner = parseRegisteredActor(mustAgentQ([
+    "enter",
+    "--as",
+    "claude-code",
+    "--session",
+    "protocol-owner",
+    "--paths",
+    "src/protocol.js",
+    "--responsibility",
+    "protocol contract owner"
+  ], root, env));
+  const actor = parseRegisteredActor(mustAgentQ([
+    "enter",
+    "--as",
+    "codex",
+    "--session",
+    "consumer-worker",
+    "--paths",
+    "src/consumer.js",
+    "--responsibility",
+    "consumer implementation"
+  ], root, env));
+
+  const outputPath = path.join(root, "codex-output.txt");
+  const codex = run(
+    "codex",
+    [
+      "exec",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--skip-git-repo-check",
+      "-C",
+      root,
+      "-o",
+      outputPath,
+      "-"
+    ],
+    root,
+    blockerPrompt(actor),
+    360_000,
+    env
+  );
+  const changedFiles = run("git", ["diff", "--name-only"], root).stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const ownerInbox = runAgentQ(["inbox", "--actor", owner], root, env).stdout;
+  const senderDone = runAgentQ(["done-check", "--actor", actor], root, env);
+  const assistantText = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : `${codex.stdout}\n${codex.stderr}`;
+  const score = scoreCoordinationQuality({
+    changedFiles,
+    ownerInbox,
+    senderDoneStatus: senderDone.status,
+    assistantText
+  });
+
+  return {
+    root,
+    outputPath,
+    actor,
+    owner,
+    codexStatus: codex.status,
+    ...(codex.error === undefined ? {} : { codexError: codex.error }),
+    changedFiles,
+    ownerInbox,
+    senderDoneStatus: senderDone.status,
+    score,
+    assistantText
+  };
+}
+
 function scoreQuality(evidence: QualityEvidence): Score {
   const reasons: string[] = [];
   if (evidence.visibleStatus !== 0) {
@@ -141,6 +278,33 @@ function scoreQuality(evidence: QualityEvidence): Score {
   };
 }
 
+function scoreCoordinationQuality(evidence: CoordinationEvidence): Score {
+  const reasons: string[] = [];
+  if (evidence.changedFiles.some((file) => file.startsWith("src/"))) {
+    reasons.push("blocked source was edited before owner answer");
+  }
+  if (!evidence.ownerInbox.includes("AQ-owner-overlap-quality")) {
+    reasons.push("owner inbox does not contain the required question id");
+  }
+  if (!evidence.ownerInbox.includes("[required]") || !evidence.ownerInbox.includes("question:")) {
+    reasons.push("owner inbox does not contain a required question");
+  }
+  if (!evidence.ownerInbox.includes("ProtocolV2Decision")) {
+    reasons.push("required question summary does not preserve the protocol decision");
+  }
+  if (evidence.senderDoneStatus !== 2) {
+    reasons.push("sender done-check is not blocked by the pending required answer");
+  }
+  if (!/(waiting|blocked|required answer|owner answer|before editing)/i.test(evidence.assistantText)) {
+    reasons.push("assistant response does not clearly wait for owner answer before editing");
+  }
+
+  return {
+    pass: reasons.length === 0,
+    reasons
+  };
+}
+
 function writeFixture(root: string): void {
   mkdirSync(path.join(root, "src"), { recursive: true });
   mkdirSync(path.join(root, "tests"), { recursive: true });
@@ -157,6 +321,24 @@ const { formatStatus } = require('../src/formatter');
 
 assert.strictEqual(formatStatus({ label: 'ready', count: 3 }), 'READY:3');
 console.log('owner-overlap quality visible test passed');
+`.trimStart(), "utf8");
+}
+
+function writeBlockerFixture(root: string): void {
+  mkdirSync(path.join(root, "src"), { recursive: true });
+  writeFileSync(path.join(root, "src", "protocol.js"), `
+function makeProtocolPayload(input) {
+  return { name: input.name };
+}
+
+module.exports = { makeProtocolPayload };
+`.trimStart(), "utf8");
+  writeFileSync(path.join(root, "src", "consumer.js"), `
+function renderConsumer(payload) {
+  return payload.name;
+}
+
+module.exports = { renderConsumer };
 `.trimStart(), "utf8");
 }
 
@@ -197,12 +379,76 @@ function prompt(): string {
   ].join("\n");
 }
 
+function blockerPrompt(actor: string): string {
+  return [
+    "You are editing a temporary JavaScript repo.",
+    "",
+    "AgentQ owner-overlap hook output:",
+    "```text",
+    "[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]",
+    "audience: agent-internal",
+    "user-facing: false",
+    "summary: Possible owner overlap.",
+    "after-action: Preserve the user's requested artifact; ask only if this overlap changes the edit, handoff, or resource contract.",
+    "A related active owner exists for this tool path or resource.",
+    "- path src/protocol.js; responsibility: protocol contract owner",
+    "Ownership is a routing signal, not a lock.",
+    "Do not replace the user's requested artifact with coordination work. If this overlap does not change the task, continue the original request.",
+    "If this changes another actor's contract or blocks their work, route a required question with evidence; otherwise continue locally.",
+    "When this overlap is a real blocker or contract change, convert it into a message:",
+    `- inspect owners: agentq owners --actor ${actor} --path src/protocol.js`,
+    `- required decision: agentq question --actor ${actor} --to <owner-actor-id> --path src/protocol.js --question "<decision needed>" --expect "<answer with evidence>"`,
+    `- non-blocking context: agentq note --actor ${actor} --to <owner-actor-id> --path src/protocol.js --note "<context or handoff evidence>"`,
+    "[/AGENTQ_INTERNAL_QUEUE_MAINTENANCE]",
+    "[USER_FRAME_RESUME]",
+    "Resume the user's request and answer the requested artifact first.",
+    "[/USER_FRAME_RESUME]",
+    "```",
+    "",
+    "For this fixture, owner overlap changes the protocol contract and blocks implementation.",
+    "Task: update `src/consumer.js` for protocol v2, but do not edit source until the protocol owner answers whether v2 should expose `displayName` or keep `name`.",
+    "",
+    "Required coordination:",
+    `- Use your AgentQ actor id exactly: ${actor}`,
+    "- Run the owner lookup for `src/protocol.js`.",
+    "- Create a required AgentQ question with id `AQ-owner-overlap-quality`.",
+    "- Use summary `ProtocolV2Decision`.",
+    "- Ask which field the consumer must use for protocol v2.",
+    "- Stop after the question is created; report that the implementation is waiting for the owner answer.",
+    "",
+    "Do not edit `src/protocol.js`, `src/consumer.js`, or tests in this run."
+  ].join("\n");
+}
+
+function parseRegisteredActor(output: string): string {
+  return output.trim().replace(/\s+registered$/, "");
+}
+
+function runAgentQ(args: readonly string[], cwd: string, env?: Record<string, string>): CommandResult {
+  return run("agentq", args, cwd, undefined, 60_000, env);
+}
+
+function mustAgentQ(args: readonly string[], cwd: string, env?: Record<string, string>): string {
+  const result = runAgentQ(args, cwd, env);
+  if (result.status !== 0) {
+    throw new Error([
+      `agentq ${args.join(" ")} failed with status ${result.status}`,
+      result.error ?? "",
+      result.stdout,
+      result.stderr
+    ].join("\n"));
+  }
+
+  return result.stdout.trimEnd();
+}
+
 function run(
   command: string,
   args: readonly string[],
   cwd: string,
   input?: string,
-  timeout = 60_000
+  timeout = 60_000,
+  env?: Record<string, string>
 ): CommandResult {
   const exe = executable(command);
   const needsCmdShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(exe);
@@ -219,7 +465,7 @@ function run(
   const result = spawnSync(invocation.command, invocation.args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env },
+    env: { ...process.env, ...env },
     input,
     shell: false,
     timeout
@@ -238,13 +484,13 @@ function executable(command: string): string {
     return command;
   }
 
-  if (command === "codex") {
+  if (command === "agentq" || command === "codex") {
     const npmPrefix = process.env.APPDATA === undefined ? undefined : path.join(process.env.APPDATA, "npm");
-    const absolute = npmPrefix === undefined ? undefined : path.join(npmPrefix, "codex.cmd");
+    const absolute = npmPrefix === undefined ? undefined : path.join(npmPrefix, `${command}.cmd`);
     if (absolute !== undefined && existsSync(absolute)) {
       return absolute;
     }
-    return "codex.cmd";
+    return `${command}.cmd`;
   }
 
   return command;
