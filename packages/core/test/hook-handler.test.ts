@@ -336,6 +336,30 @@ describe("AgentQ hook handler", () => {
     };
     expect(evidencedOutput.hookSpecificOutput?.additionalContext).toContain("Active shared-work context");
     expect(evidencedOutput.hookSpecificOutput?.additionalContext).not.toContain("Active shared-work evidence required");
+
+    const repeated = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-active-evidence",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "apply_patch",
+        tool_input: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/protocol.ts",
+            "@@",
+            "-newer",
+            "+newest",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:05.000Z"
+    });
+    expect(JSON.parse(repeated.stdout)).toEqual({});
   });
 
   it("records read-only shell paths without ownership nudges", async () => {
@@ -372,6 +396,39 @@ describe("AgentQ hook handler", () => {
     const events = await readDiagnosticEvents(store, 5);
     expect(events[0]).toMatchObject({
       paths: ["AgentQ/packages/cli/src/main.ts"],
+      toolMode: "read-only",
+      nudge: false
+    });
+    expect(events[0]?.nudgeKinds).toBeUndefined();
+  });
+
+  it("keeps PowerShell read-only diagnostics with assignments as read-only", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-pwsh-read-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "AgentQ/packages/core/src/hooks"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-pwsh-read",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "shell_command",
+        tool_input: {
+          command: "rtk pwsh -NoProfile -Command \"$p='AgentQ/packages/core/src/hooks/hookHandler.ts'; $lines=Get-Content -LiteralPath $p -Encoding UTF8; 389..410 | ForEach-Object { '{0}:{1}' -f $_, $lines[$_ - 1] }\""
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.stdout).toBe("{}\n");
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      paths: ["AgentQ/packages/core/src/hooks/hookHandler.ts"],
       toolMode: "read-only",
       nudge: false
     });

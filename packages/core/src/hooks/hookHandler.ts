@@ -23,7 +23,7 @@ import {
   renderWorkStackCompactLines,
   runWorkDoneCheck
 } from "../work/workStack.js";
-import { tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
+import { readDiagnosticEvents, tryAppendDiagnosticEvent } from "../diagnostics/ringLog.js";
 import { actorScopeWeaknesses } from "../state/scopeCheck.js";
 import { renderInternalQueueMaintenance } from "../output/internalEnvelope.js";
 
@@ -32,6 +32,7 @@ export type HookRuntimeEvent = "session-start" | "pre-tool" | "stop";
 
 const UNITY_EXECUTABLE_PATTERN = /(^|[\/\s"';&|])unity(?:\.exe)?(?=$|[\s"';&|])/i;
 const PATH_FILE_EXTENSION_PATTERN = /\.(?:asmdef|asset|bat|cs|csproj|html|js|json|log|md|prefab|prompt\.txt|ps1|py|result\.txt|sln|slui|stamp|ts|tsx|txt|xml|yaml|yml)$/i;
+const WORK_STACK_CONTEXT_REPEAT_SUPPRESSION_MS = 30 * 60 * 1000;
 const TRUSTED_WORKSPACE_PATH_ROOTS = new Set([
   ".claude",
   ".codex",
@@ -138,6 +139,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       ignoredCommands: resourceInference.ignoredCommands,
       nudge: preToolNudge !== null,
       nudgeKinds: preToolNudge?.kinds ?? [],
+      note: preToolNudge?.note,
       decision: preToolDecision,
       at: options.now
     });
@@ -541,8 +543,22 @@ function isReadOnlyShellCommand(command: string): boolean {
   if (isReadOnlyQualityScorecardCommand(normalized)) {
     return true;
   }
+  if (isReadOnlyPowerShellCommand(normalized)) {
+    return true;
+  }
 
   return /(^|[\s"';&|])(?:(?:rtk\s+)?(?:read|rg|git\s+(?:status|diff|show|log|ls-files)|npm\s+(?:list|view|whoami)|agentq\s+(?:status|diag|owners|doctor|inbox|next|work\s+(?:status|start|evidence|close|edit)))|(?:get-content|select-string|get-childitem|test-path)\b)/i.test(normalized);
+}
+
+function isReadOnlyPowerShellCommand(command: string): boolean {
+  if (!/(^|[\s"';&|])(?:rtk\s+)?(?:pwsh|powershell)(?:\.exe)?\b/i.test(command)) {
+    return false;
+  }
+  if (!/\s-(?:command|c)\b/i.test(command)) {
+    return false;
+  }
+
+  return /\b(?:Get-Content|Select-String|Get-ChildItem|Test-Path|ForEach-Object|Where-Object|Sort-Object|Group-Object|Select-Object|Measure-Object|ConvertFrom-Json|ConvertTo-Json)\b/i.test(command);
 }
 
 function isReadOnlyAgentQMetaCommand(command: string): boolean {
@@ -589,6 +605,7 @@ async function writeHookDiagnostic(
     readonly ignoredCommands: readonly string[];
     readonly nudge?: boolean;
     readonly nudgeKinds?: readonly string[];
+    readonly note?: string | undefined;
     readonly decision?: "allow" | "block" | "context";
     readonly at: string;
   }
@@ -608,6 +625,7 @@ async function writeHookDiagnostic(
     ...(input.nudgeKinds === undefined || input.nudgeKinds.length === 0
       ? {}
       : { nudgeKinds: [...input.nudgeKinds] }),
+    ...(input.note === undefined ? {} : { note: input.note }),
     ...(input.decision === undefined ? {} : { decision: input.decision }),
     at: input.at
   });
@@ -616,6 +634,18 @@ async function writeHookDiagnostic(
 interface PreToolNudge {
   readonly message: string;
   readonly kinds: readonly string[];
+  readonly note?: string | undefined;
+}
+
+interface WorkStackContext {
+  readonly message: string;
+  readonly note: string;
+}
+
+interface PreToolNudgePart {
+  readonly kind: string;
+  readonly message: string;
+  readonly note?: string | undefined;
 }
 
 async function buildPreToolNudge(
@@ -628,22 +658,34 @@ async function buildPreToolNudge(
   const [ownerNudge, workNudge, stackNudge] = await Promise.all([
     buildRelatedOwnerNudge(store, actorId, paths, resources, now),
     buildWorkAdoptionNudge(store, actorId, paths, resources),
-    buildActiveWorkStackContext(store, actorId)
+    buildActiveWorkStackContext(store, actorId, now)
   ]);
-  const nudges = [
-    ownerNudge === null ? null : { kind: "owner-overlap", message: ownerNudge },
-    workNudge === null ? null : { kind: "work-adoption", message: workNudge },
-    stackNudge === null ? null : { kind: "work-stack", message: stackNudge }
-  ].filter((nudge): nudge is { readonly kind: string; readonly message: string } => nudge !== null);
+  const nudges: PreToolNudgePart[] = [];
+  if (ownerNudge !== null) {
+    nudges.push({ kind: "owner-overlap", message: ownerNudge });
+  }
+  if (workNudge !== null) {
+    nudges.push({ kind: "work-adoption", message: workNudge });
+  }
+  if (stackNudge !== null) {
+    nudges.push({ kind: "work-stack", message: stackNudge.message, note: stackNudge.note });
+  }
   return nudges.length === 0
     ? null
     : {
       message: nudges.map((nudge) => nudge.message).join("\n\n"),
-      kinds: nudges.map((nudge) => nudge.kind)
+      kinds: nudges.map((nudge) => nudge.kind),
+      note: nudges.map((nudge) => "note" in nudge ? nudge.note : undefined)
+        .filter((note): note is string => note !== undefined)
+        .join("; ") || undefined
     };
 }
 
-async function buildActiveWorkStackContext(store: WorkspaceStore, actorId: string): Promise<string | null> {
+async function buildActiveWorkStackContext(
+  store: WorkspaceStore,
+  actorId: string,
+  now: string
+): Promise<WorkStackContext | null> {
   const stack = await readActiveWorkStack(store, actorId);
   if (stack.length === 0) {
     return null;
@@ -651,26 +693,79 @@ async function buildActiveWorkStackContext(store: WorkspaceStore, actorId: strin
 
   const current = stack[stack.length - 1];
   if (current !== undefined && current.evidence.length === 0) {
-    return renderInternalQueueMaintenance({
-      summary: "Active shared-work evidence required.",
-      afterAction: "Record initial context evidence for the active work, then resume the user's request.",
-      body: [
-        "An active work frame has no context evidence yet.",
-        `Events recorded on the active frame: ${current.eventCount}.`,
-        "Record evidence naming the current frame, observed basis, touched paths/resources, and next pass check before more mutating work.",
-        ...renderWorkStackCompactLines(stack, "Active objective")
-      ]
-    });
+    return {
+      message: renderInternalQueueMaintenance({
+        summary: "Active shared-work evidence required.",
+        afterAction: "Record initial context evidence for the active work, then resume the user's request.",
+        body: [
+          "An active work frame has no context evidence yet.",
+          `Events recorded on the active frame: ${current.eventCount}.`,
+          "Record evidence naming the current frame, observed basis, touched paths/resources, and next pass check before more mutating work.",
+          ...renderWorkStackCompactLines(stack, "Active objective")
+        ]
+      }),
+      note: workStackContextSignature(stack, "evidence-required")
+    };
   }
 
-  return renderInternalQueueMaintenance({
-    summary: "Active shared-work context.",
-    afterAction: "Keep the active objective in context, then resume the user's request.",
-    body: [
-      "An active work frame exists. It is context for ordering, not a reason to shrink the user's objective.",
-      ...renderWorkStackCompactLines(stack, "Active objective")
-    ]
-  });
+  const signature = workStackContextSignature(stack, "active-context");
+  if (await hasRecentWorkStackContextDiagnostic(store, actorId, signature, now)) {
+    return null;
+  }
+
+  return {
+    message: renderInternalQueueMaintenance({
+      summary: "Active shared-work context.",
+      afterAction: "Keep the active objective in context, then resume the user's request.",
+      body: [
+        "An active work frame exists. It is context for ordering, not a reason to shrink the user's objective.",
+        ...renderWorkStackCompactLines(stack, "Active objective")
+      ]
+    }),
+    note: signature
+  };
+}
+
+async function hasRecentWorkStackContextDiagnostic(
+  store: WorkspaceStore,
+  actorId: string,
+  signature: string,
+  now: string
+): Promise<boolean> {
+  let events;
+  try {
+    events = await readDiagnosticEvents(store, 500);
+  } catch {
+    return false;
+  }
+
+  const nowTime = Date.parse(now);
+  for (const event of [...events].reverse()) {
+    if (
+      event.actorId !== actorId ||
+      event.event !== "pre-tool" ||
+      event.nudgeKinds?.includes("work-stack") !== true ||
+      event.note === undefined ||
+      !diagnosticNoteIncludes(event.note, signature)
+    ) {
+      continue;
+    }
+
+    const eventTime = Date.parse(event.at);
+    return Number.isNaN(nowTime) ||
+      Number.isNaN(eventTime) ||
+      nowTime - eventTime <= WORK_STACK_CONTEXT_REPEAT_SUPPRESSION_MS;
+  }
+
+  return false;
+}
+
+function diagnosticNoteIncludes(note: string, signature: string): boolean {
+  return note.split(";").map((part) => part.trim()).includes(signature);
+}
+
+function workStackContextSignature(stack: readonly { readonly workId: string; readonly evidence: readonly string[] }[], reason: string): string {
+  return `work-stack:${reason}:${stack.map((frame) => `${frame.workId}:${frame.evidence.length}`).join(">")}`;
 }
 
 async function buildRelatedOwnerNudge(
