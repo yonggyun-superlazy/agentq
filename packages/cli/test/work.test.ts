@@ -765,6 +765,9 @@ describe("CLI work stack", () => {
       code: 0,
       stdout: expect.stringContaining("Action: record context evidence for your active work.")
     });
+    await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
+      stdout: expect.stringContaining("Work context:")
+    });
     await runCommand([
       "work",
       "evidence",
@@ -841,6 +844,10 @@ describe("CLI work stack", () => {
       "U-turn chain follow regression",
       "--pass",
       "focused U-turn fixture passes",
+      "--next",
+      "Run focused U-turn fixture",
+      "--stop-condition",
+      "reframe if parent denominator disappears",
       "--path",
       "AgentQ/packages/cli/src/main.ts"
     ], runtime);
@@ -856,6 +863,16 @@ describe("CLI work stack", () => {
       code: 0,
       stdout: expect.stringContaining("Stack:")
     });
+    const currentNext = await runCommand(["next", "--actor", actorId], runtime);
+    expect(currentNext.stdout).toContain("Work context:");
+    expect(currentNext.stdout).toContain("top-objective: Restore parent combat-positioning objective");
+    expect(currentNext.stdout).toContain("parent-denominator: combat planning residual failures");
+    expect(currentNext.stdout).toContain("parent-pass: parent denominator rechecked after child close");
+    expect(currentNext.stdout).toContain("current-objective: Verify U-turn child slice");
+    expect(currentNext.stdout).toContain("current-slice: U-turn chain follow regression");
+    expect(currentNext.stdout).toContain("current-pass: focused U-turn fixture passes");
+    expect(currentNext.stdout).toContain("next-operation: Run focused U-turn fixture");
+    expect(currentNext.stdout).toContain("stop-condition: reframe if parent denominator disappears");
     await expect(runCommand(["next", "--actor", actorId], runtime)).resolves.toMatchObject({
       stdout: expect.stringContaining("AW-current [current] Current interrupt")
     });

@@ -1133,6 +1133,7 @@ function renderNextAction(input: NextActionInput): string {
         ? "Action: record context evidence for your active work."
         : "Action: close or update your active work before claiming done.",
       `Work: ${work.workId} - ${work.spec.objective}`,
+      ...renderCompactWorkContextLines(stack),
       ...renderWorkStackLines(stack, "Stack"),
       parentReturn !== undefined
         ? `Returned from child: ${parentReturn.fromWorkId} at ${parentReturn.since}`
@@ -4070,6 +4071,26 @@ function renderWorkStackLines(stack: readonly WorkState[], label: string): strin
       const obsolete = frame.specStatus === "legacy-obsolete" ? ", obsolete" : "";
       return `  ${index + 1}. ${frame.workId} [${marker}] ${frame.title} -> ${frame.spec.objective} (evidence ${frame.evidence.length}${obsolete})`;
     })
+  ];
+}
+
+function renderCompactWorkContextLines(stack: readonly WorkState[]): string[] {
+  const current = stack[stack.length - 1];
+  if (current === undefined) {
+    return [];
+  }
+
+  const top = stack[0] ?? current;
+  return [
+    "Work context:",
+    `  top-objective: ${top.spec.objective}`,
+    ...(top.spec.denominator === undefined ? [] : [`  parent-denominator: ${top.spec.denominator.join("; ")}`]),
+    ...(top.spec.passCriteria === undefined ? [] : [`  parent-pass: ${top.spec.passCriteria.join("; ")}`]),
+    `  current-objective: ${current.spec.objective}`,
+    ...(current.spec.slice === undefined ? [] : [`  current-slice: ${current.spec.slice}`]),
+    ...(current.spec.passCriteria === undefined ? [] : [`  current-pass: ${current.spec.passCriteria.join("; ")}`]),
+    ...(current.spec.nextOperation === undefined ? [] : [`  next-operation: ${current.spec.nextOperation}`]),
+    ...(current.spec.stopCondition === undefined ? [] : [`  stop-condition: ${current.spec.stopCondition}`])
   ];
 }
 

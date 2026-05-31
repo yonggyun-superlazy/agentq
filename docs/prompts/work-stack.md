@@ -122,6 +122,12 @@ close one broken contract, keep them in the same closure row and order the
 operations inside that row; `remove-first` does not mean deletion-only scope
 unless the parent denominator is reclassified with source evidence.
 
+`agentq next` should preserve a compact root-to-current context near the action
+line. The action is the immediate operation; the context keeps the top objective,
+parent denominator/pass criteria, current objective/slice, next operation, and
+stop condition visible so the immediate operation does not become an accidental
+scope shrink.
+
 Each stack frame is a spec-bearing frame. Prefer `--objective`, `--slice`,
 `--denominator`, `--pass`, `--next`, and `--stop-condition` over title-only
 frames. Title-only legacy frames are obsolete context: keep them visible long
