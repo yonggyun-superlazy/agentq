@@ -2671,6 +2671,9 @@ function renderWorkspaceStatus(
   const zeroEvidenceOpenWorkItems = openWorkItems.filter(
     (item) => item.activeWork !== null && item.activeWork.evidence.length === 0
   );
+  const evidencedStaleOpenWorkItems = staleOpenWorkItems.filter(
+    (item) => item.activeWork !== null && item.activeWork.evidence.length > 0
+  );
   const startedOnlyStaleOpenWorkItems = staleOpenWorkItems.filter(
     (item) => item.activeWork !== null && item.activeWork.eventCount === 1 && item.activeWork.evidence.length === 0
   );
@@ -2679,6 +2682,7 @@ function renderWorkspaceStatus(
   const openWorkCount = openWorkItems.length;
   const staleOpenWorkCount = staleOpenWorkItems.length;
   const zeroEvidenceOpenWorkCount = zeroEvidenceOpenWorkItems.length;
+  const evidencedStaleOpenWorkCount = evidencedStaleOpenWorkItems.length;
   const weakScopeActorCount = details.filter((detail) => detail.weaknesses.length > 0).length;
   const routeableActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length === 0).length;
   const weakActiveCount = operationalActiveDetails.filter((detail) => detail.weaknesses.length > 0).length;
@@ -2719,6 +2723,7 @@ function renderWorkspaceStatus(
   const terminalActiveWorkLines = terminalActiveWorkItems.map(renderStatusWorkInventoryLine);
   const orphanOpenWorkLines = orphanOpenWorkItems.map(renderStatusWorkInventoryLine);
   const startedOnlyStaleWorkLines = startedOnlyStaleOpenWorkItems.map(renderStatusWorkInventoryLine);
+  const evidencedStaleOpenWorkLines = evidencedStaleOpenWorkItems.map(renderStatusWorkInventoryLine);
   const zeroEvidenceOpenWorkLines = zeroEvidenceOpenWorkItems.map(renderZeroEvidenceWorkInventoryLine);
   const pendingInboxLines = details.flatMap(renderStatusPendingInboxLines);
   const guidanceInput = {
@@ -2735,6 +2740,7 @@ function renderWorkspaceStatus(
     recentOwnerOverlapNudgeCount,
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
+    evidencedStaleOpenWorkCount,
     zeroEvidenceOpenWorkCount,
     terminalActiveWorkPointerCount: terminalActiveWorkItems.length
   };
@@ -2767,6 +2773,7 @@ function renderWorkspaceStatus(
     `open work: ${openWorkCount}`,
     `orphan open work: ${orphanOpenWorkItems.length}`,
     `stale open work: ${staleOpenWorkCount}`,
+    `evidenced stale open work: ${evidencedStaleOpenWorkCount}`,
     `zero-evidence open work: ${zeroEvidenceOpenWorkCount}`,
     `started-only stale work: ${startedOnlyStaleOpenWorkItems.length}`,
     `terminal active work pointers: ${terminalActiveWorkItems.length}`,
@@ -2825,6 +2832,9 @@ function renderWorkspaceStatus(
     "",
     "Started-only stale work:",
     ...(startedOnlyStaleWorkLines.length === 0 ? ["  none"] : startedOnlyStaleWorkLines),
+    "",
+    "Evidenced stale open work:",
+    ...(evidencedStaleOpenWorkLines.length === 0 ? ["  none"] : evidencedStaleOpenWorkLines),
     "",
     "Zero-evidence open work:",
     ...(zeroEvidenceOpenWorkLines.length === 0 ? ["  none"] : zeroEvidenceOpenWorkLines),
@@ -3284,10 +3294,12 @@ function statusSignals(input: {
   readonly recentOwnerOverlapNudgeCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
+  readonly evidencedStaleOpenWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
   readonly terminalActiveWorkPointerCount: number;
 }): string[] {
   const lines: string[] = [];
+  const staleOpenWorkWithoutEvidence = input.staleOpenWorkCount - input.evidencedStaleOpenWorkCount;
 
   if (input.pendingInboxCount > 0) {
     lines.push(`pending-inbox: ${input.pendingInboxCount} required item(s) still need a response.`);
@@ -3333,8 +3345,12 @@ function statusSignals(input: {
     lines.push(`coordination-conversion: ${input.recentOwnerOverlapNudgeCount} owner-overlap nudge(s), but no recent inter-agent messages.`);
   }
 
-  if (input.staleOpenWorkCount > 0) {
-    lines.push(`stale-open-work: ${input.staleOpenWorkCount} open work item(s) are past the stale window.`);
+  if (input.evidencedStaleOpenWorkCount > 0) {
+    lines.push(`evidenced-stale-open-work: ${input.evidencedStaleOpenWorkCount} open work item(s) have context evidence and are past the stale window; review or close with final verification.`);
+  }
+
+  if (staleOpenWorkWithoutEvidence > 0) {
+    lines.push(`stale-open-work: ${staleOpenWorkWithoutEvidence} open work item(s) are past the stale window without context evidence.`);
   }
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
@@ -3355,6 +3371,7 @@ function statusNextAction(input: {
   readonly routeableIdleNoWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
   readonly staleOpenWorkCount: number;
+  readonly evidencedStaleOpenWorkCount: number;
   readonly routeableActiveCount: number;
   readonly recentOwnerOverlapNudgeCount: number;
   readonly recentMessageCount: number;
@@ -3397,6 +3414,10 @@ function statusNextAction(input: {
 
   if (input.zeroEvidenceOpenWorkCount > 0) {
     return "Record collaboration context on open work through `agentq next --actor <id>` before any final answer.";
+  }
+
+  if (input.evidencedStaleOpenWorkCount > 0) {
+    return "Review evidenced stale open work and close it with final verification, or refresh evidence if the work is still active.";
   }
 
   if (input.staleOpenWorkCount > 0) {

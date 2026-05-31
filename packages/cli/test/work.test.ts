@@ -1264,6 +1264,60 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("started-only-stale-work: 1 item(s) look like interrupted sessions or smoke residue.");
   });
 
+  it("separates evidenced stale open work from zero-evidence cleanup residue", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-evidenced-stale-work-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const viewRuntime = {
+      ...runtime,
+      now: () => "2026-05-18T02:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "evidenced-stale-work",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ status accounting"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const store = await resolveWorkspaceStore(workspace, { env: runtime.env });
+    await startWork(store, {
+      actorId,
+      workId: "AW-evidenced-stale",
+      title: "Evidenced stale status review",
+      paths: ["AgentQ/packages/cli/src/main.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId,
+      workId: "AW-evidenced-stale",
+      evidence: ["Observed basis exists, but final closure still needs review."],
+      now: "2026-05-18T00:05:00.000Z"
+    });
+
+    const result = await runCommand(["status"], viewRuntime);
+
+    expect(result.stdout).toContain("open work: 1");
+    expect(result.stdout).toContain("stale open work: 1");
+    expect(result.stdout).toContain("evidenced stale open work: 1");
+    expect(result.stdout).toContain("zero-evidence open work: 0");
+    expect(result.stdout).toContain("started-only stale work: 0");
+    expect(result.stdout).toContain("Evidenced stale open work:");
+    expect(result.stdout).toContain("AW-evidenced-stale");
+    expect(result.stdout).toContain("evidence: 1");
+    expect(result.stdout).toContain("evidenced-stale-open-work: 1 open work item(s) have context evidence and are past the stale window; review or close with final verification.");
+    expect(result.stdout).not.toContain("zero-evidence-work:");
+    expect(result.stdout).not.toContain("started-only-stale-work:");
+    expect(result.stdout).not.toContain("stale-open-work: 1 open work item(s) are past the stale window without context evidence.");
+    expect(result.stdout).toContain("Review evidenced stale open work and close it with final verification, or refresh evidence if the work is still active.");
+  });
+
   it("reports terminal active work pointers without counting them as open active work", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-terminal-pointer-"));
     const runtime = {

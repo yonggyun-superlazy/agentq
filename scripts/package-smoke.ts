@@ -180,7 +180,8 @@ const ownerNudge = runAgentq(
 );
 assert(ownerNudge.includes("Possible owner overlap"), `pre-tool owner nudge missed overlap summary: ${ownerNudge}`);
 assert(ownerNudge.includes("path src/package-smoke.ts"), `pre-tool owner nudge missed path: ${ownerNudge}`);
-assert(ownerNudge.includes("shared-work helper with the current actor id"), `pre-tool owner nudge missed helper guidance: ${ownerNudge}`);
+assert(ownerNudge.includes("Preserve the user's requested artifact"), `pre-tool owner nudge missed request-preservation guidance: ${ownerNudge}`);
+assert(ownerNudge.includes("agentq owners --actor"), `pre-tool owner nudge missed owner routing command: ${ownerNudge}`);
 assert(!ownerNudge.includes(wakeReceiver), `pre-tool owner nudge leaked owner actor id: ${ownerNudge}`);
 const wakeQuestionPath = path.join(workspace, "wake-question.txt");
 const wakeEvidencePath = path.join(workspace, "wake-evidence.txt");
@@ -372,12 +373,12 @@ function findTarball(predicate: (entry: string) => boolean): string {
 function assertPackageMetadata(): void {
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "cli", "package.json"), {
     name: "agentq",
-    version: "0.1.13",
+    version: "0.1.14",
     bin: true
   });
   assertPublishablePackageMetadata(path.join(repoRoot, "packages", "core", "package.json"), {
     name: "@agentq/core",
-    version: "0.1.13",
+    version: "0.1.14",
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");
