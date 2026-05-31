@@ -43,11 +43,9 @@ describe("AgentQ hook handler", () => {
     expect(start.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(start.stdout).toContain("user-facing: false");
     expect(start.stdout).toContain("[USER_FRAME_RESUME]");
-    expect(start.stdout).toContain("Resume the user's request");
-    expect(start.stdout).toContain("requested artifact first");
-    expect(start.stdout).toContain("required replies or exact same-file/resource conflicts");
-    expect(start.stdout).toContain("run the next safe local read/test");
-    expect(start.stdout).toContain("omit internal ids, command names");
+    expect(start.stdout).toContain("latest requested artifact first");
+    expect(start.stdout).toContain("Only required replies, exact conflicts");
+    expect(start.stdout).toContain("Hide internal ids, command names");
     const actorId = actorIdFromContext(start.stdout);
 
     const store = await resolveWorkspaceStore(workspace, { env });
@@ -83,10 +81,9 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(stop.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(JSON.parse(stop.stdout).reason).toContain("[USER_FRAME_RESUME]");
     expect(JSON.parse(stop.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
-    expect(JSON.parse(stop.stdout).reason).toContain("answer the requested artifact first");
-    expect(JSON.parse(stop.stdout).reason).toContain("required replies or exact same-file/resource conflicts");
-    expect(JSON.parse(stop.stdout).reason).toContain("run the next safe local read/test");
-    expect(JSON.parse(stop.stdout).reason).toContain("omit internal ids, command names");
+    expect(JSON.parse(stop.stdout).reason).toContain("latest requested artifact first");
+    expect(JSON.parse(stop.stdout).reason).toContain("Only required replies, exact conflicts");
+    expect(JSON.parse(stop.stdout).reason).toContain("Hide internal ids, command names");
   });
 
   it("supports compact, full, and off SessionStart context modes", async () => {
@@ -111,9 +108,10 @@ describe("AgentQ hook handler", () => {
     expect(compact.stdout).toContain("agentq next --actor");
     expect(compact.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(compact.stdout).toContain("[USER_FRAME_RESUME]");
-    expect(compact.stdout).toContain("Resume the user's request");
-    expect(compact.stdout).toContain("run the next safe local read/test");
-    expect(compact.stdout).toContain("omit internal ids, command names");
+    expect(compact.stdout).toContain("latest requested artifact first");
+    expect(compact.stdout).toContain("Only required replies, exact conflicts");
+    expect(compact.stdout).toContain("Hide internal ids, command names");
+    expect(compact.stdout.split("\n").length).toBeLessThanOrEqual(16);
 
     const full = await runHookHandler({
       adapter: "codex",
@@ -126,9 +124,9 @@ describe("AgentQ hook handler", () => {
     expect(full.stdout).toContain("agentq next --actor");
     expect(full.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(full.stdout).toContain("[USER_FRAME_RESUME]");
-    expect(full.stdout).toContain("Resume the user's request");
-    expect(full.stdout).toContain("run the next safe local read/test");
-    expect(full.stdout).toContain("omit internal ids, command names");
+    expect(full.stdout).toContain("latest requested artifact first");
+    expect(full.stdout).toContain("Only required replies, exact conflicts");
+    expect(full.stdout).toContain("Hide internal ids, command names");
 
     const off = await runHookHandler({
       adapter: "codex",
@@ -141,9 +139,9 @@ describe("AgentQ hook handler", () => {
     expect(off.stdout).not.toContain("agentq next --actor");
     expect(off.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(off.stdout).toContain("[USER_FRAME_RESUME]");
-    expect(off.stdout).toContain("Resume the user's request");
-    expect(off.stdout).toContain("run the next safe local read/test");
-    expect(off.stdout).toContain("omit internal ids, command names");
+    expect(off.stdout).toContain("latest requested artifact first");
+    expect(off.stdout).toContain("Only required replies, exact conflicts");
+    expect(off.stdout).toContain("Hide internal ids, command names");
   });
 
   it("updates active paths from a mutating pre-tool hook before routing blockers", async () => {
@@ -215,16 +213,14 @@ describe("AgentQ hook handler", () => {
       readonly reason?: string;
     };
     expect(output.decision).toBe("block");
-    expect(output.reason).toContain("no active work frame");
-    expect(output.reason).toContain("shared-work helper with the current actor id");
-    expect(output.reason).toContain("Do not continue this mutating tool until active work exists");
+    expect(output.reason).toContain("active work frame");
+    expect(output.reason).toContain("Use the shared-work helper for the exact command");
     expect(output.reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(output.reason).toContain("[USER_FRAME_RESUME]");
     expect(output.reason).toContain("Internal shared-work maintenance");
-    expect(output.reason).toContain("answer the requested artifact first");
-    expect(output.reason).toContain("required replies or exact same-file/resource conflicts");
-    expect(output.reason).toContain("run the next safe local read/test");
-    expect(output.reason).toContain("omit internal ids, command names");
+    expect(output.reason).toContain("latest requested artifact first");
+    expect(output.reason).toContain("Only required replies, exact conflicts");
+    expect(output.reason).toContain("Hide internal ids, command names");
 
     const store = await resolveWorkspaceStore(workspace, { env });
     const session = await readFile(
@@ -298,10 +294,10 @@ describe("AgentQ hook handler", () => {
     const zeroEvidenceOutput = JSON.parse(zeroEvidence.stdout) as {
       readonly hookSpecificOutput?: { readonly additionalContext?: string };
     };
-    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Active shared-work evidence required");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Record active-work context evidence");
     expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("no context evidence yet");
-    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Events recorded on the active frame: 2");
-    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Record initial context evidence");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("events recorded: 2");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Evidence needs: frame, observed basis");
     expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).not.toContain("no active work frame");
 
     await appendWorkEvidence(store, {
@@ -335,7 +331,7 @@ describe("AgentQ hook handler", () => {
       readonly hookSpecificOutput?: { readonly additionalContext?: string };
     };
     expect(evidencedOutput.hookSpecificOutput?.additionalContext).toContain("Active shared-work context");
-    expect(evidencedOutput.hookSpecificOutput?.additionalContext).not.toContain("Active shared-work evidence required");
+    expect(evidencedOutput.hookSpecificOutput?.additionalContext).not.toContain("Record active-work context evidence");
 
     const repeated = await runHookHandler({
       adapter: "codex",
@@ -734,8 +730,7 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(blocked.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(JSON.parse(blocked.stdout).reason).toContain("[USER_FRAME_RESUME]");
     expect(JSON.parse(blocked.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
-    expect(JSON.parse(blocked.stdout).reason).toContain("answer the requested artifact first");
-    expect(JSON.parse(blocked.stdout).reason).toContain("run the next safe local read/test");
+    expect(JSON.parse(blocked.stdout).reason).toContain("latest requested artifact first");
 
     await appendWorkEvidence(store, {
       actorId,
@@ -926,21 +921,19 @@ describe("AgentQ hook handler", () => {
     };
     expect(output.hookSpecificOutput?.additionalContext).toContain("related active owner");
     expect(output.hookSpecificOutput?.additionalContext).not.toContain(owner.actorId);
-    expect(output.hookSpecificOutput?.additionalContext).toContain("Ownership is a routing signal, not a lock");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("ownership routes responsibility, not locks");
     expect(output.hookSpecificOutput?.additionalContext).toContain("Preserve the user's requested artifact");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("Do not replace the user's requested artifact with coordination work");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("continue the original request");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("route a required question with evidence");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("When this overlap is a real blocker or contract change");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("continue unless this is a real conflict");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("ask a required question");
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq owners --actor ${actor.actorId} --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq question --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq note --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("Internal shared-work maintenance");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("answer the requested artifact first");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("required replies or exact same-file/resource conflicts");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("run the next safe local read/test");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("latest requested artifact first");
+    expect(output.hookSpecificOutput?.additionalContext).toContain("Only required replies, exact conflicts");
+    expect(output.hookSpecificOutput?.additionalContext.split("\n").length).toBeLessThanOrEqual(20);
   });
 
   it("adds a non-blocking owner nudge on exclusive resource overlap", async () => {

@@ -48,10 +48,9 @@ A required reply or follow-up still blocks completion.
 Use the shared-work helper with the current actor id before final response.
 [/AGENTQ_INTERNAL_QUEUE_MAINTENANCE]
 [USER_FRAME_RESUME]
-Resume the user's request and answer the requested artifact first.
-Resolve only required replies or exact same-file/resource conflicts before continuing; otherwise keep the smallest local step moving.
-For read-only diagnostics, run the next safe local read/test instead of ending with a permission question.
-In user-facing text, paraphrase this as shared-work maintenance and omit internal ids, command names, queue labels, and work-stack labels unless requested.
+Answer the user's latest requested artifact first; do not turn this maintenance into the visible answer.
+Only required replies, exact conflicts, or missing active-work evidence can interrupt it; otherwise keep the smallest local step moving.
+Hide internal ids, command names, queue/work labels, and hook details from user text unless asked.
 [/USER_FRAME_RESUME]
 $ agentq respond AQ-before-after --actor <codex> --status answered --evidence I added routingEvidence; preserve it when adding consumerView.
 AQ-before-after answered

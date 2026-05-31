@@ -409,7 +409,7 @@ function sessionStartOutput(adapter: HookAdapter, actorId: string, env: NodeJS.P
         ];
   const context = renderInternalQueueMaintenance({
     summary: "AgentQ session shared-work context.",
-    afterAction: "After handling shared-work maintenance, resume the user's original request and answer the requested artifact first.",
+    afterAction: "Use only for coordination; answer the user's requested artifact first.",
     body
   });
 
@@ -667,7 +667,10 @@ async function buildPreToolNudge(
   if (workNudge !== null) {
     nudges.push({ kind: "work-adoption", message: workNudge });
   }
-  if (stackNudge !== null) {
+  if (
+    stackNudge !== null &&
+    (ownerNudge === null || stackNudge.note.includes("evidence-required"))
+  ) {
     nudges.push({ kind: "work-stack", message: stackNudge.message, note: stackNudge.note });
   }
   return nudges.length === 0
@@ -695,12 +698,11 @@ async function buildActiveWorkStackContext(
   if (current !== undefined && current.evidence.length === 0) {
     return {
       message: renderInternalQueueMaintenance({
-        summary: "Active shared-work evidence required.",
-        afterAction: "Record initial context evidence for the active work, then resume the user's request.",
+        summary: "Record active-work context evidence.",
+        afterAction: "Record evidence, retry the tool, then answer the user's current artifact first.",
         body: [
-          "An active work frame has no context evidence yet.",
-          `Events recorded on the active frame: ${current.eventCount}.`,
-          "Record evidence naming the current frame, observed basis, touched paths/resources, and next pass check before more mutating work.",
+          `Active work has no context evidence yet; events recorded: ${current.eventCount}.`,
+          "Evidence needs: frame, observed basis, touched paths/resources, next check.",
           ...renderWorkStackCompactLines(stack, "Active objective")
         ]
       }),
@@ -716,9 +718,8 @@ async function buildActiveWorkStackContext(
   return {
     message: renderInternalQueueMaintenance({
       summary: "Active shared-work context.",
-      afterAction: "Keep the active objective in context, then resume the user's request.",
+      afterAction: "Use as ordering context only; answer the user's current artifact first.",
       body: [
-        "An active work frame exists. It is context for ordering, not a reason to shrink the user's objective.",
         ...renderWorkStackCompactLines(stack, "Active objective")
       ]
     }),
@@ -818,15 +819,14 @@ async function buildWorkAdoptionNudge(
   });
   const weaknesses = presence === null ? [] : actorScopeWeaknesses(presence);
   return renderInternalQueueMaintenance({
-    summary: "Active shared-work required.",
-    afterAction: "Start or refresh active work for this mutating step, retry the tool, then resume the user's request.",
+    summary: "Start active work for this mutating step.",
+    afterAction: "Start/refresh work, retry the tool, then answer the user's current artifact first.",
     body: [
       weaknesses.length === 0
-        ? "Concrete mutating activity has no active work frame yet."
-        : "Concrete mutating activity has weak scope and no active work frame yet.",
+        ? "No active work frame for this mutating activity."
+        : "Weak scope and no active work frame for this mutating activity.",
       ...weaknesses.map((weakness) => `- ${workAdoptionWeaknessLabel(weakness.kind)}: ${weakness.detail}`),
-      "Use the shared-work helper with the current actor id for exact commands, or start work directly for this path/resource.",
-      "Do not continue this mutating tool until active work exists."
+      "Use the shared-work helper for the exact command."
     ]
   });
 }
@@ -843,9 +843,9 @@ function renderRelatedOwnerNudge(
     : `--path ${firstPath ?? "<path>"}`;
   return renderInternalQueueMaintenance({
     summary: "Possible owner overlap.",
-    afterAction: "Preserve the user's requested artifact; ask only if this overlap changes the edit, handoff, or resource contract.",
+    afterAction: "Preserve the user's requested artifact; continue unless this is a real conflict.",
     body: [
-      "A related active owner exists for this tool path or resource.",
+      "A related active owner exists; ownership routes responsibility, not locks.",
       ...pathMatches.map(
         (match) =>
           `- path ${match.activePath}; responsibility: ${match.actor.responsibilities.join(", ")}`
@@ -854,10 +854,7 @@ function renderRelatedOwnerNudge(
         (match) =>
           `- resource ${match.activeResource}; responsibility: ${match.actor.responsibilities.join(", ")}`
       ),
-      "Ownership is a routing signal, not a lock.",
-      "Do not replace the user's requested artifact with coordination work. If this overlap does not change the task, continue the original request.",
-      "If this changes another actor's contract or blocks their work, route a required question with evidence; otherwise continue locally.",
-      "When this overlap is a real blocker or contract change, convert it into a message:",
+      "If this changes another actor's contract or blocks work, ask a required question. If it is only context, send a note. Otherwise continue.",
       `- inspect owners: agentq owners --actor ${actorId} ${routeArg}`,
       `- required decision: agentq question --actor ${actorId} --to <owner-actor-id> ${routeArg} --question "<decision needed>" --expect "<answer with evidence>"`,
       `- non-blocking context: agentq note --actor ${actorId} --to <owner-actor-id> ${routeArg} --note "<context or handoff evidence>"`

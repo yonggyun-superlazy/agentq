@@ -40,16 +40,12 @@ runAgentq(["install", "--yes"], workspace);
 const installedAgents = readFile(path.join(workspace, "AGENTS.md"));
 const installedScopedInstructions = readFile(path.join(workspace, ".github", "instructions", "agentq.instructions.md"));
 assert(installedAgents.includes("agentq:begin"), "install missed AGENTS marker");
-assert(installedScopedInstructions.includes("Answer the requested artifact first"), "install missed AgentQ answer-quality instruction");
-assert(installedScopedInstructions.includes("no evidence-free judgment"), "install missed AgentQ evidence-quality instruction");
-assert(installedScopedInstructions.includes("active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
+assert(installedScopedInstructions.includes("latest user-requested artifact first"), "install missed AgentQ answer-quality instruction");
+assert(installedScopedInstructions.includes("do not replace an explanation, diagnosis, or critique"), "install missed AgentQ frame-preservation instruction");
+assert(installedScopedInstructions.includes("Active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
 assert(installedScopedInstructions.includes("spec-bearing stack frames"), "install missed AgentQ spec-bearing stack instruction");
-assert(installedScopedInstructions.includes("Title-only legacy work frames are obsolete context"), "install missed AgentQ legacy-frame instruction");
 assert(installedScopedInstructions.includes("not stop conditions"), "install missed AgentQ coordination-as-stop guard");
-assert(installedScopedInstructions.includes("Usage diagnostics must classify metrics by agent type"), "install missed AgentQ per-agent diagnostic instruction");
-assert(installedScopedInstructions.includes("Codex: broad session presence is bookkeeping"), "install missed AgentQ Codex diagnostic instruction");
-assert(installedScopedInstructions.includes("Claude Code: edit nudges require active work/evidence adoption"), "install missed AgentQ Claude Code diagnostic instruction");
-assert(installedScopedInstructions.includes("Copilot CLI: report local samples separately"), "install missed AgentQ Copilot diagnostic instruction");
+assert(agentqMarkerBlock(installedScopedInstructions).split("\n").length <= 16, "installed AgentQ instruction block grew too large");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Codex prehook should include read and mutating tools without matching every tool");
@@ -181,7 +177,9 @@ const ownerNudge = runAgentq(
 assert(ownerNudge.includes("Possible owner overlap"), `pre-tool owner nudge missed overlap summary: ${ownerNudge}`);
 assert(ownerNudge.includes("path src/package-smoke.ts"), `pre-tool owner nudge missed path: ${ownerNudge}`);
 assert(ownerNudge.includes("Preserve the user's requested artifact"), `pre-tool owner nudge missed request-preservation guidance: ${ownerNudge}`);
+assert(ownerNudge.includes("continue unless this is a real conflict"), `pre-tool owner nudge missed concise continuation guidance: ${ownerNudge}`);
 assert(ownerNudge.includes("agentq owners --actor"), `pre-tool owner nudge missed owner routing command: ${ownerNudge}`);
+assert(ownerNudge.split("\n").length <= 20, `pre-tool owner nudge grew too large: ${ownerNudge}`);
 assert(!ownerNudge.includes(wakeReceiver), `pre-tool owner nudge leaked owner actor id: ${ownerNudge}`);
 const wakeQuestionPath = path.join(workspace, "wake-question.txt");
 const wakeEvidencePath = path.join(workspace, "wake-evidence.txt");
@@ -382,6 +380,13 @@ function assertPackageMetadata(): void {
     bin: false
   });
   assert(readFile(path.join(repoRoot, "LICENSE")).includes("MIT License"), "missing MIT LICENSE");
+}
+
+function agentqMarkerBlock(content: string): string {
+  const begin = content.indexOf("<!-- agentq:begin -->");
+  const end = content.indexOf("<!-- agentq:end -->");
+  assert(begin >= 0 && end > begin, "missing installed AgentQ marker block");
+  return content.slice(begin, end + "<!-- agentq:end -->".length);
 }
 
 function assertPublishablePackageMetadata(

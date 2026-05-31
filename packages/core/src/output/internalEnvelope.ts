@@ -15,10 +15,9 @@ export function renderInternalQueueMaintenance(input: InternalQueueMaintenanceIn
     ...input.body,
     "[/AGENTQ_INTERNAL_QUEUE_MAINTENANCE]",
     "[USER_FRAME_RESUME]",
-    "Resume the user's request and answer the requested artifact first.",
-    "Resolve only required replies or exact same-file/resource conflicts before continuing; otherwise keep the smallest local step moving.",
-    "For read-only diagnostics, run the next safe local read/test instead of ending with a permission question.",
-    "In user-facing text, paraphrase this as shared-work maintenance and omit internal ids, command names, queue labels, and work-stack labels unless requested.",
+    "Answer the user's latest requested artifact first; do not turn this maintenance into the visible answer.",
+    "Only required replies, exact conflicts, or missing active-work evidence can interrupt it; otherwise keep the smallest local step moving.",
+    "Hide internal ids, command names, queue/work labels, and hook details from user text unless asked.",
     "[/USER_FRAME_RESUME]"
   ].join("\n");
 }
