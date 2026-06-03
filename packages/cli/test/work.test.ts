@@ -1538,10 +1538,12 @@ describe("CLI work stack", () => {
     expect(status.stdout).toContain("Start active work for actors that already received concrete edit nudges");
     expect(status.stdout).toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
     expect(status.stdout).not.toContain("Recommendations:");
-    expect(activity.stdout).toContain("ignoredWorkNudges:1");
-    expect(activity.stdout).toContain("unresolvedBlockedWork:0");
-    expect(activity.stdout).toContain("diagnosis:shared-goal-context-missing");
-    expect(activity.stdout).not.toContain("diagnosis:policy-work-adoption-unresolved");
+    expect(activity.stdout).toContain("AgentQ diagnostic activity");
+    expect(activity.stdout).toContain("pathful:1");
+    expect(activity.stdout).toContain("openWork:0");
+    expect(activity.stdout).not.toContain("ignoredWorkNudges:");
+    expect(activity.stdout).not.toContain("unresolvedBlockedWork:");
+    expect(activity.stdout).not.toContain("diagnosis:");
   });
 
   it("does not label blocked work-adoption attempts as ignored", async () => {
@@ -1586,9 +1588,11 @@ describe("CLI work stack", () => {
     expect(status.stdout).toContain("ignored work-adoption nudges: 0");
     expect(status.stdout).toContain("work-adoption-blocked: 1 actor(s) still have unresolved blocked mutating attempts.");
     expect(status.stdout).not.toContain("work-adoption: 1 actor(s) received edit nudges without active work.");
-    expect(activity.stdout).toContain("unresolvedBlockedWork:1");
-    expect(activity.stdout).toContain("diagnosis:shared-goal-context-blocked");
-    expect(activity.stdout).not.toContain("diagnosis:policy-work-adoption-unresolved");
+    expect(activity.stdout).toContain("AgentQ diagnostic activity");
+    expect(activity.stdout).toContain("mutating:1");
+    expect(activity.stdout).toContain("openWork:0");
+    expect(activity.stdout).not.toContain("unresolvedBlockedWork:");
+    expect(activity.stdout).not.toContain("diagnosis:");
   });
 
   it("reports blocked work-adoption attempts as resolved after work starts", async () => {
@@ -1643,11 +1647,15 @@ describe("CLI work stack", () => {
     expect(status.stdout).toContain("resolved blocked work-adoption attempts: 1");
     expect(status.stdout).toContain("unresolved blocked work-adoption attempts: 0");
     expect(status.stdout).not.toContain("work-adoption-blocked: 1 actor(s) still have unresolved blocked mutating attempts.");
-    expect(activity.stdout).toContain("blockedWorkNudges:1");
-    expect(activity.stdout).toContain("blockedWorkResolved");
+    expect(activity.stdout).toContain("AgentQ diagnostic activity");
+    expect(activity.stdout).toContain("openWork:1");
+    expect(activity.stdout).toContain("zeroEvidenceWork:1");
+    expect(activity.stdout).toContain("zero-evidence");
+    expect(activity.stdout).not.toContain("blockedWorkNudges:");
+    expect(activity.stdout).not.toContain("blockedWorkResolved");
     expect(activity.stdout).not.toContain("blockedWorkUnresolved");
-    expect(activity.stdout).toContain("unresolvedBlockedWork:0");
-    expect(activity.stdout).not.toContain("diagnosis:policy-work-adoption-unresolved");
+    expect(activity.stdout).not.toContain("unresolvedBlockedWork:");
+    expect(activity.stdout).not.toContain("diagnosis:");
   });
 
   it("does not label a completed post-nudge work adoption as ignored", async () => {

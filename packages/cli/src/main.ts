@@ -1421,7 +1421,6 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
   const actors = await listActorPresences(store);
   const rows = await buildDiagnosticActivityRows(store, actors, windowEvents, nowMs, windowMs);
   const agentRows = buildDiagnosticAgentActivityRows(rows);
-  const recentMessages = await listRecentMessageSummaries(store, nowMs, windowMs);
 
   return {
     code: 0,
@@ -1430,8 +1429,7 @@ async function diagActivityCommand(argv: readonly string[], runtime: CommandRunt
       eventCount: windowEvents.length,
       rowCount: rows.length,
       limit,
-      agentRows,
-      recentMessageCount: recentMessages.length
+      agentRows
     }),
     stderr: ""
   };
@@ -2611,22 +2609,13 @@ interface DiagnosticActivityRow {
   readonly hasOpenWork: boolean;
   readonly openWorkEvidenceCount: number | null;
   readonly openWorkTitle: string | null;
-  readonly adoption: string;
-  readonly nudgeCount: number;
-  readonly workAdoptionNudgeCount: number;
-  readonly blockedWorkAdoptionNudgeCount: number;
-  readonly resolvedBlockedWorkAdoptionNudge: boolean;
-  readonly unresolvedBlockedWorkAdoptionNudge: boolean;
-  readonly ownerOverlapNudgeCount: number;
-  readonly stackContextNudgeCount: number;
   readonly readOnlyEventCount: number;
   readonly mutatingEventCount: number;
   readonly stopEventCount: number;
-  readonly readOnlyNudgeCount: number;
   readonly pathfulEventCount: number;
   readonly broadEventCount: number;
   readonly ignoredCommandEventCount: number;
-  readonly ignoredWorkAdoptionNudge: boolean;
+  readonly broadPresenceOnly: boolean;
   readonly paths: readonly string[];
   readonly observedPaths: readonly string[];
   readonly resources: readonly string[];
@@ -2640,22 +2629,12 @@ interface DiagnosticAgentActivityRow {
   readonly readOnlyEventCount: number;
   readonly mutatingEventCount: number;
   readonly stopEventCount: number;
-  readonly nudgeCount: number;
-  readonly readOnlyNudgeCount: number;
-  readonly workAdoptionNudgeCount: number;
-  readonly blockedWorkAdoptionNudgeCount: number;
-  readonly resolvedBlockedWorkAdoptionNudgeCount: number;
-  readonly unresolvedBlockedWorkAdoptionNudgeCount: number;
-  readonly ownerOverlapNudgeCount: number;
-  readonly stackContextNudgeCount: number;
   readonly pathfulEventCount: number;
   readonly broadEventCount: number;
   readonly ignoredCommandEventCount: number;
-  readonly ignoredWorkAdoptionNudgeCount: number;
   readonly openWorkCount: number;
   readonly zeroEvidenceOpenWorkCount: number;
   readonly broadPresenceOnlyCount: number;
-  readonly diagnosis: string;
 }
 
 interface DiagnosticActivityRenderInput {
@@ -2664,7 +2643,6 @@ interface DiagnosticActivityRenderInput {
   readonly rowCount: number;
   readonly limit: number;
   readonly agentRows: readonly DiagnosticAgentActivityRow[];
-  readonly recentMessageCount: number;
 }
 
 function actorStatus(actor: Presence, nowMs: number, staleAfterMs: number): ActorStatusSummary {
@@ -3075,9 +3053,6 @@ async function buildDiagnosticActivityRows(
   windowMs: number
 ): Promise<DiagnosticActivityRow[]> {
   const presenceByActor = new Map(actors.map((actor) => [actor.actorId, actor]));
-  const workInventoryByActor = new Map(
-    (await listActiveWorkInventory(store)).map((item) => [item.pointer.actorId, item])
-  );
   const eventsByActor = new Map<string, DiagnosticEvent[]>();
   for (const event of events) {
     if (event.actorId === undefined) {
@@ -3116,26 +3091,16 @@ async function buildDiagnosticActivityRows(
       const lastEventMs = eventTimes[eventTimes.length - 1];
       const lastSeenMs = actor === undefined ? Number.NaN : Date.parse(actor.lastSeen);
       const workAdoptionNudgeEvents = actorEvents.filter(eventHasWorkAdoptionNudge);
-      const blockedWorkAdoptionNudgeEvents = workAdoptionNudgeEvents.filter((event) => event.decision === "block");
-      const latestWorkAdoptionAt = latestDiagnosticEventAt(workAdoptionNudgeEvents);
-      const latestBlockedWorkAdoptionAt = latestDiagnosticEventAt(blockedWorkAdoptionNudgeEvents);
-      const workInventoryItem = workInventoryByActor.get(actorId);
-      const resolvedWorkAdoptionNudge = latestWorkAdoptionAt !== null &&
-        ((activeWork !== null && timestampAtOrAfter(activeWork.updatedAt, latestWorkAdoptionAt)) ||
-          (workInventoryItem !== undefined && timestampAtOrAfter(workInventoryItem.pointer.updatedAt, latestWorkAdoptionAt)));
-      const resolvedBlockedWorkAdoptionNudge = latestBlockedWorkAdoptionAt !== null &&
-        ((activeWork !== null && timestampAtOrAfter(activeWork.updatedAt, latestBlockedWorkAdoptionAt)) ||
-          (workInventoryItem !== undefined && timestampAtOrAfter(workInventoryItem.pointer.updatedAt, latestBlockedWorkAdoptionAt)));
-      const unresolvedBlockedWorkAdoptionNudge = blockedWorkAdoptionNudgeEvents.length > 0 &&
-        !resolvedBlockedWorkAdoptionNudge;
-      const nudgeEvents = actorEvents.filter((event) => event.nudge === true);
-      const ownerOverlapNudgeEvents = actorEvents.filter(eventHasOwnerOverlapNudge);
-      const stackContextNudgeEvents = actorEvents.filter((event) => event.nudgeKinds?.includes("work-stack") === true);
       const readOnlyEvents = actorEvents.filter((event) => event.toolMode === "read-only");
       const mutatingEvents = actorEvents.filter((event) => event.toolMode === "mutating");
       const stopEvents = actorEvents.filter((event) => event.toolMode === "stop" || event.event === "stop");
       const pathfulEvents = actorEvents.filter(eventHasSpecificDiagnosticScope);
       const ignoredCommandEvents = actorEvents.filter((event) => (event.ignoredCommands ?? []).length > 0);
+      const broadPresenceOnly = actor !== undefined &&
+        !hasOpenWork &&
+        workAdoptionNudgeEvents.length === 0 &&
+        actorScopeWeaknesses(actor).length > 0 &&
+        actorEvents.length <= 1;
 
       return {
         actorId,
@@ -3156,32 +3121,13 @@ async function buildDiagnosticActivityRows(
         hasOpenWork,
         openWorkEvidenceCount: activeWork?.evidence.length ?? null,
         openWorkTitle: activeWork?.title ?? null,
-        adoption: classifyActivityAdoption(
-          actor,
-          hasOpenWork,
-          actorEvents.length,
-          workAdoptionNudgeEvents.length,
-          blockedWorkAdoptionNudgeEvents.length,
-          resolvedWorkAdoptionNudge,
-          resolvedBlockedWorkAdoptionNudge
-        ),
-        nudgeCount: nudgeEvents.length,
-        workAdoptionNudgeCount: workAdoptionNudgeEvents.length,
-        blockedWorkAdoptionNudgeCount: blockedWorkAdoptionNudgeEvents.length,
-        resolvedBlockedWorkAdoptionNudge,
-        unresolvedBlockedWorkAdoptionNudge,
-        ownerOverlapNudgeCount: ownerOverlapNudgeEvents.length,
-        stackContextNudgeCount: stackContextNudgeEvents.length,
         readOnlyEventCount: readOnlyEvents.length,
         mutatingEventCount: mutatingEvents.length,
         stopEventCount: stopEvents.length,
-        readOnlyNudgeCount: readOnlyEvents.filter((event) => event.nudge === true).length,
         pathfulEventCount: pathfulEvents.length,
         broadEventCount: actorEvents.length - pathfulEvents.length,
         ignoredCommandEventCount: ignoredCommandEvents.length,
-        ignoredWorkAdoptionNudge: workAdoptionNudgeEvents.some((event) => event.decision !== "block") &&
-          !hasOpenWork &&
-          !resolvedWorkAdoptionNudge,
+        broadPresenceOnly,
         paths: actor?.activePaths ?? [],
         observedPaths: actor?.observedPaths ?? [],
         resources: actor?.activeResources ?? [],
@@ -3198,7 +3144,7 @@ async function buildDiagnosticActivityRows(
 }
 
 function buildDiagnosticAgentActivityRows(rows: readonly DiagnosticActivityRow[]): DiagnosticAgentActivityRow[] {
-  const byKind = new Map<string, Omit<DiagnosticAgentActivityRow, "diagnosis">>();
+  const byKind = new Map<string, DiagnosticAgentActivityRow>();
   for (const row of rows) {
     const existing = byKind.get(row.agentKind) ?? emptyDiagnosticAgentActivityRow(row.agentKind);
     byKind.set(row.agentKind, {
@@ -3208,26 +3154,16 @@ function buildDiagnosticAgentActivityRows(rows: readonly DiagnosticActivityRow[]
       readOnlyEventCount: existing.readOnlyEventCount + row.readOnlyEventCount,
       mutatingEventCount: existing.mutatingEventCount + row.mutatingEventCount,
       stopEventCount: existing.stopEventCount + row.stopEventCount,
-      nudgeCount: existing.nudgeCount + row.nudgeCount,
-      readOnlyNudgeCount: existing.readOnlyNudgeCount + row.readOnlyNudgeCount,
-      workAdoptionNudgeCount: existing.workAdoptionNudgeCount + row.workAdoptionNudgeCount,
-      blockedWorkAdoptionNudgeCount: existing.blockedWorkAdoptionNudgeCount + row.blockedWorkAdoptionNudgeCount,
-      resolvedBlockedWorkAdoptionNudgeCount: existing.resolvedBlockedWorkAdoptionNudgeCount + (row.resolvedBlockedWorkAdoptionNudge ? 1 : 0),
-      unresolvedBlockedWorkAdoptionNudgeCount: existing.unresolvedBlockedWorkAdoptionNudgeCount + (row.unresolvedBlockedWorkAdoptionNudge ? 1 : 0),
-      ownerOverlapNudgeCount: existing.ownerOverlapNudgeCount + row.ownerOverlapNudgeCount,
-      stackContextNudgeCount: existing.stackContextNudgeCount + row.stackContextNudgeCount,
       pathfulEventCount: existing.pathfulEventCount + row.pathfulEventCount,
       broadEventCount: existing.broadEventCount + row.broadEventCount,
       ignoredCommandEventCount: existing.ignoredCommandEventCount + row.ignoredCommandEventCount,
-      ignoredWorkAdoptionNudgeCount: existing.ignoredWorkAdoptionNudgeCount + (row.ignoredWorkAdoptionNudge ? 1 : 0),
       openWorkCount: existing.openWorkCount + (row.hasOpenWork ? 1 : 0),
       zeroEvidenceOpenWorkCount: existing.zeroEvidenceOpenWorkCount + (row.openWorkEvidenceCount === 0 ? 1 : 0),
-      broadPresenceOnlyCount: existing.broadPresenceOnlyCount + (row.adoption === "broad-presence-only" ? 1 : 0)
+      broadPresenceOnlyCount: existing.broadPresenceOnlyCount + (row.broadPresenceOnly ? 1 : 0)
     });
   }
 
   return [...byKind.values()]
-    .map((row) => ({ ...row, diagnosis: classifyDiagnosticAgentActivity(row) }))
     .sort((left, right) =>
       agentKindOrder(left.agentKind) - agentKindOrder(right.agentKind) ||
       right.eventCount - left.eventCount ||
@@ -3235,7 +3171,7 @@ function buildDiagnosticAgentActivityRows(rows: readonly DiagnosticActivityRow[]
     );
 }
 
-function emptyDiagnosticAgentActivityRow(agentKind: string): Omit<DiagnosticAgentActivityRow, "diagnosis"> {
+function emptyDiagnosticAgentActivityRow(agentKind: string): DiagnosticAgentActivityRow {
   return {
     agentKind,
     actorCount: 0,
@@ -3243,58 +3179,13 @@ function emptyDiagnosticAgentActivityRow(agentKind: string): Omit<DiagnosticAgen
     readOnlyEventCount: 0,
     mutatingEventCount: 0,
     stopEventCount: 0,
-    nudgeCount: 0,
-    readOnlyNudgeCount: 0,
-    workAdoptionNudgeCount: 0,
-    blockedWorkAdoptionNudgeCount: 0,
-    resolvedBlockedWorkAdoptionNudgeCount: 0,
-    unresolvedBlockedWorkAdoptionNudgeCount: 0,
-    ownerOverlapNudgeCount: 0,
-    stackContextNudgeCount: 0,
     pathfulEventCount: 0,
     broadEventCount: 0,
     ignoredCommandEventCount: 0,
-    ignoredWorkAdoptionNudgeCount: 0,
     openWorkCount: 0,
     zeroEvidenceOpenWorkCount: 0,
     broadPresenceOnlyCount: 0
   };
-}
-
-function classifyDiagnosticAgentActivity(row: Omit<DiagnosticAgentActivityRow, "diagnosis">): string {
-  if (row.readOnlyNudgeCount > 0) {
-    return "policy-readonly-nudge";
-  }
-
-  if (row.eventCount > 0 && row.pathfulEventCount === 0) {
-    return "agent-scope-missing";
-  }
-
-  if (row.unresolvedBlockedWorkAdoptionNudgeCount > 0) {
-    return "shared-goal-context-blocked";
-  }
-
-  if (row.ownerOverlapNudgeCount > 0) {
-    return "coordination-owner-routing";
-  }
-
-  if (row.zeroEvidenceOpenWorkCount > 0) {
-    return "shared-goal-evidence-missing";
-  }
-
-  if (row.openWorkCount > 0) {
-    return "shared-goal-tracked";
-  }
-
-  if (row.ignoredWorkAdoptionNudgeCount > 0) {
-    return "shared-goal-context-missing";
-  }
-
-  if (row.broadPresenceOnlyCount > 0 && row.pathfulEventCount === 0) {
-    return "session-presence-only";
-  }
-
-  return "mixed-observed";
 }
 
 function diagnosticAgentKind(actor: Presence | undefined, events: readonly DiagnosticEvent[]): string {
@@ -3465,47 +3356,6 @@ function statusNextAction(input: {
   }
 
   return "No urgent AgentQ action; use `agentq next --actor <id>` before final, and `agentq owners ...` before shared edits.";
-}
-
-function classifyActivityAdoption(
-  actor: Presence | undefined,
-  hasOpenWork: boolean,
-  eventCount: number,
-  workAdoptionNudgeCount: number,
-  blockedWorkAdoptionNudgeCount: number,
-  resolvedWorkAdoptionNudge: boolean,
-  resolvedBlockedWorkAdoptionNudge: boolean
-): string {
-  if (actor === undefined) {
-    return "diagnostic-only";
-  }
-
-  if (hasOpenWork) {
-    return "tracked-work";
-  }
-
-  if (resolvedBlockedWorkAdoptionNudge) {
-    return "resolved-blocked-work-adoption";
-  }
-
-  if (resolvedWorkAdoptionNudge) {
-    return "resolved-work-adoption";
-  }
-
-  if (blockedWorkAdoptionNudgeCount > 0 && blockedWorkAdoptionNudgeCount === workAdoptionNudgeCount) {
-    return "blocked-work-adoption";
-  }
-
-  if (workAdoptionNudgeCount > 0) {
-    return "nudge-no-work";
-  }
-
-  const weaknesses = actorScopeWeaknesses(actor);
-  if (weaknesses.length === 0) {
-    return "scoped-no-work";
-  }
-
-  return eventCount <= 1 ? "broad-presence-only" : "broad-active";
 }
 
 function findRecentWorkAdoptionNudge(
@@ -3697,15 +3547,11 @@ function renderDiagnosticActivity(
   rows: readonly DiagnosticActivityRow[],
   input: DiagnosticActivityRenderInput
 ): string {
-  const ownerOverlapNudgeCount = input.agentRows.reduce((sum, row) => sum + row.ownerOverlapNudgeCount, 0);
   const lines = [
     "AgentQ diagnostic activity",
     `Window: ${formatDuration(input.windowMs)}`,
     `Hook events in window: ${input.eventCount}`,
     `Actors shown: ${rows.length}/${input.rowCount}${input.rowCount > input.limit ? ` (limit ${input.limit})` : ""}`,
-    "",
-    "Coordination:",
-    `  ownerNudges:${ownerOverlapNudgeCount} | recentMessages:${input.recentMessageCount} | ownerMessageConversion:${classifyOwnerMessageConversion(ownerOverlapNudgeCount, input.recentMessageCount)}`,
     "",
     "Evidence boundary:",
     "  Activity counts are routing telemetry, not answer-quality proof.",
@@ -3734,16 +3580,6 @@ function renderDiagnosticActivity(
         `lastSeen:${formatNullableDuration(row.lastSeenAgeMs)}`,
         `inbox:${row.pendingInboxCount}`,
         `work:${row.hasOpenWork ? "open" : "none"}`,
-        `adoption:${row.adoption}`,
-        row.nudgeCount === 0 ? undefined : `nudges:${row.nudgeCount}`,
-        row.workAdoptionNudgeCount === 0 ? undefined : `workNudges:${row.workAdoptionNudgeCount}`,
-        row.blockedWorkAdoptionNudgeCount === 0 ? undefined : `blockedWorkNudges:${row.blockedWorkAdoptionNudgeCount}`,
-        row.resolvedBlockedWorkAdoptionNudge ? "blockedWorkResolved" : undefined,
-        row.unresolvedBlockedWorkAdoptionNudge ? "blockedWorkUnresolved" : undefined,
-        row.ownerOverlapNudgeCount === 0 ? undefined : `ownerNudges:${row.ownerOverlapNudgeCount}`,
-        row.stackContextNudgeCount === 0 ? undefined : `stackContexts:${row.stackContextNudgeCount}`,
-        row.readOnlyNudgeCount === 0 ? undefined : `readOnlyNudges:${row.readOnlyNudgeCount}`,
-        row.ignoredWorkAdoptionNudge ? "ignored-work-nudge" : undefined,
         row.openWorkEvidenceCount === 0 ? "zero-evidence" : undefined,
         row.openWorkEvidenceCount === null ? undefined : `evidence:${row.openWorkEvidenceCount}`,
         row.openWorkTitle === null ? undefined : `workTitle:${row.openWorkTitle}`,
@@ -3765,22 +3601,12 @@ function renderDiagnosticAgentActivityRow(row: DiagnosticAgentActivityRow): stri
     `readOnly:${row.readOnlyEventCount}`,
     `mutating:${row.mutatingEventCount}`,
     `stop:${row.stopEventCount}`,
-    `nudges:${row.nudgeCount}`,
-    `readOnlyNudges:${row.readOnlyNudgeCount}`,
-    `workNudges:${row.workAdoptionNudgeCount}`,
-    `blockedWorkNudges:${row.blockedWorkAdoptionNudgeCount}`,
-    `resolvedBlockedWork:${row.resolvedBlockedWorkAdoptionNudgeCount}`,
-    `unresolvedBlockedWork:${row.unresolvedBlockedWorkAdoptionNudgeCount}`,
-    `ownerNudges:${row.ownerOverlapNudgeCount}`,
-    `stackContexts:${row.stackContextNudgeCount}`,
     `pathful:${row.pathfulEventCount}`,
     `broad:${row.broadEventCount}`,
     `ignoredCmdEvents:${row.ignoredCommandEventCount}`,
-    `ignoredWorkNudges:${row.ignoredWorkAdoptionNudgeCount}`,
     `openWork:${row.openWorkCount}`,
     `zeroEvidenceWork:${row.zeroEvidenceOpenWorkCount}`,
-    `broadPresenceOnly:${row.broadPresenceOnlyCount}`,
-    `diagnosis:${row.diagnosis}`
+    `broadPresenceOnly:${row.broadPresenceOnlyCount}`
   ].join(" | ");
 }
 

@@ -506,14 +506,9 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("readOnly:1");
     expect(result.stdout).toContain("mutating:1");
     expect(result.stdout).toContain("stop:1");
-    expect(result.stdout).toContain("ownerNudges:1");
-    expect(result.stdout).toContain("Coordination:");
-    expect(result.stdout).toContain("ownerNudges:1 | recentMessages:0 | ownerMessageConversion:missing");
     expect(result.stdout).toContain("Evidence boundary:");
     expect(result.stdout).toContain("Activity counts are routing telemetry, not answer-quality proof");
     expect(result.stdout).toContain("Quality claims need actual message/request/response text");
-    expect(result.stdout).toContain("diagnosis:coordination-owner-routing");
-    expect(result.stdout).toContain("diagnosis:agent-scope-missing");
     expect(result.stdout).toContain("agent:codex");
     expect(result.stdout).toContain("events:3");
     expect(result.stdout).toContain("lastEvent:5m");
@@ -521,14 +516,20 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("p95Gap:4m");
     expect(result.stdout).toContain("avgGap:2m");
     expect(result.stdout).toContain("work:open");
-    expect(result.stdout).toContain("adoption:tracked-work");
-    expect(result.stdout).toContain("workNudges:1");
     expect(result.stdout).toContain("evidence:0");
     expect(result.stdout).toContain("workTitle:Diagnose activity output");
     expect(result.stdout).toContain("paths:README.md");
+    expect(result.stdout).not.toContain("Coordination:");
+    expect(result.stdout).not.toContain("ownerMessageConversion");
+    expect(result.stdout).not.toContain("diagnosis:");
+    expect(result.stdout).not.toContain("adoption:");
+    expect(result.stdout).not.toContain("workNudges:");
+    expect(result.stdout).not.toContain("blockedWorkResolved");
+    expect(result.stdout).not.toContain("blockedWorkUnresolved");
+    expect(result.stdout).not.toContain("ownerNudges:");
   });
 
-  it("reports owner-overlap conversion when a recent message exists", async () => {
+  it("does not infer owner-overlap conversion from activity counts", async () => {
     const workspace = await createWorkspace("agentq-cli-diag-conversion-");
     const runtime = createRuntime(workspace, "2026-05-18T00:10:00.000Z");
     const sender = await enter(runtime, "codex", "conversion-sender");
@@ -565,8 +566,12 @@ describe("CLI required-response protocol", () => {
 
     const result = await runCommand(["diag", "activity", "--window", "1h"], runtime);
 
-    expect(result.stdout).toContain("ownerNudges:1 | recentMessages:1 | ownerMessageConversion:observed");
+    expect(result.stdout).toContain("AgentQ diagnostic activity");
     expect(result.stdout).toContain("Activity counts are routing telemetry, not answer-quality proof");
+    expect(result.stdout).not.toContain("Coordination:");
+    expect(result.stdout).not.toContain("ownerMessageConversion");
+    expect(result.stdout).not.toContain("ownerNudges:");
+    expect(result.stdout).not.toContain("diagnosis:");
   });
 
   it.each(["typo", "superseded"])(
