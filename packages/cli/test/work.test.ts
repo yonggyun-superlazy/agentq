@@ -103,6 +103,12 @@ describe("CLI work stack", () => {
       stdout: "ok: no required replies or active work remain open\n",
       stderr: ""
     });
+    const next = await runCommand(["next", "--actor", actorId], runtime);
+    expect(next.stdout).toContain("Action: continue current task.");
+    expect(next.stdout).toContain("Before final response:");
+    expect(next.stdout).toContain("Translate shared-work evidence into the user-visible result");
+    expect(next.stdout).toContain("request impact, verification, and remaining scope");
+    expect(next.stdout).toContain(`agentq done-check --actor ${actorId}`);
   });
 
   it("closes stale work with an explicit terminal status and evidence", async () => {

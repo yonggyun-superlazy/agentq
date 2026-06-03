@@ -111,6 +111,8 @@ describe("AgentQ marker installer", () => {
     expect(scopedBlock).toContain("Shared work coordinates overlap");
     expect(scopedBlock).toContain("not the user's requested artifact");
     expect(scopedBlock).toContain("latest user-requested artifact first");
+    expect(scopedBlock).toContain("before final, translate shared-work evidence");
+    expect(scopedBlock).toContain("user-visible result, request impact, verification, and remaining scope");
     expect(scopedBlock).toContain("do not replace an explanation, diagnosis, or critique");
     expect(scopedBlock).toContain("helper print exact commands");
     expect(scopedBlock).toContain("short read-only answers");

@@ -62,7 +62,7 @@ const SCOPED_MARKER_BODY = [
   "",
   "Shared work coordinates overlap. It is not the user's requested artifact.",
   "",
-  "- Answer the latest user-requested artifact first; do not replace an explanation, diagnosis, or critique with coordination logs or a next-operation plan.",
+  "- Answer the latest user-requested artifact first; before final, translate shared-work evidence into user-visible result, request impact, verification, and remaining scope; do not replace an explanation, diagnosis, or critique with coordination logs or a next-operation plan.",
   "- Use shared work for edits, handoffs, active work, required replies, overlap, or ambiguity; short read-only answers can answer directly.",
   "- Use the hook-provided id and let the helper print exact commands for edits/handoffs/active work.",
   "- Track real work with spec-bearing stack frames: objective/slice, denominator/pass criteria, next operation, stop condition, and evidence.",

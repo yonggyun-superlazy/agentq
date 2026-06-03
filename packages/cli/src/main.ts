@@ -1234,6 +1234,7 @@ function renderNextAction(input: NextActionInput): string {
     "Action: continue current task.",
     "No required replies, active work, or scope blockers are open.",
     "Before final response:",
+    "  Translate shared-work evidence into the user-visible result, request impact, verification, and remaining scope.",
     `  agentq done-check --actor ${input.actorId}`
   );
   return `${lines.join("\n")}\n`;
