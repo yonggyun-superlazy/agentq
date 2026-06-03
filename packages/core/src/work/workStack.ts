@@ -122,7 +122,7 @@ export async function startWork(store: WorkspaceStore, input: StartWorkInput): P
     title: input.title,
     goal: input.goal ?? spec.objective,
     spec,
-    paths: normalizeNonEmpty(input.paths),
+    paths: normalizeWorkPaths(input.paths),
     at: input.now
   };
 
@@ -140,13 +140,18 @@ export async function appendActiveWorkTouch(
   if (workId === null) {
     return null;
   }
+  const before = await readWorkState(store, workId);
+  assertActorOwnsWork(before, input.actorId);
+  if (before.evidence.length === 0) {
+    throw new Error("AgentQ work touch requires qualitative context evidence before recording touched paths.");
+  }
 
   const event: WorkEvent = {
     kind: "work_touched",
     id: createWorkEventId(),
     workId,
     actorId: input.actorId,
-    paths: normalizeNonEmpty(input.paths),
+    paths: normalizeWorkPaths(input.paths),
     at: input.now
   };
 
@@ -728,6 +733,7 @@ function assertCloseEvidenceQuality(
   summary: string
 ): void {
   const combined = [...before.evidence, ...closeEvidence, summary].join(" ");
+  assertQualitativeClosureEvidence(combined);
   if (!hasPendingClosureCue(combined)) {
     return;
   }
@@ -742,6 +748,26 @@ function assertCloseEvidenceQuality(
     "Add close evidence naming final verification, an explicit blocked owner, " +
     "or the exact remaining file/log/test/check."
   );
+}
+
+function assertQualitativeClosureEvidence(text: string): void {
+  if (!looksMetricOnlyEvidence(text) || hasQualitativeEvidenceCue(text)) {
+    return;
+  }
+
+  throw new Error(
+    "AgentQ work close cannot rely on numeric or scan-only evidence. " +
+    "Name the actual output, message/sample, source/log, or behavior that was inspected."
+  );
+}
+
+function looksMetricOnlyEvidence(text: string): boolean {
+  return /\b[\w-]+=\d+\b/.test(text) ||
+    /\b(?:sections|criteria|stages|forbidden|stale|runrefs|count|score|metric|scan)s?\s*[:=]\s*\d+/i.test(text);
+}
+
+function hasQualitativeEvidenceCue(text: string): boolean {
+  return /\b(?:actual output|actual answer|before\/after|message|sample|dialogue|excerpt|case|source|log|trace|runtime report|build|test|read-back|inspected|observed|reviewed|verified|root cause|owner|artifact|reference|behavior|play loop|experience)\b/i.test(text);
 }
 
 function hasPendingClosureCue(text: string): boolean {
@@ -770,6 +796,33 @@ function normalizeNonEmpty(values: readonly string[]): string[] {
   }
 
   return normalized;
+}
+
+function normalizeWorkPaths(values: readonly string[]): string[] {
+  const paths = normalizeNonEmpty(values);
+  for (const workPath of paths) {
+    assertWorkPathQuality(workPath);
+  }
+
+  return paths;
+}
+
+function assertWorkPathQuality(workPath: string): void {
+  if (/["']/.test(workPath)) {
+    throw new Error(
+      "AgentQ work path looks malformed: remove shell quotes from the path value and pass each path separately."
+    );
+  }
+
+  if (workPath.includes(",")) {
+    throw new Error(
+      "AgentQ work path looks comma-joined: pass each path as a separate --path value."
+    );
+  }
+
+  if (/[\r\n]/.test(workPath)) {
+    throw new Error("AgentQ work path cannot contain newlines.");
+  }
 }
 
 function isNotFoundError(error: unknown): boolean {

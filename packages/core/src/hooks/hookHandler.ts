@@ -236,11 +236,24 @@ async function appendSpecificActiveWorkTouch(
     return;
   }
 
-  await appendActiveWorkTouch(store, {
-    actorId,
-    paths: specificPaths,
-    now
-  });
+  try {
+    await appendActiveWorkTouch(store, {
+      actorId,
+      paths: specificPaths,
+      now
+    });
+  } catch (error) {
+    if (isWorkTouchBeforeEvidenceError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function isWorkTouchBeforeEvidenceError(error: unknown): boolean {
+  return error instanceof Error &&
+    error.message.includes("requires qualitative context evidence");
 }
 
 async function refreshHookPresence(

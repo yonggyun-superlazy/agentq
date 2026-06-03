@@ -37,14 +37,14 @@ describe("AgentQ work stack", () => {
       code: "ENOENT"
     });
 
-    await appendActiveWorkTouch(store, {
-      actorId,
-      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
-      now: "2026-05-18T00:01:00.000Z"
-    });
     await appendWorkEvidence(store, {
       actorId,
       evidence: ["core work-stack test captured touch/evidence flow"],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+    await appendActiveWorkTouch(store, {
+      actorId,
+      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
       now: "2026-05-18T00:02:00.000Z"
     });
 
@@ -204,6 +204,79 @@ describe("AgentQ work stack", () => {
         now: "2026-05-18T00:01:00.000Z"
       })
     ).rejects.toThrow("requires evidence");
+  });
+
+  it("requires qualitative context evidence before touched paths can pile up", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await startWork(store, {
+      actorId,
+      workId: "AW-touch-before-evidence",
+      title: "Touch before evidence",
+      paths: ["AgentQ/packages/core/src/work/workStack.ts"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    await expect(
+      appendActiveWorkTouch(store, {
+        actorId,
+        paths: ["AgentQ/packages/core/src/work/workStack.ts"],
+        now: "2026-05-18T00:01:00.000Z"
+      })
+    ).rejects.toThrow("requires qualitative context evidence");
+  });
+
+  it("rejects malformed work paths before they pollute ownership routing", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await expect(
+      startWork(store, {
+        actorId,
+        workId: "AW-quoted-path",
+        title: "Quoted path",
+        paths: ['"ProjectDD/DD.Shared/Common/Battle.cs', 'ProjectDD/DD.Shared.Tests/Test.cs"'],
+        now: "2026-05-18T00:00:00.000Z"
+      })
+    ).rejects.toThrow("looks malformed");
+
+    await expect(
+      startWork(store, {
+        actorId,
+        workId: "AW-comma-path",
+        title: "Comma path",
+        paths: ["ProjectDD/DD.Shared/Common/Battle.cs, ProjectDD/DD.Shared.Tests/Test.cs"],
+        now: "2026-05-18T00:00:00.000Z"
+      })
+    ).rejects.toThrow("comma-joined");
+  });
+
+  it("rejects numeric scan-only close evidence for quality-sensitive closure", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await startWork(store, {
+      actorId,
+      workId: "AW-metric-only-close",
+      title: "Metric-only close",
+      paths: ["ProjectDD/NewConcepts/E_RUN_09_KO_2026-06-03.md"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId,
+      evidence: ["sections=14 criteria=10 stages=3 forbidden=0 stale=0 runrefs=0"],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+
+    await expect(
+      closeWork(store, {
+        actorId,
+        summary: "Closed after numeric scan",
+        evidence: [],
+        now: "2026-05-18T00:02:00.000Z"
+      })
+    ).rejects.toThrow("numeric or scan-only evidence");
   });
 
   it("rejects pending-only close evidence until the final check is named", async () => {

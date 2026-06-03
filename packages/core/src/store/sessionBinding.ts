@@ -92,8 +92,8 @@ export async function createOrRefreshSessionBinding(
   };
 
   PresenceSchema.parse(presence);
-  await writeAtomicYaml(sessionPath, binding);
   await writeAtomicYaml(store.layout.actorPresencePath(actorId), presence);
+  await writeAtomicYaml(sessionPath, binding);
   return binding;
 }
 

@@ -834,9 +834,17 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 
   if (subcommand === "touch") {
     assertNoUnexpectedPositionals(args, "work touch", 0);
+    const paths = pathOptionValues(args, "path");
+    for (const pathValue of paths) {
+      assertCliWorkPathQuality(pathValue);
+    }
+    const activeBeforeTouch = await readActiveWorkState(store, actorId);
+    if (activeBeforeTouch !== null && activeBeforeTouch.evidence.length === 0) {
+      throw new Error("AgentQ work touch requires qualitative context evidence before recording touched paths.");
+    }
     const state = await appendActiveWorkTouch(store, {
       actorId,
-      paths: pathOptionValues(args, "path"),
+      paths,
       now: runtime.now()
     });
     if (state === null) {
@@ -871,10 +879,18 @@ async function workCommand(argv: readonly string[], runtime: CommandRuntime): Pr
   if (subcommand === "close") {
     assertNoUnexpectedPositionals(args, "work close", 0);
     const status = parseWorkTerminalStatus(optionValue(args, "status"));
+    const summary = await requiredTextOption(args, "summary", runtime, "work close");
+    const evidence = await textOptionValues(args, "evidence", runtime, "work close");
+    const beforeClose = await readActiveWorkState(store, actorId);
+    assertCliQualitativeClosureEvidence([
+      ...(beforeClose?.evidence ?? []),
+      ...evidence,
+      summary
+    ].join(" "));
     const state = await closeWork(store, {
       actorId,
-      summary: await requiredTextOption(args, "summary", runtime, "work close"),
-      evidence: await textOptionValues(args, "evidence", runtime, "work close"),
+      summary,
+      evidence,
       ...(status === undefined ? {} : { status }),
       now: runtime.now()
     });
@@ -2464,10 +2480,11 @@ function pathOptionValues(args: ParsedArgs, name: string): string[] {
     : name === "paths"
       ? ["paths", "path"]
       : [name];
-  return names.flatMap((candidate) => optionValues(args, candidate))
+  const paths = names.flatMap((candidate) => optionValues(args, candidate))
     .flatMap((value) => value.split(","))
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+  return paths;
 }
 
 function requiredSpecificPathOptions(args: ParsedArgs, name: string, commandName: string): string[] {
@@ -2481,12 +2498,54 @@ function requiredSpecificPathOptions(args: ParsedArgs, name: string, commandName
     throw new Error(`${commandName} requires specific --${name} values; broad "." work is not routeable.`);
   }
 
+  for (const pathValue of paths) {
+    assertCliWorkPathQuality(pathValue);
+  }
+
   return paths;
 }
 
 function isBroadPathOption(value: string): boolean {
   const normalized = value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
   return normalized === "." || normalized === "";
+}
+
+function assertCliWorkPathQuality(value: string): void {
+  if (/["']/.test(value)) {
+    throw new Error(
+      "AgentQ work path looks malformed: remove shell quotes from the path value and pass each path separately."
+    );
+  }
+
+  if (value.includes(",")) {
+    throw new Error(
+      "AgentQ work path looks comma-joined: pass each path as a separate --path value."
+    );
+  }
+
+  if (/[\r\n]/.test(value)) {
+    throw new Error("AgentQ work path cannot contain newlines.");
+  }
+}
+
+function assertCliQualitativeClosureEvidence(text: string): void {
+  if (!looksCliMetricOnlyEvidence(text) || hasCliQualitativeEvidenceCue(text)) {
+    return;
+  }
+
+  throw new Error(
+    "AgentQ work close cannot rely on numeric or scan-only evidence. " +
+    "Name the actual output, message/sample, source/log, or behavior that was inspected."
+  );
+}
+
+function looksCliMetricOnlyEvidence(text: string): boolean {
+  return /\b[\w-]+=\d+\b/.test(text) ||
+    /\b(?:sections|criteria|stages|forbidden|stale|runrefs|count|score|metric|scan)s?\s*[:=]\s*\d+/i.test(text);
+}
+
+function hasCliQualitativeEvidenceCue(text: string): boolean {
+  return /\b(?:actual output|actual answer|before\/after|message|sample|dialogue|excerpt|case|source|log|trace|runtime report|build|test|read-back|inspected|observed|reviewed|verified|root cause|owner|artifact|reference|behavior|play loop|experience)\b/i.test(text);
 }
 
 function renderInstallPlan(

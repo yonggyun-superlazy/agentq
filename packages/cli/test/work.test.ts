@@ -67,17 +67,6 @@ describe("CLI work stack", () => {
     });
     await expect(runCommand([
       "work",
-      "touch",
-      "--actor",
-      actorId,
-      "--path",
-      "AgentQ/packages/cli/src/main.ts"
-    ], runtime)).resolves.toMatchObject({
-      code: 0,
-      stdout: expect.stringContaining("AgentQ/packages/cli/src/main.ts")
-    });
-    await expect(runCommand([
-      "work",
       "evidence",
       "--actor",
       actorId,
@@ -86,6 +75,17 @@ describe("CLI work stack", () => {
     ], runtime)).resolves.toMatchObject({
       code: 0,
       stdout: expect.stringContaining("evidence: 1")
+    });
+    await expect(runCommand([
+      "work",
+      "touch",
+      "--actor",
+      actorId,
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], runtime)).resolves.toMatchObject({
+      code: 0,
+      stdout: expect.stringContaining("AgentQ/packages/cli/src/main.ts")
     });
     await expect(runCommand([
       "work",
@@ -214,6 +214,109 @@ describe("CLI work stack", () => {
       "--path",
       "./"
     ], runtime)).rejects.toThrow(/broad/);
+  });
+
+  it("rejects malformed work path values and touch-before-evidence", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-path-quality-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "work-path-quality",
+      "--paths",
+      "AgentQ",
+      "--responsibility",
+      "work path quality"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--title",
+      "Quoted comma path",
+      "--path",
+      "\"AgentQ/packages/core/src/work/workStack.ts,AgentQ/packages/cli/src/main.ts\""
+    ], runtime)).rejects.toThrow(/looks malformed/);
+
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-touch-before-evidence",
+      "--title",
+      "Touch before evidence",
+      "--path",
+      "AgentQ/packages/core/src/work/workStack.ts"
+    ], runtime);
+
+    await expect(runCommand([
+      "work",
+      "touch",
+      "--actor",
+      actorId,
+      "--path",
+      "AgentQ/packages/cli/src/main.ts"
+    ], runtime)).rejects.toThrow(/requires qualitative context evidence/);
+  });
+
+  it("rejects metric-only work close evidence", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-work-metric-close-"));
+    const runtime = {
+      cwd: workspace,
+      env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
+      now: () => "2026-05-18T00:00:00.000Z"
+    };
+    const actorId = (await runCommand([
+      "enter",
+      "--as",
+      "codex",
+      "--session",
+      "work-metric-close",
+      "--paths",
+      "AgentQ",
+      "--responsibility",
+      "work close evidence"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
+
+    await runCommand([
+      "work",
+      "start",
+      "--actor",
+      actorId,
+      "--id",
+      "AW-metric-close",
+      "--title",
+      "Metric close",
+      "--path",
+      "AgentQ/packages/core/src/work/workStack.ts"
+    ], runtime);
+    await runCommand([
+      "work",
+      "evidence",
+      "--actor",
+      actorId,
+      "--evidence",
+      "sections=14 criteria=10 stages=3 forbidden=0 stale=0 runrefs=0"
+    ], runtime);
+
+    await expect(runCommand([
+      "work",
+      "close",
+      "--actor",
+      actorId,
+      "--summary",
+      "Closed after numeric scan"
+    ], runtime)).rejects.toThrow(/numeric or scan-only evidence/);
   });
 
   it("rejects dangling quoted work titles and responsibilities", async () => {

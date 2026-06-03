@@ -296,7 +296,7 @@ describe("AgentQ hook handler", () => {
     };
     expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Record active-work context evidence");
     expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("no context evidence yet");
-    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("events recorded: 2");
+    expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("events recorded: 1");
     expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).toContain("Evidence needs: frame, observed basis");
     expect(zeroEvidenceOutput.hookSpecificOutput?.additionalContext).not.toContain("no active work frame");
 
