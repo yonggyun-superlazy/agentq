@@ -114,7 +114,10 @@ describe("AgentQ marker installer", () => {
     expect(scopedBlock).toContain("do not replace an explanation, diagnosis, or critique");
     expect(scopedBlock).toContain("helper print exact commands");
     expect(scopedBlock).toContain("short read-only answers");
-    expect(scopedBlock).toContain("not stop conditions");
+    expect(scopedBlock).toContain("stop conditions");
+    expect(scopedBlock).toContain("aggregate diagnostics are triage");
+    expect(scopedBlock).toContain("not quality proof");
+    expect(scopedBlock).toContain("quality claims need actual messages");
     expect(scopedBlock).toContain("Required replies");
     expect(scopedBlock).toContain("Active frame is focus/order, not scope shrink");
     expect(scopedBlock).toContain("parent denominator");

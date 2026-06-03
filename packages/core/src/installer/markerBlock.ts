@@ -68,7 +68,7 @@ const SCOPED_MARKER_BODY = [
   "- Track real work with spec-bearing stack frames: objective/slice, denominator/pass criteria, next operation, stop condition, and evidence.",
   "- Active frame is focus/order, not scope shrink; preserve parent denominator/pass criteria and same-row delete+replacement pass criteria.",
   "- Owners route responsibility; they do not lock. Ask required questions only for real overlap or blockers; use notes for context.",
-  "- Required replies block completion. Owner overlap, broad scope, and zero evidence are diagnostics, not stop conditions.",
+  "- Required replies block completion. Owner overlap, broad scope, zero evidence, and aggregate diagnostics are triage, not quality proof or stop conditions; quality claims need actual messages or before/after outputs.",
   "- Keep internal ids, command names, queue/work labels, hook details, and maintenance text out of user answers unless requested.",
   "- No repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");

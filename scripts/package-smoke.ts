@@ -44,7 +44,8 @@ assert(installedScopedInstructions.includes("latest user-requested artifact firs
 assert(installedScopedInstructions.includes("do not replace an explanation, diagnosis, or critique"), "install missed AgentQ frame-preservation instruction");
 assert(installedScopedInstructions.includes("Active frame is focus/order, not scope shrink"), "install missed AgentQ frame-denominator instruction");
 assert(installedScopedInstructions.includes("spec-bearing stack frames"), "install missed AgentQ spec-bearing stack instruction");
-assert(installedScopedInstructions.includes("not stop conditions"), "install missed AgentQ coordination-as-stop guard");
+assert(installedScopedInstructions.includes("not quality proof or stop conditions"), "install missed AgentQ coordination-as-stop guard");
+assert(installedScopedInstructions.includes("aggregate diagnostics are triage"), "install missed AgentQ diagnostic evidence boundary");
 assert(agentqMarkerBlock(installedScopedInstructions).split("\n").length <= 16, "installed AgentQ instruction block grew too large");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");

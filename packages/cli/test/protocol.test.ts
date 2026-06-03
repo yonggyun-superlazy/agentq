@@ -509,6 +509,9 @@ describe("CLI required-response protocol", () => {
     expect(result.stdout).toContain("ownerNudges:1");
     expect(result.stdout).toContain("Coordination:");
     expect(result.stdout).toContain("ownerNudges:1 | recentMessages:0 | ownerMessageConversion:missing");
+    expect(result.stdout).toContain("Evidence boundary:");
+    expect(result.stdout).toContain("Activity counts are routing telemetry, not answer-quality proof");
+    expect(result.stdout).toContain("Quality claims need actual message/request/response text");
     expect(result.stdout).toContain("diagnosis:coordination-owner-routing");
     expect(result.stdout).toContain("diagnosis:agent-scope-missing");
     expect(result.stdout).toContain("agent:codex");
@@ -563,6 +566,7 @@ describe("CLI required-response protocol", () => {
     const result = await runCommand(["diag", "activity", "--window", "1h"], runtime);
 
     expect(result.stdout).toContain("ownerNudges:1 | recentMessages:1 | ownerMessageConversion:observed");
+    expect(result.stdout).toContain("Activity counts are routing telemetry, not answer-quality proof");
   });
 
   it.each(["typo", "superseded"])(
