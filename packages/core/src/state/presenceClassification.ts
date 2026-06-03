@@ -35,5 +35,5 @@ function isBookkeepingResponsibility(responsibility: string): boolean {
 }
 
 export function normalizePresencePath(pathValue: string): string {
-  return pathValue.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
+  return pathValue.trim().replace(/^['"]|['"]$/g, "").replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "") || ".";
 }

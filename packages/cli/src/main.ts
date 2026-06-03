@@ -568,6 +568,13 @@ export async function runCommand(
     return { code: 0, stdout: `${renderHelp()}\n`, stderr: "" };
   }
 
+  if (command === "state") {
+    const compatibilityResult = await stateCompatibilityCommand(argv.slice(1), runtime);
+    if (compatibilityResult !== null) {
+      return compatibilityResult;
+    }
+  }
+
   const commandSpec = COMMANDS.find((candidate) => candidate.name === command);
   if (commandSpec === undefined) {
     return { code: 2, stdout: "", stderr: renderUnknownCommandError(command, argv.slice(1)) };
@@ -669,6 +676,34 @@ export async function runCommand(
     code: 2,
     stdout: "",
     stderr: `agentq: command dispatch missing for registered command: ${command}\n`
+  };
+}
+
+async function stateCompatibilityCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult | null> {
+  const args = parseArgs(argv);
+  const paths = pathOptionValues(args, "path");
+  const resources = optionValues(args, "resource");
+  if (paths.length === 0 && resources.length === 0) {
+    return null;
+  }
+
+  const actorId = optionValue(args, "actor");
+  const staleMs = optionValue(args, "stale-ms");
+  const ownerArgs = [
+    ...paths.flatMap((value) => ["--path", value]),
+    ...resources.flatMap((value) => ["--resource", value]),
+    ...(actorId === undefined ? [] : ["--actor", actorId]),
+    ...(staleMs === undefined ? [] : ["--stale-ms", staleMs])
+  ];
+  const result = await ownersCommand(ownerArgs, runtime);
+  return {
+    code: result.code,
+    stdout: [
+      "compatibility: agentq state path/resource queries are routed to agentq owners.",
+      "",
+      result.stdout.trimEnd()
+    ].join("\n") + "\n",
+    stderr: result.stderr
   };
 }
 

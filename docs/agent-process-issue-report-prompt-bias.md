@@ -62,6 +62,15 @@ For agent process / agentq instructions / AgentReadme:
 
 6. **Track oscillation count.** When agent's recommendation has changed 3+ times in a single session, freeze new recommendations until user explicitly resets values.
 
+7. **Do not preserve unimplemented policy fields as "deferred" active syntax.** If an agent discovers that a field was added to authoring, descriptors, generated metadata, or examples before the runtime/editor policy exists, the agent must classify it as one of:
+   - active contract with implementation and validation evidence;
+   - migration residue to remove from active authoring; or
+   - a new feature proposal that needs a complete parser/writer/reverse-save/runtime/editor/test surface before reintroduction.
+
+8. **Do not treat lazy `Ensure*` creation as lifecycle proof.** In architecture reviews, an `EnsureWorldUICamera()`-style helper means "consumer can run before owner setup is structurally guaranteed" until proven otherwise. The agent should propose explicit owner/bootstrap validation as the final shape, and describe current lazy creation as implementation debt if it still exists.
+
+9. **Separate internal runtime infrastructure from user-facing authoring surface.** If `renderMode: World` already implies the framework-managed world UI camera, then `worldCamera: Auto` is not a meaningful authoring choice. Agents should not expose internal defaults as `.slui` fields unless users have a real selectable policy and the implementation branches on it.
+
 ## Files Referenced
 - `E:/superlazy/.tmp/damage-floater-rereview.md` (agent's biased prompt)
 - `E:/superlazy/.tmp/codex-rereview.txt`, `copilot-rereview.txt` (external critique outputs constrained by bias)

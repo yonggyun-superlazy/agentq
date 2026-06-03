@@ -1829,7 +1829,7 @@ describe("CLI work stack", () => {
     expect(routed.stdout).not.toContain(bookkeeping);
   });
 
-  it("rejects state --paths while suggesting the owner-routing command", async () => {
+  it("routes state --paths compatibility through owner routing", async () => {
     const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-state-recovery-"));
     const runtime = {
       cwd: workspace,
@@ -1847,6 +1847,17 @@ describe("CLI work stack", () => {
       "--responsibility",
       "AgentQ CLI status view"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
+    const receiver = (await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "receiver",
+      "--paths",
+      "AgentQ/packages/cli/src/main.ts",
+      "--responsibility",
+      "AgentQ CLI owner"
+    ], runtime)).stdout.trim().replace(/ registered$/, "");
     const result = await runCommand([
       "state",
       "--actor",
@@ -1856,13 +1867,13 @@ describe("CLI work stack", () => {
     ], runtime);
 
     expect(result).toMatchObject({
-      code: 2,
-      stdout: ""
+      code: 0,
+      stderr: ""
     });
-    expect(result.stderr).toContain("agentq: unknown command: state");
-    expect(result.stderr).toContain("State is not an AgentQ command");
-    expect(result.stderr).toContain(`agentq owners --path AgentQ/packages/cli/src/main.ts --actor ${sender}`);
-    expect(result.stderr).toContain("Path/resource queries are owner routing");
+    expect(result.stdout).toContain("agentq state path/resource queries are routed to agentq owners");
+    expect(result.stdout).toContain("owners for AgentQ/packages/cli/src/main.ts");
+    expect(result.stdout).toContain(receiver);
+    expect(result.stdout).not.toContain("unknown command");
   });
 
   it("accepts enter --path so a guessed singular option does not register broad scope", async () => {

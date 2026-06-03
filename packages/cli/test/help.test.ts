@@ -40,8 +40,8 @@ describe("CLI help", () => {
     expect(result.stdout).not.toContain("experimental-copilot");
   });
 
-  it("keeps state out of the public command surface and suggests the durable workflow", async () => {
-    const result = await runCommand(["state", "--paths", "ProjectDD/DD.Shared"]);
+  it("keeps bare state out of the public command surface and suggests the durable workflow", async () => {
+    const result = await runCommand(["state"]);
 
     expect(result).toMatchObject({
       code: 2,
@@ -50,7 +50,7 @@ describe("CLI help", () => {
     expect(renderHelp()).not.toContain("\n  state");
     expect(result.stderr).toContain("agentq: unknown command: state");
     expect(result.stderr).toContain("State is not an AgentQ command");
-    expect(result.stderr).toContain("agentq owners --path ProjectDD/DD.Shared");
+    expect(result.stderr).toContain("agentq status");
   });
 
   it("suggests durable commands for common guessed command names", async () => {

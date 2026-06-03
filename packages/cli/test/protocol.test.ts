@@ -169,6 +169,32 @@ describe("CLI required-response protocol", () => {
     });
   });
 
+  it("routes guessed state path queries to owners without making state a public command", async () => {
+    const workspace = await createWorkspace("agentq-cli-state-compat-");
+    const runtime = createRuntime(workspace);
+    const ownerResult = await runCommand([
+      "enter",
+      "--as",
+      "claude-code",
+      "--session",
+      "dd-owner",
+      "--paths",
+      "ProjectDD/DD.Shared",
+      "--responsibility",
+      "DD shared owner"
+    ], runtime);
+    const owner = ownerResult.stdout.trim().replace(/ registered$/, "");
+
+    await expect(runCommand(["state", "--paths", "ProjectDD/DD.Shared"], runtime)).resolves.toMatchObject({
+      code: 0,
+      stderr: "",
+      stdout: expect.stringContaining("agentq state path/resource queries are routed to agentq owners")
+    });
+    const result = await runCommand(["state", "--paths", "ProjectDD/DD.Shared"], runtime);
+    expect(result.stdout).toContain("owners for ProjectDD/DD.Shared");
+    expect(result.stdout).toContain(owner);
+  });
+
   it("reconstructs shell-split question and response text by default", async () => {
     const workspace = await createWorkspace("agentq-cli-question-quote-");
     const runtime = createRuntime(workspace);
