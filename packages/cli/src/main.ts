@@ -2751,7 +2751,6 @@ function renderWorkspaceStatus(
     routeableIdleNoWorkCount,
     unresolvedBlockedWorkNudgeActorCount,
     ignoredWorkNudgeActorCount,
-    recentOwnerOverlapNudgeCount,
     recentMessageCount: recentMessages.length,
     staleOpenWorkCount,
     evidencedStaleOpenWorkCount,
@@ -2780,7 +2779,6 @@ function renderWorkspaceStatus(
     `unresolved blocked work-adoption attempts: ${unresolvedBlockedWorkNudgeActorCount}`,
     `ignored work-adoption nudges: ${ignoredWorkNudgeActorCount}`,
     `owner-overlap nudges 24h: ${recentOwnerOverlapNudgeCount}`,
-    `owner-message conversion 24h: ${classifyOwnerMessageConversion(recentOwnerOverlapNudgeCount, recentMessages.length)}`,
     `broad presence-only actors: ${broadPresenceOnlyCount}`,
     `legacy/noisy path actors: ${noisyPathActorCount}`,
     `pending inbox: ${pendingInboxCount}`,
@@ -3218,7 +3216,6 @@ function statusSignals(input: {
   readonly routeableIdleNoWorkCount: number;
   readonly unresolvedBlockedWorkNudgeActorCount: number;
   readonly ignoredWorkNudgeActorCount: number;
-  readonly recentOwnerOverlapNudgeCount: number;
   readonly recentMessageCount: number;
   readonly staleOpenWorkCount: number;
   readonly evidencedStaleOpenWorkCount: number;
@@ -3268,10 +3265,6 @@ function statusSignals(input: {
     lines.push(`coordination: ${input.routeableActiveCount} routeable active actor(s), but no recent inter-agent messages.`);
   }
 
-  if (input.recentOwnerOverlapNudgeCount > 0 && input.recentMessageCount === 0) {
-    lines.push(`coordination-conversion: ${input.recentOwnerOverlapNudgeCount} owner-overlap nudge(s), but no recent inter-agent messages.`);
-  }
-
   if (input.evidencedStaleOpenWorkCount > 0) {
     lines.push(`evidenced-stale-open-work: ${input.evidencedStaleOpenWorkCount} open work item(s) have context evidence and are past the stale window; review or close with final verification.`);
   }
@@ -3300,7 +3293,6 @@ function statusNextAction(input: {
   readonly staleOpenWorkCount: number;
   readonly evidencedStaleOpenWorkCount: number;
   readonly routeableActiveCount: number;
-  readonly recentOwnerOverlapNudgeCount: number;
   readonly recentMessageCount: number;
 }): string {
   if (input.pendingInboxCount > 0) {
@@ -3329,10 +3321,6 @@ function statusNextAction(input: {
 
   if (input.scopeRefreshNeededCount > 0) {
     return "Refresh weak-scoped actors that have inbox/work/nudges with `agentq next --actor <id>`.";
-  }
-
-  if (input.recentOwnerOverlapNudgeCount > 0 && input.recentMessageCount === 0) {
-    return "Preserve the current user request. If owner-overlap changes the edit, handoff, or contract, run `agentq owners ...`, then `agentq question ...` for decisions or `agentq note ...` for context.";
   }
 
   if (input.routeableIdleNoWorkCount > 0) {
@@ -3439,14 +3427,6 @@ function countRecentOwnerOverlapNudges(
       nowMs - atMs >= 0 &&
       nowMs - atMs <= windowMs;
   }).length;
-}
-
-function classifyOwnerMessageConversion(ownerOverlapNudgeCount: number, recentMessageCount: number): string {
-  if (ownerOverlapNudgeCount === 0) {
-    return "none";
-  }
-
-  return recentMessageCount === 0 ? "missing" : "observed";
 }
 
 function isSpecificDiagnosticPath(value: string): boolean {

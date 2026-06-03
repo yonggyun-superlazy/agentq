@@ -1162,7 +1162,7 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("recent work-adoption nudged actors: 0");
     expect(result.stdout).toContain("ignored work-adoption nudges: 0");
     expect(result.stdout).toContain("owner-overlap nudges 24h: 0");
-    expect(result.stdout).toContain("owner-message conversion 24h: none");
+    expect(result.stdout).not.toContain("owner-message conversion");
     expect(result.stdout).toContain("broad presence-only actors: 1");
     expect(result.stdout).toContain("codex: total 1, active 1, stale 0, operational-active 1, bookkeeping-active 0, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 1, routeable-no-work 0, broad-presence-only 0");
     expect(result.stdout).toContain("claude-code: total 2, active 2, stale 0, operational-active 1, bookkeeping-active 1, routeable 1, broad/generic 0, scope-refresh-needed 0, active-work 0, routeable-no-work 1, broad-presence-only 1");
@@ -1187,8 +1187,8 @@ describe("CLI work stack", () => {
     expect(result.stdout).toContain("AQ-status");
   });
 
-  it("reports owner-overlap signals that did not turn into messages", async () => {
-    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-owner-conversion-"));
+  it("reports owner-overlap telemetry without conversion claims", async () => {
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "agentq-cli-status-owner-overlap-"));
     const runtime = {
       cwd: workspace,
       env: { LOCALAPPDATA: path.join(workspace, "local-app-data") },
@@ -1199,11 +1199,11 @@ describe("CLI work stack", () => {
       "--as",
       "codex",
       "--session",
-      "owner-conversion",
+      "owner-overlap",
       "--paths",
       "README.md",
       "--responsibility",
-      "Owner overlap conversion diagnostics"
+      "Owner overlap telemetry diagnostics"
     ], runtime)).stdout.trim().replace(/ registered$/, "");
     await runCommand([
       "enter",
@@ -1232,10 +1232,10 @@ describe("CLI work stack", () => {
     const status = await runCommand(["status"], runtime);
 
     expect(status.stdout).toContain("owner-overlap nudges 24h: 1");
-    expect(status.stdout).toContain("owner-message conversion 24h: missing");
     expect(status.stdout).toContain("recent messages 24h: 0");
-    expect(status.stdout).toContain("Preserve the current user request. If owner-overlap changes the edit, handoff, or contract, run `agentq owners ...`, then `agentq question ...` for decisions or `agentq note ...` for context.");
-    expect(status.stdout).toContain("coordination-conversion: 1 owner-overlap nudge(s), but no recent inter-agent messages.");
+    expect(status.stdout).not.toContain("owner-message conversion");
+    expect(status.stdout).not.toContain("coordination-conversion");
+    expect(status.stdout).not.toContain("Preserve the current user request. If owner-overlap changes the edit, handoff, or contract");
   });
 
   it("reports orphan active work pointers that have no actor presence", async () => {
