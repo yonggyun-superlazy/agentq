@@ -231,6 +231,8 @@ export function renderCommandHelp(command: CommandSpec): string {
       "  agentq question --actor <id> --question-stdin [--to <id>...] --path <path>...",
       "",
       "Questions are required requests. The sender remains blocked until routed actors answer.",
+      "Ask one required decision only. Put audits, history, options, and long reports in agentq note or project evidence before asking the smallest blocking question.",
+      "Use --expect to name the exact answer shape, such as exact files active or no active overlap.",
       "Text options accept normal shell-split words until the next --option; use file/stdin only for exact multi-line text.",
       "After routing, AgentQ records pending delivery without starting headless agent processes."
     ].join("\n");
@@ -1543,6 +1545,7 @@ async function questionCommand(argv: readonly string[], runtime: CommandRuntime)
   }
   const expectedAnswer = await textOption(args, "expect", runtime, "question");
   const passCriteria = optionValues(args, "pass");
+  assertRequiredQuestionQuality(question);
   const message: Message = {
     id,
     kind: "question",
@@ -2405,6 +2408,17 @@ function cleanTextOption(value: string, name: string, commandName: string): stri
   }
 
   return trimmed;
+}
+
+function assertRequiredQuestionQuality(question: string): void {
+  const questionMarkCount = question.match(/\?/g)?.length ?? 0;
+  if (questionMarkCount > 2 || question.length > 1_000) {
+    throw new Error(
+      "question must ask one required decision. " +
+      "Move audits, history, options, and long reports to `agentq note` or project evidence, " +
+      "then ask the smallest blocking question."
+    );
+  }
 }
 
 function hasDanglingBoundaryQuote(value: string): boolean {

@@ -206,6 +206,41 @@ describe("AgentQ work stack", () => {
     ).rejects.toThrow("requires evidence");
   });
 
+  it("rejects pending-only close evidence until the final check is named", async () => {
+    const store = await createStore();
+    const actorId = "codex@workspace";
+
+    await startWork(store, {
+      actorId,
+      workId: "AW-pending",
+      title: "Pending close",
+      paths: ["AgentQ"],
+      now: "2026-05-18T00:00:00.000Z"
+    });
+    await appendWorkEvidence(store, {
+      actorId,
+      evidence: ["Verification checkpoint passed; summary inspection pending."],
+      now: "2026-05-18T00:01:00.000Z"
+    });
+
+    await expect(
+      closeWork(store, {
+        actorId,
+        summary: "Looks complete",
+        evidence: [],
+        now: "2026-05-18T00:02:00.000Z"
+      })
+    ).rejects.toThrow("pending evidence unresolved");
+
+    const closed = await closeWork(store, {
+      actorId,
+      summary: "Closed after final verification",
+      evidence: ["Final verification passed; no remaining summary inspection."],
+      now: "2026-05-18T00:03:00.000Z"
+    });
+    expect(closed.status).toBe("closed");
+  });
+
   it("can terminally close stale work as abandoned with evidence", async () => {
     const store = await createStore();
     const actorId = "codex@workspace";

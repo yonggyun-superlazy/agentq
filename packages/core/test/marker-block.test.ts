@@ -106,6 +106,8 @@ describe("AgentQ marker installer", () => {
     expect(agentsBlock).toContain("routes, not locks");
     expect(claudeBlock).toContain("routes, not locks");
     expect(scopedBlock).toContain("required questions only for real overlap");
+    expect(scopedBlock).toContain("one-decision required questions");
+    expect(scopedBlock).toContain("`pending` is not closure evidence");
     expect(agentsBlock).not.toContain("agentq work start/status/evidence/close");
     expect(claudeBlock).not.toContain("agentq work start/status/evidence/close");
     expect(scopedBlock).toContain("Shared work coordinates overlap");

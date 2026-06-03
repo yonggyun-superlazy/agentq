@@ -40,6 +40,14 @@ describe("CLI help", () => {
     expect(result.stdout).not.toContain("experimental-copilot");
   });
 
+  it("documents required-question quality boundaries", async () => {
+    const result = await runCommand(["question", "--help"]);
+
+    expect(result.stdout).toContain("Ask one required decision only");
+    expect(result.stdout).toContain("Put audits, history, options, and long reports");
+    expect(result.stdout).toContain("Use --expect to name the exact answer shape");
+  });
+
   it("keeps bare state out of the public command surface and suggests the durable workflow", async () => {
     const result = await runCommand(["state"]);
 

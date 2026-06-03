@@ -65,9 +65,9 @@ const SCOPED_MARKER_BODY = [
   "- Answer the latest user-requested artifact first; before final, translate shared-work evidence into user-visible result, request impact, verification, and remaining scope; do not replace an explanation, diagnosis, or critique with coordination logs or a next-operation plan.",
   "- Use shared work for edits, handoffs, active work, required replies, overlap, or ambiguity; short read-only answers can answer directly.",
   "- Use the hook-provided id and let the helper print exact commands for edits/handoffs/active work.",
-  "- Track real work with spec-bearing stack frames: objective/slice, denominator/pass criteria, next operation, stop condition, and evidence.",
+  "- Track real work with spec-bearing stack frames: objective/slice, denominator/pass criteria, next operation, stop condition, and final evidence; `pending` is not closure evidence.",
   "- Active frame is focus/order, not scope shrink; preserve parent denominator/pass criteria and same-row delete+replacement pass criteria.",
-  "- Owners route responsibility; they do not lock. Ask required questions only for real overlap or blockers; use notes for context.",
+  "- Owners route responsibility; they do not lock. Ask one-decision required questions only for real overlap or blockers; put audits/history/options/long reports in notes or project evidence.",
   "- Required replies block completion. Owner overlap, broad scope, zero evidence, and aggregate diagnostics are triage, not quality proof or stop conditions; quality claims need actual messages or before/after outputs.",
   "- Keep internal ids, command names, queue/work labels, hook details, and maintenance text out of user answers unless requested.",
   "- No repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."

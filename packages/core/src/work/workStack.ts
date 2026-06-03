@@ -187,6 +187,7 @@ export async function closeWork(store: WorkspaceStore, input: CloseWorkInput): P
   if (before.evidence.length === 0 && closeEvidence.length === 0) {
     throw new Error("AgentQ work close requires evidence recorded by `work evidence` or `work close --evidence`.");
   }
+  assertCloseEvidenceQuality(before, closeEvidence, input.summary);
   const pointer = await readActiveWorkPointer(store, input.actorId);
   if (
     pointer?.activeWorkId === workId &&
@@ -719,6 +720,41 @@ function hasParentReturnEvidence(evidence: readonly string[]): boolean {
   const parentCue = /\bparent\b/.test(text);
   const recheckCue = /denominator|pass criteria|\bpass\b|next operation|\bnext\b|objective|recheck|rechecked|reviewed|remaining/.test(text);
   return returnCue && parentCue && recheckCue;
+}
+
+function assertCloseEvidenceQuality(
+  before: WorkState,
+  closeEvidence: readonly string[],
+  summary: string
+): void {
+  const combined = [...before.evidence, ...closeEvidence, summary].join(" ");
+  if (!hasPendingClosureCue(combined)) {
+    return;
+  }
+
+  const closureText = [summary, ...closeEvidence].join(" ");
+  if (hasPendingResolutionCue(closureText)) {
+    return;
+  }
+
+  throw new Error(
+    "AgentQ work close cannot leave pending evidence unresolved. " +
+    "Add close evidence naming final verification, an explicit blocked owner, " +
+    "or the exact remaining file/log/test/check."
+  );
+}
+
+function hasPendingClosureCue(text: string): boolean {
+  return /\b(?:inspection pending|summary inspection pending|pending|unverified|not verified|todo|tbd)\b/i.test(text);
+}
+
+function hasPendingResolutionCue(text: string): boolean {
+  return (
+    /\b(?:final verification|verified|passed|failed|no remaining|superseded|abandoned)\b/i.test(text) ||
+    /\bblocked (?:by|on|owner)\b|\bblocked owner\b|\bowner:/i.test(text) ||
+    /\b(?:remaining|next|exact remaining) (?:file|log|test|artifact|check|command)\b/i.test(text) ||
+    /\b(?:inspect|rerun|run) (?:file|log|test|build|command)\b/i.test(text)
+  );
 }
 
 function assertActorOwnsWork(state: WorkState, actorId: string): void {

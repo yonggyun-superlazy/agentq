@@ -13,6 +13,29 @@ import {
 import { runCommand } from "../src/main.js";
 
 describe("CLI required-response protocol", () => {
+  it("rejects required questions that bundle multiple decisions", async () => {
+    const workspace = await createWorkspace("agentq-cli-question-quality-");
+    const runtime = createRuntime(workspace);
+    const sender = await enter(runtime, "codex", "sender");
+    const receiver = await enter(runtime, "claude-code", "receiver");
+
+    await expect(runCommand([
+      "question",
+      "--id",
+      "AQ-too-many-decisions",
+      "--actor",
+      sender,
+      "--to",
+      receiver,
+      "--path",
+      "ProjectDD/DD.Shared/Common/Battle/Components/DDMovementPlanningZone.Combat.cs",
+      "--question",
+      "Here is the audit. Is this a ledger-close line? Is it a score-axis line? If so, how does it reconcile with the non-goal?",
+      "--expect",
+      "one answer"
+    ], runtime)).rejects.toThrow("one required decision");
+  });
+
   it("lets a sender follow up after the receiver reports blocked evidence", async () => {
     const workspace = await createWorkspace("agentq-cli-follow-up-");
     const runtime = createRuntime(workspace);
