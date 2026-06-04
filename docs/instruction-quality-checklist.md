@@ -19,6 +19,7 @@ Every agent surface should pass these scenarios:
 | Done-check fails | Resolve the queue/work failure before claiming done. |
 | Broad scope appears | Run `agentq next --actor <self>` and follow the printed scope refresh command. |
 | Diagnostics are confusing | Use `agentq status`, `agentq diag`, or `agentq diag activity`; do not guess current identity. |
+| User asks why answer quality dropped or whether AgentQ helped | Inspect actual messages, replies, handoff text, or same-prompt before/after outputs before mentioning metrics or AgentQ status. |
 
 Hard failures:
 
@@ -27,6 +28,7 @@ Hard failures:
 - The agent treats AgentQ as a sub-agent review system.
 - The agent routes to broad `.` scope without checking for concrete owners.
 - The agent finishes while `done-check` is failing.
+- The agent answers a quality/process complaint with counts, status, or measurement design before reviewing actual dialogue.
 
 ## Minimal Collision Prompt
 

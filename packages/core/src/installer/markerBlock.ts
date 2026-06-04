@@ -49,26 +49,26 @@ const ROOT_MARKER_BODY = [
   "# Shared Work",
   "",
   "See `.github/instructions/agentq.instructions.md`.",
-  "Use for edits, handoffs, tracked work, or ambiguity.",
+  "Use for real edits, handoffs, tracked work, replies, or ambiguity.",
   "Short read-only answers answer directly.",
-  "On edit/handoff nudges, track only real shared work; read-only diagnostics keep moving.",
-  "`owners` routes, not locks; `question` for overlap, `note` for context.",
-  "Before finishing tracked work, refresh state and record final evidence.",
-  "Hide internal system/command names, ids, queues, and work labels from user answers."
+  "Quality reviews inspect actual messages first; metrics are triage.",
+  "Keep queue/status/next-action narration behind the requested result.",
+  "`owners` routes, not locks; `question` overlap; `note` context.",
+  "Hide internal ids, commands, queue/work labels, and hook details."
 ].join("\n");
 
 const SCOPED_MARKER_BODY = [
   "# Shared Work",
   "",
-  "Shared work coordinates overlap. It is not the user's requested artifact.",
-  "",
-  "- Answer the latest user-requested artifact first; before final, translate shared-work evidence into user-visible result, request impact, verification, and remaining scope; do not replace an explanation, diagnosis, or critique with coordination logs or a next-operation plan.",
-  "- Use shared work for edits, handoffs, active work, required replies, overlap, or ambiguity; short read-only answers can answer directly.",
-  "- Use the hook-provided id and let the helper print exact commands for edits/handoffs/active work.",
-  "- Track real work with spec-bearing stack frames: objective/slice, denominator/pass criteria, next operation, stop condition, and final evidence; `pending` is not closure evidence.",
+  "Shared work coordinates overlap; it is never the user's requested artifact.",
+  "- Put the latest user request first. Use shared work only to unblock that request; never replace an explanation, diagnosis, critique, or requested edit with queue/status/next-action narration.",
+  "- For quality/process complaints or AgentQ usage review, inspect actual messages, agent replies, handoff text, or same-prompt before/after outputs first. Metrics, counts, stale-work totals, and status summaries are triage only.",
+  "- Use shared work for real edits, handoffs, active work, required replies, overlap, or ambiguity. Short read-only answers answer directly.",
+  "- For edits or active work, use the hook-provided id and helper when needed; record evidence, final verification, and unresolved scope in shared state, then surface only the user-impacting result.",
+  "- Do not create work frames, reports, instruction edits, or required questions merely because the user asks why a response was bad; answer the correction unless an actual edit or handoff is needed.",
   "- Active frame is focus/order, not scope shrink; preserve parent denominator/pass criteria and same-row delete+replacement pass criteria.",
-  "- Owners route responsibility; they do not lock. Ask one-decision required questions only for real overlap or blockers; put audits/history/options/long reports in notes or project evidence.",
-  "- Required replies block completion. Owner overlap, broad scope, zero evidence, and aggregate diagnostics are triage, not quality proof or stop conditions; quality claims need actual messages or before/after outputs.",
+  "- Owners route responsibility; they do not lock. Ask one-decision required questions only for exact overlap or blockers; notes are advisory context.",
+  "- Required replies block completion. Owner overlap, broad scope, zero evidence, and aggregate diagnostics are triage, not stop conditions or quality proof.",
   "- Keep internal ids, command names, queue/work labels, hook details, and maintenance text out of user answers unless requested.",
   "- No repo `.agentq/` or `agentq.config.yaml`; runtime state is OS-local."
 ].join("\n");
