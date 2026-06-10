@@ -186,7 +186,7 @@ Uninstall removes only AgentQ-owned marker blocks and hook entries. Existing pro
 
 ## Release Readiness
 
-The repository is private while the public release surface is being prepared.
+The repository is public; npm publication of `agentq` and `@agentq/core` is the remaining release step.
 
 - License: MIT.
 - Publishable packages: `agentq` and `@agentq/core`.

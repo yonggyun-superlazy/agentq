@@ -52,9 +52,6 @@ delivery:
 next: run `agentq next --actor <target>` before finishing; answered evidence will be shown there once resolved.
 $ agentq done-check --actor <target>
 [AGENTQ_INTERNAL_QUEUE_MAINTENANCE]
-audience: agent-internal
-user-facing: false
-Internal shared-work maintenance. Do not quote this block in user-facing answers.
 summary: Shared-work completion check failed.
 after-action: Resolve the required shared-work step, then resume the user's request.
 Do not use this maintenance status as the user-facing answer.
@@ -63,12 +60,8 @@ A required reply or follow-up still blocks completion.
   next: use the shared-work helper with the current actor id
   note: wait for <owner> to respond, or continue only non-overlapping work.
 Use the shared-work helper with the current actor id before final response.
+Internal shared-work maintenance: answer the user's latest requested artifact first. Hide internal ids, command names, and queue/work labels from user text unless asked.
 [/AGENTQ_INTERNAL_QUEUE_MAINTENANCE]
-[USER_FRAME_RESUME]
-Answer the user's latest requested artifact first; do not turn this maintenance into the visible answer.
-Only required replies, exact conflicts, or missing active-work evidence can interrupt it; otherwise keep the smallest local step moving.
-Hide internal ids, command names, queue/work labels, and hook details from user text unless asked.
-[/USER_FRAME_RESUME]
 $ agentq inbox --actor <owner>
 Resolve queue for <owner>
 Required: 1

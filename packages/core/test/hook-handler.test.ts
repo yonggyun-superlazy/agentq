@@ -41,10 +41,8 @@ describe("AgentQ hook handler", () => {
     expect(start.stdout).toContain("Short read-only answers");
     expect(start.stdout).toContain("can answer directly");
     expect(start.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(start.stdout).toContain("user-facing: false");
-    expect(start.stdout).toContain("[USER_FRAME_RESUME]");
+    expect(start.stdout).toContain("Internal shared-work maintenance");
     expect(start.stdout).toContain("latest requested artifact first");
-    expect(start.stdout).toContain("Only required replies, exact conflicts");
     expect(start.stdout).toContain("Hide internal ids, command names");
     const actorId = actorIdFromContext(start.stdout);
 
@@ -79,10 +77,8 @@ describe("AgentQ hook handler", () => {
     expect(stop.code).toBe(0);
     expect(JSON.parse(stop.stdout)).toMatchObject({ decision: "block" });
     expect(JSON.parse(stop.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(JSON.parse(stop.stdout).reason).toContain("[USER_FRAME_RESUME]");
     expect(JSON.parse(stop.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
     expect(JSON.parse(stop.stdout).reason).toContain("latest requested artifact first");
-    expect(JSON.parse(stop.stdout).reason).toContain("Only required replies, exact conflicts");
     expect(JSON.parse(stop.stdout).reason).toContain("Hide internal ids, command names");
   });
 
@@ -107,9 +103,7 @@ describe("AgentQ hook handler", () => {
     expect(compact.stdout).toContain("Shared-work id for edits/handoffs only:");
     expect(compact.stdout).toContain("agentq next --actor");
     expect(compact.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(compact.stdout).toContain("[USER_FRAME_RESUME]");
     expect(compact.stdout).toContain("latest requested artifact first");
-    expect(compact.stdout).toContain("Only required replies, exact conflicts");
     expect(compact.stdout).toContain("Hide internal ids, command names");
     expect(compact.stdout.split("\n").length).toBeLessThanOrEqual(16);
 
@@ -123,9 +117,7 @@ describe("AgentQ hook handler", () => {
     expect(full.stdout).toContain("Internal shared-work id:");
     expect(full.stdout).toContain("agentq next --actor");
     expect(full.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(full.stdout).toContain("[USER_FRAME_RESUME]");
     expect(full.stdout).toContain("latest requested artifact first");
-    expect(full.stdout).toContain("Only required replies, exact conflicts");
     expect(full.stdout).toContain("Hide internal ids, command names");
 
     const off = await runHookHandler({
@@ -138,9 +130,7 @@ describe("AgentQ hook handler", () => {
     expect(off.stdout).toContain("Shared-work note:");
     expect(off.stdout).not.toContain("agentq next --actor");
     expect(off.stdout).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(off.stdout).toContain("[USER_FRAME_RESUME]");
     expect(off.stdout).toContain("latest requested artifact first");
-    expect(off.stdout).toContain("Only required replies, exact conflicts");
     expect(off.stdout).toContain("Hide internal ids, command names");
   });
 
@@ -216,10 +206,8 @@ describe("AgentQ hook handler", () => {
     expect(output.reason).toContain("active work frame");
     expect(output.reason).toContain("Use the shared-work helper for the exact command");
     expect(output.reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(output.reason).toContain("[USER_FRAME_RESUME]");
     expect(output.reason).toContain("Internal shared-work maintenance");
     expect(output.reason).toContain("latest requested artifact first");
-    expect(output.reason).toContain("Only required replies, exact conflicts");
     expect(output.reason).toContain("Hide internal ids, command names");
 
     const store = await resolveWorkspaceStore(workspace, { env });
@@ -728,7 +716,6 @@ describe("AgentQ hook handler", () => {
       reason: expect.stringContaining("Active shared-work item remains open")
     });
     expect(JSON.parse(blocked.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(JSON.parse(blocked.stdout).reason).toContain("[USER_FRAME_RESUME]");
     expect(JSON.parse(blocked.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
     expect(JSON.parse(blocked.stdout).reason).toContain("latest requested artifact first");
 
@@ -929,10 +916,8 @@ describe("AgentQ hook handler", () => {
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq question --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain(`agentq note --actor ${actor.actorId} --to <owner-actor-id> --path src/protocol.ts`);
     expect(output.hookSpecificOutput?.additionalContext).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("[USER_FRAME_RESUME]");
     expect(output.hookSpecificOutput?.additionalContext).toContain("Internal shared-work maintenance");
     expect(output.hookSpecificOutput?.additionalContext).toContain("latest requested artifact first");
-    expect(output.hookSpecificOutput?.additionalContext).toContain("Only required replies, exact conflicts");
     expect(output.hookSpecificOutput?.additionalContext.split("\n").length).toBeLessThanOrEqual(20);
   });
 
