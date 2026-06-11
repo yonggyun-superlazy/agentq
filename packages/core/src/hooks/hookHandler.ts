@@ -199,9 +199,10 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     at: options.now
   });
 
+  const stopHookActive = booleanField(payload, "stop_hook_active");
   const done = await runDoneCheck(store, actorId);
-  const decision = planStopContinuation(done, booleanField(payload, "stop_hook_active"));
-  if (!done.ok) {
+  const decision = planStopContinuation(done, stopHookActive);
+  if (decision.decision === "block") {
     return {
       code: 0,
       stdout: `${JSON.stringify(blockOutput(options.adapter, decision.reason))}\n`,
@@ -210,7 +211,10 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   }
 
   const workDone = await runWorkDoneCheck(store, actorId);
-  if (!workDone.ok) {
+  // Same loop guard as the queue gate: block a stop attempt at most once.
+  // Re-blocking cannot close a work frame the agent already failed to close,
+  // and the harness force-overrides after repeated blocks.
+  if (!workDone.ok && !stopHookActive) {
     return {
       code: 0,
       stdout: `${JSON.stringify(blockOutput(options.adapter, planWorkStopContinuation(workDone)))}\n`,

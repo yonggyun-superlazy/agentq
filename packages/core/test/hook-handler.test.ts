@@ -80,6 +80,19 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(stop.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
     expect(JSON.parse(stop.stdout).reason).toContain("latest requested artifact first");
     expect(JSON.parse(stop.stdout).reason).toContain("Hide internal ids, command names");
+
+    // Retry of the same stop attempt (stop_hook_active=true) must not re-block:
+    // the unresolved reply depends on another actor, and repeated blocks only
+    // trigger the harness force-override loop guard.
+    const stopRetry = await runHookHandler({
+      adapter: "codex",
+      event: "stop",
+      payload: { ...payload, hook_event_name: "Stop", stop_hook_active: true },
+      env,
+      now: "2026-05-18T00:00:03.000Z"
+    });
+    expect(stopRetry.code).toBe(0);
+    expect(JSON.parse(stopRetry.stdout).decision).toBeUndefined();
   });
 
   it("supports compact, full, and off SessionStart context modes", async () => {
@@ -718,6 +731,22 @@ describe("AgentQ hook handler", () => {
     expect(JSON.parse(blocked.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
     expect(JSON.parse(blocked.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
     expect(JSON.parse(blocked.stdout).reason).toContain("latest requested artifact first");
+
+    // The open-work gate also blocks a stop attempt at most once; the retry
+    // (stop_hook_active=true) passes while the work frame stays open.
+    const blockedRetry = await runHookHandler({
+      adapter: "codex",
+      event: "stop",
+      payload: {
+        ...payload,
+        hook_event_name: "Stop",
+        tool_input: { file_path: "src/protocol.ts" },
+        stop_hook_active: true
+      },
+      env,
+      now: "2026-05-18T00:00:02.500Z"
+    });
+    expect(blockedRetry.stdout).toBe("{}\n");
 
     await appendWorkEvidence(store, {
       actorId,

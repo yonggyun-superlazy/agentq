@@ -60,6 +60,19 @@ export function planStopContinuation(
     };
   }
 
+  if (stopHookActive) {
+    // This stop attempt was already blocked once. Blocking again cannot make an
+    // unresolved reply resolvable within the same turn — it may depend on
+    // another actor — and harnesses force-override after repeated blocks
+    // anyway (Claude Code caps consecutive stop-hook blocks). Allow the stop;
+    // the queue state persists and the next turn re-surfaces it.
+    return {
+      decision: "allow",
+      reason: "AgentQ done-check still failing, but this stop attempt was already blocked once; allowing stop to avoid a block loop.",
+      loopGuard: "stop-hook-active"
+    };
+  }
+
   const reason = renderInternalQueueMaintenance({
     summary: "Shared-work completion check failed.",
     afterAction: "Resolve the required shared-work step, then resume the user's request.",
@@ -70,16 +83,14 @@ export function planStopContinuation(
         (item) => `- ${blockingKindLabel(item.kind)}: ${item.summary}`
       ),
       ...result.blocking.flatMap((item) => doneCheckNextLines(item)),
-      stopHookActive
-        ? "A previous stop check is already active; resolve the shared-work step before trying to finish again."
-        : "Use the shared-work helper with the current actor id before final response."
+      "Use the shared-work helper with the current actor id before final response."
     ]
   });
 
   return {
     decision: "block",
     reason,
-    loopGuard: stopHookActive ? "stop-hook-active" : "first-block"
+    loopGuard: "first-block"
   };
 }
 

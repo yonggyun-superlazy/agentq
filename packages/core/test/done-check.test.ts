@@ -127,10 +127,13 @@ describe("done-check engine", () => {
       decision: "block",
       loopGuard: "first-block"
     });
+    // A stop attempt is blocked at most once: when the harness reports the stop
+    // hook is already active, re-blocking only produces a block loop the
+    // harness force-overrides, so the gate must allow while state persists.
     expect(planStopContinuation(result, true)).toMatchObject({
-      decision: "block",
+      decision: "allow",
       loopGuard: "stop-hook-active",
-      reason: expect.stringContaining("previous stop check is already active")
+      reason: expect.stringContaining("allowing stop to avoid a block loop")
     });
   });
 });
