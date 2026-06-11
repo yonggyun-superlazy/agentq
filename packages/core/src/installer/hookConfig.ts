@@ -29,18 +29,16 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
 
 const AGENTQ_COMMAND_PREFIX = "agentq hook ";
-const AGENTQ_PRE_TOOL_MATCHER = "Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write";
+const CODEX_PRE_TOOL_MATCHER = "Edit|MultiEdit|Write";
 const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
 const AGENTQ_HOOK_EVENTS = ["session-start", "pre-tool", "stop"] as const;
 
 function agentQHookCommand(adapter: HookAdapterTarget, event: (typeof AGENTQ_HOOK_EVENTS)[number]): string {
-  if (adapter !== "claude-code") {
-    return `agentq hook ${adapter} ${event}`;
-  }
-
-  const directNode = windowsDirectNodeCommand();
-  if (directNode !== undefined) {
-    return `${directNode} hook ${adapter} ${event}`;
+  if (adapter !== "copilot-cli") {
+    const directNode = windowsDirectNodeCommand();
+    if (directNode !== undefined) {
+      return `${directNode} hook ${adapter} ${event}`;
+    }
   }
 
   return `agentq hook ${adapter} ${event}`;
@@ -109,7 +107,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: "agentq hook codex session-start",
+                command: agentQHookCommand("codex", "session-start"),
                 statusMessage: "Registering AgentQ session",
                 timeout: 10
               }
@@ -119,11 +117,11 @@ const HOOK_TARGETS: readonly HookTarget[] = [
         {
           event: "PreToolUse",
           group: {
-            matcher: AGENTQ_PRE_TOOL_MATCHER,
+            matcher: CODEX_PRE_TOOL_MATCHER,
             hooks: [
               {
                 type: "command",
-                command: "agentq hook codex pre-tool",
+                command: agentQHookCommand("codex", "pre-tool"),
                 statusMessage: "Updating AgentQ active scope",
                 timeout: 10
               }
@@ -136,7 +134,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: "agentq hook codex stop",
+                command: agentQHookCommand("codex", "stop"),
                 statusMessage: "Checking AgentQ required replies",
                 timeout: 10
               }

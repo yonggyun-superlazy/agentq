@@ -9,6 +9,7 @@ import {
 } from "../src/index.js";
 
 const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
+const CODEX_PRE_TOOL_MATCHER = "Edit|MultiEdit|Write";
 
 describe("AgentQ hook config installer", () => {
   it("merges AgentQ hooks without removing existing Codex and Claude hooks", async () => {
@@ -44,13 +45,13 @@ describe("AgentQ hook config installer", () => {
       "python existing-hook.py"
     );
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
-      "agentq hook codex stop"
+      "hook codex stop"
     );
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
-      "agentq hook codex pre-tool"
+      "hook codex pre-tool"
     );
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
-      "\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""
+      `"matcher": "${CODEX_PRE_TOOL_MATCHER}"`
     );
     await expect(readFile(path.join(workspace, ".claude", "settings.json"), "utf8")).resolves.toContain(
       "hook claude-code stop"
@@ -111,13 +112,13 @@ describe("AgentQ hook config installer", () => {
 
     const codexHooks = await readFile(path.join(workspace, ".codex", "hooks.json"), "utf8");
     const claudeHooks = await readFile(path.join(workspace, ".claude", "settings.json"), "utf8");
-    expect(codexHooks).toContain("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\"");
+    expect(codexHooks).toContain(`"matcher": "${CODEX_PRE_TOOL_MATCHER}"`);
     expect(codexHooks).not.toContain("\"matcher\": \"*\"");
     expect(claudeHooks).toContain(`"matcher": "${CLAUDE_CODE_PRE_TOOL_MATCHER}"`);
     expect(claudeHooks).not.toContain("\"matcher\": \"*\"");
   });
 
-  it("uses direct Node Claude hook commands on Windows when an AgentQ entrypoint is available", async () => {
+  it("uses direct Node hook commands on Windows when an AgentQ entrypoint is available", async () => {
     const workspace = await createWorkspace();
     const restoreEnv = setInstallCommandEnv({
       AGENTQ_INSTALL_NODE_EXE: "C:\\Node\\node.exe",
@@ -140,7 +141,7 @@ describe("AgentQ hook config installer", () => {
         ],
         PreToolUse: [
           {
-            matcher: "Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write",
+            matcher: CODEX_PRE_TOOL_MATCHER,
             hooks: [
               {
                 type: "command",
@@ -176,6 +177,14 @@ describe("AgentQ hook config installer", () => {
       await applyHookConfigInstall(workspace);
 
       const claudeHooks = await readFile(path.join(workspace, ".claude", "settings.json"), "utf8");
+      const codexHooks = await readFile(path.join(workspace, ".codex", "hooks.json"), "utf8");
+      const codexSettings = JSON.parse(codexHooks) as {
+        hooks: {
+          SessionStart: Array<{ hooks: Array<{ command: string }> }>;
+          PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string }> }>;
+          Stop: Array<{ hooks: Array<{ command: string }> }>;
+        };
+      };
       const claudeSettings = JSON.parse(claudeHooks) as {
         hooks: {
           SessionStart: Array<{ hooks: Array<{ command: string }> }>;
@@ -184,6 +193,16 @@ describe("AgentQ hook config installer", () => {
         };
       };
       if (process.platform === "win32") {
+        expect(codexSettings.hooks.SessionStart[0]?.hooks[0]?.command).toBe(
+          "\"C:\\Node\\node.exe\" \"C:\\AgentQ\\dist\\main.js\" hook codex session-start"
+        );
+        expect(codexSettings.hooks.PreToolUse[0]?.hooks[0]?.command).toBe(
+          "\"C:\\Node\\node.exe\" \"C:\\AgentQ\\dist\\main.js\" hook codex pre-tool"
+        );
+        expect(codexSettings.hooks.Stop[0]?.hooks[0]?.command).toBe(
+          "\"C:\\Node\\node.exe\" \"C:\\AgentQ\\dist\\main.js\" hook codex stop"
+        );
+        expect(codexHooks).not.toContain("agentq hook codex");
         expect(claudeSettings.hooks.SessionStart[0]?.hooks[0]?.command).toBe(
           "\"C:\\Node\\node.exe\" \"C:\\AgentQ\\dist\\main.js\" hook claude-code session-start"
         );
@@ -195,10 +214,14 @@ describe("AgentQ hook config installer", () => {
         );
         expect(claudeHooks).not.toContain("agentq hook claude-code");
       } else {
+        expect(codexHooks).toContain("agentq hook codex session-start");
+        expect(codexHooks).toContain("agentq hook codex pre-tool");
+        expect(codexHooks).toContain("agentq hook codex stop");
         expect(claudeHooks).toContain("agentq hook claude-code session-start");
         expect(claudeHooks).toContain("agentq hook claude-code pre-tool");
         expect(claudeHooks).toContain("agentq hook claude-code stop");
       }
+      expect(codexSettings.hooks.PreToolUse[0]?.matcher).toBe(CODEX_PRE_TOOL_MATCHER);
       expect(claudeSettings.hooks.PreToolUse[0]?.matcher).toBe(CLAUDE_CODE_PRE_TOOL_MATCHER);
     } finally {
       restoreEnv();

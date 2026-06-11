@@ -50,9 +50,9 @@ assert(installedScopedInstructions.includes("surface only the user-impacting res
 assert(installedScopedInstructions.includes("not stop conditions or quality proof"), "install missed AgentQ coordination-as-stop guard");
 assert(installedScopedInstructions.includes("aggregate diagnostics are triage"), "install missed AgentQ diagnostic evidence boundary");
 assert(agentqMarkerBlock(installedScopedInstructions).split("\n").length <= 16, "installed AgentQ instruction block grew too large");
-assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex stop"), "install missed Codex hook");
-assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("agentq hook codex pre-tool"), "install missed Codex prehook");
-assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Read|Grep|Glob|LS|Bash|Edit|MultiEdit|Write\""), "Codex prehook should include read and mutating tools without matching every tool");
+assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex stop"), "install missed Codex hook");
+assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex pre-tool"), "install missed Codex prehook");
+assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"Edit|MultiEdit|Write\""), "Codex prehook should stay on edit tools to avoid per-read and per-shell hook windows");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code stop"), "install missed Claude hook");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code pre-tool"), "install missed Claude prehook");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("\"matcher\": \"Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit\""), "Claude prehook should avoid read-only tools and include mutating/shell tools");
