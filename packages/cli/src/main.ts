@@ -86,6 +86,7 @@ export interface CommandRuntime {
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
   readonly now: () => string;
+  readonly readStdin?: () => Promise<string>;
 }
 
 const DEFAULT_ACTOR_STALE_AFTER_MS = 3_600_000;
@@ -1380,15 +1381,24 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     throw new Error("hook requires <adapter> <event>");
   }
 
-  const stdin = await readStdin();
+  const stdin = await (runtime.readStdin ?? readStdin)();
   if (stdin.trim().length === 0) {
     return {
-      code: 2,
-      stdout: "",
-      stderr: "agentq: hook requires JSON payload on stdin with cwd and session_id/sessionId. Example: echo {\"session_id\":\"smoke\",\"cwd\":\"<workspace>\"} | agentq hook codex session-start\n"
+      code: 0,
+      stdout: "{}\n",
+      stderr: "agentq: hook received no JSON payload on stdin; skipping AgentQ hook.\n"
     };
   }
-  const payload = JSON.parse(stdin);
+  let payload: unknown;
+  try {
+    payload = JSON.parse(stdin);
+  } catch {
+    return {
+      code: 0,
+      stdout: "{}\n",
+      stderr: "agentq: hook received invalid JSON payload on stdin; skipping AgentQ hook.\n"
+    };
+  }
   return await runHookHandler({
     adapter,
     event,

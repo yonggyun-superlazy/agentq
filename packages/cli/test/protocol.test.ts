@@ -13,6 +13,20 @@ import {
 import { runCommand } from "../src/main.js";
 
 describe("CLI required-response protocol", () => {
+  it("skips non-JSON hook stdin instead of failing the host hook", async () => {
+    const workspace = await createWorkspace("agentq-cli-hook-invalid-json-");
+    const runtime = {
+      ...createRuntime(workspace),
+      readStdin: async () => "not-json\n"
+    };
+
+    await expect(runCommand(["hook", "codex", "session-start"], runtime)).resolves.toEqual({
+      code: 0,
+      stdout: "{}\n",
+      stderr: "agentq: hook received invalid JSON payload on stdin; skipping AgentQ hook.\n"
+    });
+  });
+
   it("rejects required questions that bundle multiple decisions", async () => {
     const workspace = await createWorkspace("agentq-cli-question-quality-");
     const runtime = createRuntime(workspace);

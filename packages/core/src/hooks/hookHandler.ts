@@ -66,8 +66,15 @@ type PayloadObject = { readonly [key: string]: unknown };
 
 export async function runHookHandler(options: HookHandlerOptions): Promise<HookHandlerResult> {
   const payload = asPayloadObject(options.payload);
-  const cwd = stringField(payload, "cwd");
-  const sessionId = sessionIdFromPayload(payload);
+  const cwd = stringFieldOptional(payload, "cwd");
+  const sessionId = sessionIdFromPayloadOptional(payload);
+  if (cwd === undefined || sessionId === undefined) {
+    return {
+      code: 0,
+      stdout: "{}\n",
+      stderr: "agentq: hook payload missing cwd or session_id/sessionId; skipping AgentQ hook.\n"
+    };
+  }
   const store = await openHookStore(cwd, options.env);
 
   if (options.event === "session-start") {
@@ -487,22 +494,8 @@ function asPayloadObject(payload: unknown): PayloadObject {
   return payload as PayloadObject;
 }
 
-function sessionIdFromPayload(payload: PayloadObject): string {
-  const sessionId = stringFieldOptional(payload, "session_id") ?? stringFieldOptional(payload, "sessionId");
-  if (sessionId === undefined) {
-    throw new Error("AgentQ hook payload is missing session_id/sessionId.");
-  }
-
-  return sessionId;
-}
-
-function stringField(payload: PayloadObject, key: string): string {
-  const value = stringFieldOptional(payload, key);
-  if (value === undefined) {
-    throw new Error(`AgentQ hook payload is missing ${key}.`);
-  }
-
-  return value;
+function sessionIdFromPayloadOptional(payload: PayloadObject): string | undefined {
+  return stringFieldOptional(payload, "session_id") ?? stringFieldOptional(payload, "sessionId");
 }
 
 function stringFieldOptional(payload: PayloadObject, key: string): string | undefined {
@@ -523,11 +516,18 @@ function toolNameFromPayload(payload: PayloadObject): string | undefined {
 }
 
 function shouldNudgeForTool(payload: PayloadObject): boolean {
-  const toolName = toolNameFromPayload(payload) ?? "";
-  if (/(write|edit|apply|patch|delete|move|rename)/i.test(toolName)) {
+  const toolNames = new Set<string>();
+  const rootToolName = toolNameFromPayload(payload);
+  if (rootToolName !== undefined) {
+    toolNames.add(rootToolName);
+  }
+  collectNestedToolNameCandidates(payload, toolNames);
+
+  const effectiveToolNames = [...toolNames];
+  if (effectiveToolNames.some(isMutatingToolName)) {
     return true;
   }
-  if (!/(bash|shell|command)/i.test(toolName)) {
+  if (!effectiveToolNames.some(isCommandLikeToolName)) {
     return false;
   }
 
@@ -543,6 +543,38 @@ function shouldNudgeForTool(payload: PayloadObject): boolean {
   }
 
   return !commandList.every(isReadOnlyShellCommand);
+}
+
+function isMutatingToolName(toolName: string): boolean {
+  return /(write|edit|apply|patch|delete|move|rename)/i.test(toolName);
+}
+
+function isCommandLikeToolName(toolName: string): boolean {
+  return /(bash|shell|command|multi_tool_use|parallel)/i.test(toolName);
+}
+
+function collectNestedToolNameCandidates(value: unknown, toolNames: Set<string>, key = ""): void {
+  if (typeof value === "string") {
+    if (/^(tool_name|toolName|recipient_name|recipientName)$/i.test(key)) {
+      toolNames.add(value);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectNestedToolNameCandidates(item, toolNames, key);
+    }
+    return;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  for (const [childKey, childValue] of Object.entries(value)) {
+    collectNestedToolNameCandidates(childValue, toolNames, childKey);
+  }
 }
 
 function isReadOnlyShellCommand(command: string): boolean {

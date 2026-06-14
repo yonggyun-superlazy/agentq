@@ -9,7 +9,7 @@ import {
 } from "../src/index.js";
 
 const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
-const CODEX_PRE_TOOL_MATCHER = "Edit|MultiEdit|Write";
+const CODEX_PRE_TOOL_MATCHER = "apply_patch|shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write";
 
 describe("AgentQ hook config installer", () => {
   it("merges AgentQ hooks without removing existing Codex and Claude hooks", async () => {
@@ -225,6 +225,44 @@ describe("AgentQ hook config installer", () => {
       expect(claudeSettings.hooks.PreToolUse[0]?.matcher).toBe(CLAUDE_CODE_PRE_TOOL_MATCHER);
     } finally {
       restoreEnv();
+    }
+  });
+
+  it("prefers a workspace-local AgentQ entrypoint when installing Windows hooks", async () => {
+    const workspace = await createWorkspace();
+    const workspaceEntrypoint = path.join(workspace, "AgentQ", "packages", "cli", "dist", "main.js");
+    await mkdir(path.dirname(workspaceEntrypoint), { recursive: true });
+    await writeFile(workspaceEntrypoint, "", "utf8");
+    const restoreEnv = setInstallCommandEnv({
+      AGENTQ_INSTALL_NODE_EXE: "C:\\Node\\node.exe"
+    });
+    const previousOverride = process.env.AGENTQ_INSTALL_AGENTQ_MAIN;
+    delete process.env.AGENTQ_INSTALL_AGENTQ_MAIN;
+
+    try {
+      await applyHookConfigInstall(workspace);
+
+      const codexHooks = await readFile(path.join(workspace, ".codex", "hooks.json"), "utf8");
+      const codexSettings = JSON.parse(codexHooks) as {
+        hooks: {
+          Stop: Array<{ hooks: Array<{ command: string }> }>;
+        };
+      };
+      if (process.platform === "win32") {
+        expect(codexSettings.hooks.Stop[0]?.hooks[0]?.command).toBe(
+          `"C:\\Node\\node.exe" "${workspaceEntrypoint}" hook codex stop`
+        );
+        expect(codexHooks).not.toContain("AppData\\\\Roaming\\\\npm\\\\node_modules\\\\agentq");
+      } else {
+        expect(codexHooks).toContain("agentq hook codex stop");
+      }
+    } finally {
+      restoreEnv();
+      if (previousOverride === undefined) {
+        delete process.env.AGENTQ_INSTALL_AGENTQ_MAIN;
+      } else {
+        process.env.AGENTQ_INSTALL_AGENTQ_MAIN = previousOverride;
+      }
     }
   });
 

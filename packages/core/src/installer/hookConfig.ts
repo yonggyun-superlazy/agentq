@@ -21,7 +21,7 @@ interface HookTarget {
   readonly adapter: HookAdapterTarget;
   readonly label: string;
   readonly relativePath: string;
-  readonly buildInstalledConfig: (existing: JsonObject | undefined) => JsonObject;
+  readonly buildInstalledConfig: (existing: JsonObject | undefined, workspaceRoot: string) => JsonObject;
   readonly removeInstalledConfig: (existing: JsonObject | undefined) => JsonObject | null;
 }
 
@@ -29,13 +29,13 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
 
 const AGENTQ_COMMAND_PREFIX = "agentq hook ";
-const CODEX_PRE_TOOL_MATCHER = "Edit|MultiEdit|Write";
+const CODEX_PRE_TOOL_MATCHER = "apply_patch|shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write";
 const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
 const AGENTQ_HOOK_EVENTS = ["session-start", "pre-tool", "stop"] as const;
 
-function agentQHookCommand(adapter: HookAdapterTarget, event: (typeof AGENTQ_HOOK_EVENTS)[number]): string {
+function agentQHookCommand(adapter: HookAdapterTarget, event: (typeof AGENTQ_HOOK_EVENTS)[number], workspaceRoot: string): string {
   if (adapter !== "copilot-cli") {
-    const directNode = windowsDirectNodeCommand();
+    const directNode = windowsDirectNodeCommand(workspaceRoot);
     if (directNode !== undefined) {
       return `${directNode} hook ${adapter} ${event}`;
     }
@@ -44,12 +44,12 @@ function agentQHookCommand(adapter: HookAdapterTarget, event: (typeof AGENTQ_HOO
   return `agentq hook ${adapter} ${event}`;
 }
 
-function windowsDirectNodeCommand(): string | undefined {
+function windowsDirectNodeCommand(workspaceRoot: string): string | undefined {
   if (process.platform !== "win32") {
     return undefined;
   }
 
-  const entrypoint = resolveAgentQMainEntrypoint();
+  const entrypoint = resolveAgentQMainEntrypoint(workspaceRoot);
   if (entrypoint === undefined) {
     return undefined;
   }
@@ -58,10 +58,15 @@ function windowsDirectNodeCommand(): string | undefined {
   return `${quoteCommandArg(nodeExe)} ${quoteCommandArg(entrypoint)}`;
 }
 
-function resolveAgentQMainEntrypoint(): string | undefined {
+function resolveAgentQMainEntrypoint(workspaceRoot: string): string | undefined {
   const override = process.env.AGENTQ_INSTALL_AGENTQ_MAIN;
   if (override !== undefined && override.trim().length > 0) {
     return override;
+  }
+
+  const workspaceEntrypoint = path.join(workspaceRoot, "AgentQ", "packages", "cli", "dist", "main.js");
+  if (existsSync(workspaceEntrypoint)) {
+    return workspaceEntrypoint;
   }
 
   const currentEntrypoint = process.argv[1];
@@ -98,7 +103,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
     adapter: "codex",
     label: "Codex SessionStart/PreToolUse/Stop hook gate",
     relativePath: ".codex/hooks.json",
-    buildInstalledConfig: (existing) =>
+    buildInstalledConfig: (existing, workspaceRoot) =>
       upsertNestedHookConfig(existing, [
         {
           event: "SessionStart",
@@ -107,7 +112,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: agentQHookCommand("codex", "session-start"),
+                command: agentQHookCommand("codex", "session-start", workspaceRoot),
                 statusMessage: "Registering AgentQ session",
                 timeout: 10
               }
@@ -121,7 +126,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: agentQHookCommand("codex", "pre-tool"),
+                command: agentQHookCommand("codex", "pre-tool", workspaceRoot),
                 statusMessage: "Updating AgentQ active scope",
                 timeout: 10
               }
@@ -134,7 +139,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: agentQHookCommand("codex", "stop"),
+                command: agentQHookCommand("codex", "stop", workspaceRoot),
                 statusMessage: "Checking AgentQ required replies",
                 timeout: 10
               }
@@ -148,7 +153,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
     adapter: "claude-code",
     label: "Claude Code SessionStart/PreToolUse/Stop hook gate",
     relativePath: ".claude/settings.json",
-    buildInstalledConfig: (existing) =>
+    buildInstalledConfig: (existing, workspaceRoot) =>
       upsertNestedHookConfig(existing, [
         {
           event: "SessionStart",
@@ -157,7 +162,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: agentQHookCommand("claude-code", "session-start"),
+                command: agentQHookCommand("claude-code", "session-start", workspaceRoot),
                 statusMessage: "Registering AgentQ session",
                 timeout: 10
               }
@@ -171,7 +176,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: agentQHookCommand("claude-code", "pre-tool"),
+                command: agentQHookCommand("claude-code", "pre-tool", workspaceRoot),
                 statusMessage: "Updating AgentQ active scope",
                 timeout: 10
               }
@@ -184,7 +189,7 @@ const HOOK_TARGETS: readonly HookTarget[] = [
             hooks: [
               {
                 type: "command",
-                command: agentQHookCommand("claude-code", "stop"),
+                command: agentQHookCommand("claude-code", "stop", workspaceRoot),
                 statusMessage: "Checking AgentQ required replies",
                 timeout: 10
               }
@@ -261,7 +266,7 @@ async function planHookConfigMutation(
     const beforeConfig = beforeText === undefined ? undefined : parseJsonObject(beforeText, target.relativePath);
     const afterConfig =
       mode === "install"
-        ? target.buildInstalledConfig(beforeConfig)
+        ? target.buildInstalledConfig(beforeConfig, workspaceRoot)
         : target.removeInstalledConfig(beforeConfig);
     const beforeSerialized = beforeConfig === undefined ? undefined : serializeJson(beforeConfig);
     const afterSerialized = afterConfig === null ? undefined : serializeJson(afterConfig);
@@ -306,7 +311,7 @@ async function applyHookConfigMutation(
     const beforeConfig = beforeText === undefined ? undefined : parseJsonObject(beforeText, entry.relativePath);
     const afterConfig =
       mode === "install"
-        ? target.buildInstalledConfig(beforeConfig)
+        ? target.buildInstalledConfig(beforeConfig, workspaceRoot)
         : target.removeInstalledConfig(beforeConfig);
 
     if (afterConfig === null) {

@@ -19,6 +19,24 @@ import {
 } from "../src/index.js";
 
 describe("AgentQ hook handler", () => {
+  it("skips hooks with missing runtime identity instead of failing the agent stop", async () => {
+    for (const event of ["session-start", "pre-tool", "stop"] as const) {
+      const result = await runHookHandler({
+        adapter: "codex",
+        event,
+        payload: {},
+        env: testEnv(await mkdtemp(path.join(os.tmpdir(), "agentq-hook-missing-identity-"))),
+        now: "2026-05-18T00:00:00.000Z"
+      });
+
+      expect(result).toEqual({
+        code: 0,
+        stdout: "{}\n",
+        stderr: "agentq: hook payload missing cwd or session_id/sessionId; skipping AgentQ hook.\n"
+      });
+    }
+  });
+
   it("registers a session and blocks Stop while a required reply is open", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-hook-handler-"));
     const workspace = path.join(tempRoot, "workspace");
@@ -231,6 +249,54 @@ describe("AgentQ hook handler", () => {
     const actorId = actorIdFromSession(session);
     const presence = await readFile(store.layout.actorPresencePath(actorId), "utf8");
     expect(presence).toContain("src/protocol.ts");
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      paths: ["src/protocol.ts"],
+      toolMode: "mutating",
+      nudge: true,
+      nudgeKinds: ["work-adoption"],
+      decision: "block"
+    });
+  });
+
+  it("classifies nested multi-tool shell mutation as mutating work adoption", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-multi-tool-shell-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        session_id: "S-multi-tool-shell",
+        cwd: workspace,
+        hook_event_name: "PreToolUse",
+        tool_name: "multi_tool_use.parallel",
+        tool_input: {
+          tool_uses: [
+            {
+              recipient_name: "functions.shell_command",
+              parameters: {
+                command: "Set-Content -Path src/protocol.ts -Value changed"
+              }
+            }
+          ]
+        }
+      },
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    const output = JSON.parse(result.stdout) as {
+      readonly decision?: string;
+      readonly reason?: string;
+    };
+    expect(output.decision).toBe("block");
+    expect(output.reason).toContain("active work frame");
+
+    const store = await resolveWorkspaceStore(workspace, { env });
     const events = await readDiagnosticEvents(store, 5);
     expect(events[0]).toMatchObject({
       paths: ["src/protocol.ts"],
