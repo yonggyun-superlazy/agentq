@@ -32,13 +32,13 @@ describe("AgentQ hook handler", () => {
       expect(result).toEqual({
         code: 0,
         stdout: "{}\n",
-        stderr: "agentq: hook payload missing cwd or session id; skipping AgentQ hook.\n"
+        stderr: ""
       });
     }
   });
 
-  it("uses Codex runtime fallbacks and namespaced tool names when hook payloads omit legacy fields", async () => {
-    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-hook-runtime-fallback-"));
+  it("uses namespaced tool names when the Codex hook payload has main-path identity", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-hook-main-path-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "src"), { recursive: true });
     const env = testEnv(tempRoot);
@@ -47,6 +47,8 @@ describe("AgentQ hook handler", () => {
       adapter: "codex",
       event: "pre-tool",
       payload: {
+        cwd: workspace,
+        session_id: "S-main-path",
         toolName: "functions.apply_patch",
         toolInput: {
           patch: [
@@ -59,8 +61,6 @@ describe("AgentQ hook handler", () => {
           ].join("\n")
         }
       },
-      defaultCwd: workspace,
-      defaultSessionId: "S-runtime-fallback",
       env,
       now: "2026-05-18T00:00:00.000Z"
     });
@@ -70,7 +70,7 @@ describe("AgentQ hook handler", () => {
 
     const store = await resolveWorkspaceStore(workspace, { env });
     const session = await readFile(
-      store.layout.sessionPath(createAdapterSessionKey("codex", "S-runtime-fallback")),
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S-main-path")),
       "utf8"
     );
     const actorId = actorIdFromSession(session);

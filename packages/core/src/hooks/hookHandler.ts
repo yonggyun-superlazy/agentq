@@ -52,8 +52,6 @@ export interface HookHandlerOptions {
   readonly adapter: HookAdapter;
   readonly event: HookRuntimeEvent;
   readonly payload: unknown;
-  readonly defaultCwd?: string;
-  readonly defaultSessionId?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly now: string;
 }
@@ -68,13 +66,20 @@ type PayloadObject = { readonly [key: string]: unknown };
 
 export async function runHookHandler(options: HookHandlerOptions): Promise<HookHandlerResult> {
   const payload = asPayloadObject(options.payload);
-  const cwd = cwdFromPayloadOptional(payload, options.defaultCwd);
-  const sessionId = sessionIdFromPayloadOptional(payload, options.env, options.defaultSessionId);
+  if (payload === undefined) {
+    return {
+      code: 0,
+      stdout: "{}\n",
+      stderr: ""
+    };
+  }
+  const cwd = cwdFromPayloadOptional(payload);
+  const sessionId = sessionIdFromPayloadOptional(payload);
   if (cwd === undefined || sessionId === undefined) {
     return {
       code: 0,
       stdout: "{}\n",
-      stderr: "agentq: hook payload missing cwd or session id; skipping AgentQ hook.\n"
+      stderr: ""
     };
   }
   const store = await openHookStore(cwd, options.env);
@@ -124,8 +129,6 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
       hookPaths,
       hookResources,
       mutatingTool,
-      fallbackResponsibilities: [`${options.adapter} active tool scope`],
-      fallbackSummary: `${options.adapter} pre-tool scope`,
       now: options.now
     });
     const preToolNudge = mutatingTool
@@ -192,8 +195,6 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     hookPaths: stopPaths,
     hookResources: stopResources,
     mutatingTool: true,
-    fallbackResponsibilities: [`${options.adapter} stop gate`],
-    fallbackSummary: `${options.adapter} stop gate`,
     now: options.now
   });
   await writeHookDiagnostic(store, {
@@ -279,8 +280,6 @@ async function refreshHookPresence(
     readonly hookPaths: readonly string[];
     readonly hookResources: readonly string[];
     readonly mutatingTool: boolean;
-    readonly fallbackResponsibilities: readonly string[];
-    readonly fallbackSummary: string;
     readonly now: string;
   }
 ): Promise<void> {
@@ -488,76 +487,20 @@ function adapterKind(adapter: HookAdapter): AgentKind {
   return adapter;
 }
 
-function asPayloadObject(payload: unknown): PayloadObject {
+function asPayloadObject(payload: unknown): PayloadObject | undefined {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    throw new Error("AgentQ hook payload must be a JSON object.");
+    return undefined;
   }
 
   return payload as PayloadObject;
 }
 
-function cwdFromPayloadOptional(payload: PayloadObject, defaultCwd: string | undefined): string | undefined {
-  return firstStringFieldOptional(payload, [
-    "cwd",
-    "working_directory",
-    "workingDirectory",
-    "workspace_root",
-    "workspaceRoot",
-    "project_path",
-    "projectPath"
-  ]) ?? defaultCwd;
+function cwdFromPayloadOptional(payload: PayloadObject): string | undefined {
+  return stringFieldOptional(payload, "cwd");
 }
 
-function sessionIdFromPayloadOptional(
-  payload: PayloadObject,
-  env: NodeJS.ProcessEnv | undefined,
-  defaultSessionId: string | undefined
-): string | undefined {
-  return firstStringFieldOptional(payload, [
-    "session_id",
-    "sessionId",
-    "conversation_id",
-    "conversationId",
-    "thread_id",
-    "threadId",
-    "interaction_id",
-    "interactionId"
-  ]) ??
-    nestedStringFieldOptional(payload, ["session", "id"]) ??
-    nestedStringFieldOptional(payload, ["conversation", "id"]) ??
-    envStringFieldOptional(env, "AGENTQ_SESSION_ID") ??
-    envStringFieldOptional(env, "CODEX_SESSION_ID") ??
-    envStringFieldOptional(env, "CODEX_CONVERSATION_ID") ??
-    defaultSessionId;
-}
-
-function firstStringFieldOptional(payload: PayloadObject, keys: readonly string[]): string | undefined {
-  for (const key of keys) {
-    const value = stringFieldOptional(payload, key);
-    if (value !== undefined) {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function nestedStringFieldOptional(payload: PayloadObject, keys: readonly string[]): string | undefined {
-  let current: unknown = payload;
-  for (const key of keys) {
-    if (typeof current !== "object" || current === null || Array.isArray(current)) {
-      return undefined;
-    }
-
-    current = (current as PayloadObject)[key];
-  }
-
-  return typeof current === "string" && current.length > 0 ? current : undefined;
-}
-
-function envStringFieldOptional(env: NodeJS.ProcessEnv | undefined, key: string): string | undefined {
-  const value = env?.[key];
-  return value !== undefined && value.length > 0 ? value : undefined;
+function sessionIdFromPayloadOptional(payload: PayloadObject): string | undefined {
+  return stringFieldOptional(payload, "session_id");
 }
 
 function stringFieldOptional(payload: PayloadObject, key: string): string | undefined {
