@@ -22,7 +22,7 @@ describe("CLI required-response protocol", () => {
 
     const result = await runCommand(["hook", "codex", "session-start"], runtime);
     expect(result.code).toBe(0);
-    expect(result.stderr).toContain("using fallback cwd/session");
+    expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Shared-work id for edits/handoffs only:");
   });
 

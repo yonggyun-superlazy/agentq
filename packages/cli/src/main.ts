@@ -1394,7 +1394,7 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     });
     return {
       ...result,
-      stderr: `agentq: hook received no JSON payload on stdin; using fallback cwd/session.\n${result.stderr}`
+      stderr: result.stderr
     };
   }
   let payload: unknown;
@@ -1412,7 +1412,7 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     });
     return {
       ...result,
-      stderr: `agentq: hook received invalid JSON payload on stdin; using fallback cwd/session.\n${result.stderr}`
+      stderr: result.stderr
     };
   }
   return await runHookHandler({
