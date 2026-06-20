@@ -209,6 +209,14 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
     at: options.now
   });
 
+  if (options.adapter === "codex") {
+    return {
+      code: 0,
+      stdout: "{}\n",
+      stderr: ""
+    };
+  }
+
   const stopHookActive = booleanField(payload, "stop_hook_active");
   const done = await runDoneCheck(store, actorId);
   const decision = planStopContinuation(done, stopHookActive);

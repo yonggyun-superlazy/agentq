@@ -85,7 +85,7 @@ describe("AgentQ hook handler", () => {
     });
   });
 
-  it("registers a session and blocks Stop while a required reply is open", async () => {
+  it("registers a session and lets Codex Stop finish while a required reply is open", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-hook-handler-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(workspace, { recursive: true });
@@ -140,16 +140,12 @@ describe("AgentQ hook handler", () => {
       now: "2026-05-18T00:00:02.000Z"
     });
 
-    expect(stop.code).toBe(0);
-    expect(JSON.parse(stop.stdout)).toMatchObject({ decision: "block" });
-    expect(JSON.parse(stop.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(JSON.parse(stop.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
-    expect(JSON.parse(stop.stdout).reason).toContain("latest requested artifact first");
-    expect(JSON.parse(stop.stdout).reason).toContain("Hide internal ids, command names");
+    expect(stop).toEqual({
+      code: 0,
+      stdout: "{}\n",
+      stderr: ""
+    });
 
-    // Retry of the same stop attempt (stop_hook_active=true) must not re-block:
-    // the unresolved reply depends on another actor, and repeated blocks only
-    // trigger the harness force-override loop guard.
     const stopRetry = await runHookHandler({
       adapter: "codex",
       event: "stop",
@@ -157,8 +153,11 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:03.000Z"
     });
-    expect(stopRetry.code).toBe(0);
-    expect(JSON.parse(stopRetry.stdout).decision).toBeUndefined();
+    expect(stopRetry).toEqual({
+      code: 0,
+      stdout: "{}\n",
+      stderr: ""
+    });
   });
 
   it("supports compact, full, and off SessionStart context modes", async () => {
@@ -797,7 +796,7 @@ describe("AgentQ hook handler", () => {
     expect(presence).toContain("src/late-session.ts");
   });
 
-  it("blocks Stop while the actor has active internal work", async () => {
+  it("lets Codex Stop finish while the actor has active internal work", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-work-stop-"));
     const workspace = path.join(tempRoot, "workspace");
     await mkdir(path.join(workspace, "src"), { recursive: true });
@@ -826,7 +825,7 @@ describe("AgentQ hook handler", () => {
       now: "2026-05-18T00:00:01.000Z"
     });
 
-    const blocked = await runHookHandler({
+    const allowed = await runHookHandler({
       adapter: "codex",
       event: "stop",
       payload: {
@@ -838,17 +837,9 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:02.000Z"
     });
-    expect(JSON.parse(blocked.stdout)).toMatchObject({
-      decision: "block",
-      reason: expect.stringContaining("Active shared-work item remains open")
-    });
-    expect(JSON.parse(blocked.stdout).reason).toContain("[AGENTQ_INTERNAL_QUEUE_MAINTENANCE]");
-    expect(JSON.parse(blocked.stdout).reason).toContain("Do not use this maintenance status as the user-facing answer");
-    expect(JSON.parse(blocked.stdout).reason).toContain("latest requested artifact first");
+    expect(allowed.stdout).toBe("{}\n");
 
-    // The open-work gate also blocks a stop attempt at most once; the retry
-    // (stop_hook_active=true) passes while the work frame stays open.
-    const blockedRetry = await runHookHandler({
+    const allowedRetry = await runHookHandler({
       adapter: "codex",
       event: "stop",
       payload: {
@@ -860,7 +851,7 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:02.500Z"
     });
-    expect(blockedRetry.stdout).toBe("{}\n");
+    expect(allowedRetry.stdout).toBe("{}\n");
 
     await appendWorkEvidence(store, {
       actorId,
