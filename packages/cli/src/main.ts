@@ -1383,29 +1383,63 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 
   const stdin = await (runtime.readStdin ?? readStdin)();
   if (stdin.trim().length === 0) {
+    const result = await runHookHandler({
+      adapter,
+      event,
+      payload: fallbackHookPayload(adapter, event, runtime),
+      defaultCwd: runtime.cwd,
+      defaultSessionId: fallbackHookSessionId(adapter, runtime.env),
+      env: runtime.env,
+      now: runtime.now()
+    });
     return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: "agentq: hook received no JSON payload on stdin; skipping AgentQ hook.\n"
+      ...result,
+      stderr: `agentq: hook received no JSON payload on stdin; using fallback cwd/session.\n${result.stderr}`
     };
   }
   let payload: unknown;
   try {
     payload = JSON.parse(stdin);
   } catch {
+    const result = await runHookHandler({
+      adapter,
+      event,
+      payload: fallbackHookPayload(adapter, event, runtime),
+      defaultCwd: runtime.cwd,
+      defaultSessionId: fallbackHookSessionId(adapter, runtime.env),
+      env: runtime.env,
+      now: runtime.now()
+    });
     return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: "agentq: hook received invalid JSON payload on stdin; skipping AgentQ hook.\n"
+      ...result,
+      stderr: `agentq: hook received invalid JSON payload on stdin; using fallback cwd/session.\n${result.stderr}`
     };
   }
   return await runHookHandler({
     adapter,
     event,
     payload,
+    defaultCwd: runtime.cwd,
+    defaultSessionId: fallbackHookSessionId(adapter, runtime.env),
     env: runtime.env,
     now: runtime.now()
   });
+}
+
+function fallbackHookPayload(adapter: HookAdapter, event: HookRuntimeEvent, runtime: CommandRuntime): object {
+  return {
+    cwd: runtime.cwd,
+    session_id: fallbackHookSessionId(adapter, runtime.env),
+    hook_event_name: event,
+    agentq_payload_fallback: true
+  };
+}
+
+function fallbackHookSessionId(adapter: HookAdapter, env: NodeJS.ProcessEnv): string {
+  return env.AGENTQ_SESSION_ID ??
+    env.CODEX_SESSION_ID ??
+    env.CODEX_CONVERSATION_ID ??
+    `${adapter}-hook-fallback`;
 }
 
 async function diagCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {

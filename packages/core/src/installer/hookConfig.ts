@@ -29,7 +29,7 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
 
 const AGENTQ_COMMAND_PREFIX = "agentq hook ";
-const CODEX_PRE_TOOL_MATCHER = "apply_patch|shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write";
+const CODEX_PRE_TOOL_MATCHER = "apply_patch|functions.apply_patch|shell_command|functions.shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write";
 const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
 const AGENTQ_HOOK_EVENTS = ["session-start", "pre-tool", "stop"] as const;
 

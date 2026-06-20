@@ -32,9 +32,57 @@ describe("AgentQ hook handler", () => {
       expect(result).toEqual({
         code: 0,
         stdout: "{}\n",
-        stderr: "agentq: hook payload missing cwd or session_id/sessionId; skipping AgentQ hook.\n"
+        stderr: "agentq: hook payload missing cwd or session id; skipping AgentQ hook.\n"
       });
     }
+  });
+
+  it("uses Codex runtime fallbacks and namespaced tool names when hook payloads omit legacy fields", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "agentq-hook-runtime-fallback-"));
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, "src"), { recursive: true });
+    const env = testEnv(tempRoot);
+
+    const result = await runHookHandler({
+      adapter: "codex",
+      event: "pre-tool",
+      payload: {
+        toolName: "functions.apply_patch",
+        toolInput: {
+          patch: [
+            "*** Begin Patch",
+            "*** Update File: src/protocol.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** End Patch"
+          ].join("\n")
+        }
+      },
+      defaultCwd: workspace,
+      defaultSessionId: "S-runtime-fallback",
+      env,
+      now: "2026-05-18T00:00:00.000Z"
+    });
+
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ decision: "block" });
+
+    const store = await resolveWorkspaceStore(workspace, { env });
+    const session = await readFile(
+      store.layout.sessionPath(createAdapterSessionKey("codex", "S-runtime-fallback")),
+      "utf8"
+    );
+    const actorId = actorIdFromSession(session);
+    const presence = await readFile(store.layout.actorPresencePath(actorId), "utf8");
+    expect(presence).toContain("src/protocol.ts");
+    const events = await readDiagnosticEvents(store, 5);
+    expect(events[0]).toMatchObject({
+      toolName: "functions.apply_patch",
+      paths: ["src/protocol.ts"],
+      toolMode: "mutating",
+      decision: "block"
+    });
   });
 
   it("registers a session and blocks Stop while a required reply is open", async () => {

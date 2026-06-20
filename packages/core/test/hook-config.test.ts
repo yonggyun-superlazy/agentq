@@ -9,7 +9,7 @@ import {
 } from "../src/index.js";
 
 const CLAUDE_CODE_PRE_TOOL_MATCHER = "Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit";
-const CODEX_PRE_TOOL_MATCHER = "apply_patch|shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write";
+const CODEX_PRE_TOOL_MATCHER = "apply_patch|functions.apply_patch|shell_command|functions.shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write";
 
 describe("AgentQ hook config installer", () => {
   it("merges AgentQ hooks without removing existing Codex and Claude hooks", async () => {

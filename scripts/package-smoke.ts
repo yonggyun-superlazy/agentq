@@ -52,7 +52,7 @@ assert(installedScopedInstructions.includes("aggregate diagnostics are triage"),
 assert(agentqMarkerBlock(installedScopedInstructions).split("\n").length <= 16, "installed AgentQ instruction block grew too large");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex stop"), "install missed Codex hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex pre-tool"), "install missed Codex prehook");
-assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"apply_patch|shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write\""), "Codex prehook should include current Codex apply_patch/shell/wrapper tool names");
+assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"apply_patch|functions.apply_patch|shell_command|functions.shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write\""), "Codex prehook should include current Codex apply_patch/shell/wrapper tool names");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code stop"), "install missed Claude hook");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code pre-tool"), "install missed Claude prehook");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("\"matcher\": \"Bash|PowerShell|Edit|MultiEdit|Write|NotebookEdit\""), "Claude prehook should avoid read-only tools and include mutating/shell tools");

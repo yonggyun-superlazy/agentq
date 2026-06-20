@@ -52,6 +52,8 @@ export interface HookHandlerOptions {
   readonly adapter: HookAdapter;
   readonly event: HookRuntimeEvent;
   readonly payload: unknown;
+  readonly defaultCwd?: string;
+  readonly defaultSessionId?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly now: string;
 }
@@ -66,13 +68,13 @@ type PayloadObject = { readonly [key: string]: unknown };
 
 export async function runHookHandler(options: HookHandlerOptions): Promise<HookHandlerResult> {
   const payload = asPayloadObject(options.payload);
-  const cwd = stringFieldOptional(payload, "cwd");
-  const sessionId = sessionIdFromPayloadOptional(payload);
+  const cwd = cwdFromPayloadOptional(payload, options.defaultCwd);
+  const sessionId = sessionIdFromPayloadOptional(payload, options.env, options.defaultSessionId);
   if (cwd === undefined || sessionId === undefined) {
     return {
       code: 0,
       stdout: "{}\n",
-      stderr: "agentq: hook payload missing cwd or session_id/sessionId; skipping AgentQ hook.\n"
+      stderr: "agentq: hook payload missing cwd or session id; skipping AgentQ hook.\n"
     };
   }
   const store = await openHookStore(cwd, options.env);
@@ -494,8 +496,68 @@ function asPayloadObject(payload: unknown): PayloadObject {
   return payload as PayloadObject;
 }
 
-function sessionIdFromPayloadOptional(payload: PayloadObject): string | undefined {
-  return stringFieldOptional(payload, "session_id") ?? stringFieldOptional(payload, "sessionId");
+function cwdFromPayloadOptional(payload: PayloadObject, defaultCwd: string | undefined): string | undefined {
+  return firstStringFieldOptional(payload, [
+    "cwd",
+    "working_directory",
+    "workingDirectory",
+    "workspace_root",
+    "workspaceRoot",
+    "project_path",
+    "projectPath"
+  ]) ?? defaultCwd;
+}
+
+function sessionIdFromPayloadOptional(
+  payload: PayloadObject,
+  env: NodeJS.ProcessEnv | undefined,
+  defaultSessionId: string | undefined
+): string | undefined {
+  return firstStringFieldOptional(payload, [
+    "session_id",
+    "sessionId",
+    "conversation_id",
+    "conversationId",
+    "thread_id",
+    "threadId",
+    "interaction_id",
+    "interactionId"
+  ]) ??
+    nestedStringFieldOptional(payload, ["session", "id"]) ??
+    nestedStringFieldOptional(payload, ["conversation", "id"]) ??
+    envStringFieldOptional(env, "AGENTQ_SESSION_ID") ??
+    envStringFieldOptional(env, "CODEX_SESSION_ID") ??
+    envStringFieldOptional(env, "CODEX_CONVERSATION_ID") ??
+    defaultSessionId;
+}
+
+function firstStringFieldOptional(payload: PayloadObject, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = stringFieldOptional(payload, key);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function nestedStringFieldOptional(payload: PayloadObject, keys: readonly string[]): string | undefined {
+  let current: unknown = payload;
+  for (const key of keys) {
+    if (typeof current !== "object" || current === null || Array.isArray(current)) {
+      return undefined;
+    }
+
+    current = (current as PayloadObject)[key];
+  }
+
+  return typeof current === "string" && current.length > 0 ? current : undefined;
+}
+
+function envStringFieldOptional(env: NodeJS.ProcessEnv | undefined, key: string): string | undefined {
+  const value = env?.[key];
+  return value !== undefined && value.length > 0 ? value : undefined;
 }
 
 function stringFieldOptional(payload: PayloadObject, key: string): string | undefined {

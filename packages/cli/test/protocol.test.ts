@@ -13,18 +13,17 @@ import {
 import { runCommand } from "../src/main.js";
 
 describe("CLI required-response protocol", () => {
-  it("skips non-JSON hook stdin instead of failing the host hook", async () => {
+  it("falls back for non-JSON hook stdin instead of losing AgentQ visibility", async () => {
     const workspace = await createWorkspace("agentq-cli-hook-invalid-json-");
     const runtime = {
       ...createRuntime(workspace),
       readStdin: async () => "not-json\n"
     };
 
-    await expect(runCommand(["hook", "codex", "session-start"], runtime)).resolves.toEqual({
-      code: 0,
-      stdout: "{}\n",
-      stderr: "agentq: hook received invalid JSON payload on stdin; skipping AgentQ hook.\n"
-    });
+    const result = await runCommand(["hook", "codex", "session-start"], runtime);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("using fallback cwd/session");
+    expect(result.stdout).toContain("Shared-work id for edits/handoffs only:");
   });
 
   it("rejects required questions that bundle multiple decisions", async () => {
