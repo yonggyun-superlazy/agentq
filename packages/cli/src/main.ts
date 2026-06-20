@@ -1383,21 +1383,13 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
 
   const stdin = await (runtime.readStdin ?? readStdin)();
   if (stdin.trim().length === 0) {
-    return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: ""
-    };
+    return emptyHookResult(adapter, event);
   }
   let payload: unknown;
   try {
     payload = JSON.parse(stdin);
   } catch {
-    return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: ""
-    };
+    return emptyHookResult(adapter, event);
   }
   return await runHookHandler({
     adapter,
@@ -1406,6 +1398,14 @@ async function hookCommand(argv: readonly string[], runtime: CommandRuntime): Pr
     env: runtime.env,
     now: runtime.now()
   });
+}
+
+function emptyHookResult(adapter: HookAdapter, event: HookRuntimeEvent): CommandResult {
+  return {
+    code: 0,
+    stdout: adapter === "codex" && event === "stop" ? "" : "{}\n",
+    stderr: ""
+  };
 }
 
 async function diagCommand(argv: readonly string[], runtime: CommandRuntime): Promise<CommandResult> {

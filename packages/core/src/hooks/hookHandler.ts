@@ -67,20 +67,12 @@ type PayloadObject = { readonly [key: string]: unknown };
 export async function runHookHandler(options: HookHandlerOptions): Promise<HookHandlerResult> {
   const payload = asPayloadObject(options.payload);
   if (payload === undefined) {
-    return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: ""
-    };
+    return emptyHookResult(options);
   }
   const cwd = cwdFromPayloadOptional(payload);
   const sessionId = sessionIdFromPayloadOptional(payload);
   if (cwd === undefined || sessionId === undefined) {
-    return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: ""
-    };
+    return emptyHookResult(options);
   }
   const store = await openHookStore(cwd, options.env);
 
@@ -210,11 +202,7 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   });
 
   if (options.adapter === "codex") {
-    return {
-      code: 0,
-      stdout: "{}\n",
-      stderr: ""
-    };
+    return emptyHookResult(options);
   }
 
   const stopHookActive = booleanField(payload, "stop_hook_active");
@@ -243,6 +231,14 @@ export async function runHookHandler(options: HookHandlerOptions): Promise<HookH
   return {
     code: 0,
     stdout: "{}\n",
+    stderr: ""
+  };
+}
+
+function emptyHookResult(options: Pick<HookHandlerOptions, "adapter" | "event">): HookHandlerResult {
+  return {
+    code: 0,
+    stdout: options.adapter === "codex" && options.event === "stop" ? "" : "{}\n",
     stderr: ""
   };
 }

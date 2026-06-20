@@ -31,7 +31,7 @@ describe("AgentQ hook handler", () => {
 
       expect(result).toEqual({
         code: 0,
-        stdout: "{}\n",
+        stdout: event === "stop" ? "" : "{}\n",
         stderr: ""
       });
     }
@@ -142,7 +142,7 @@ describe("AgentQ hook handler", () => {
 
     expect(stop).toEqual({
       code: 0,
-      stdout: "{}\n",
+      stdout: "",
       stderr: ""
     });
 
@@ -155,7 +155,7 @@ describe("AgentQ hook handler", () => {
     });
     expect(stopRetry).toEqual({
       code: 0,
-      stdout: "{}\n",
+      stdout: "",
       stderr: ""
     });
   });
@@ -782,7 +782,7 @@ describe("AgentQ hook handler", () => {
     });
 
     expect(stop.code).toBe(0);
-    expect(stop.stdout).toBe("{}\n");
+    expect(stop.stdout).toBe("");
 
     const store = await resolveWorkspaceStore(workspace, { env });
     const session = await readFile(
@@ -837,7 +837,7 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:02.000Z"
     });
-    expect(allowed.stdout).toBe("{}\n");
+    expect(allowed.stdout).toBe("");
 
     const allowedRetry = await runHookHandler({
       adapter: "codex",
@@ -851,7 +851,7 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:02.500Z"
     });
-    expect(allowedRetry.stdout).toBe("{}\n");
+    expect(allowedRetry.stdout).toBe("");
 
     await appendWorkEvidence(store, {
       actorId,
@@ -875,7 +875,7 @@ describe("AgentQ hook handler", () => {
       env,
       now: "2026-05-18T00:00:05.000Z"
     });
-    expect(passed.stdout).toBe("{}\n");
+    expect(passed.stdout).toBe("");
   });
 
   it("does not record whole shell commands as touched paths", async () => {

@@ -26,6 +26,11 @@ describe("CLI required-response protocol", () => {
       expect(result.code).toBe(0);
       expect(result.stderr).toBe("");
       expect(result.stdout).toBe("{}\n");
+
+      const stopResult = await runCommand(["hook", "codex", "stop"], runtime);
+      expect(stopResult.code).toBe(0);
+      expect(stopResult.stderr).toBe("");
+      expect(stopResult.stdout).toBe("");
     }
   });
 

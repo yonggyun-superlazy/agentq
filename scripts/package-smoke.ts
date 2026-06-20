@@ -92,7 +92,7 @@ const unscopedStop = runAgentq(
     stop_hook_active: false
   })
 );
-assert(unscopedStop.trim() === "{}", `Stop hook should not block only on scope weakness, got ${unscopedStop}`);
+assert(unscopedStop === "", `Stop hook should not emit output only on scope weakness, got ${unscopedStop}`);
 const unscopedNext = runAgentq(["next", "--actor", actorId], workspace);
 assert(unscopedNext.includes("Action: refresh your actor scope."), `next should still report broad scope, got ${unscopedNext}`);
 
@@ -118,7 +118,7 @@ const stop = runAgentq(
     stop_hook_active: false
   })
 );
-assert(stop.trim() === "{}", `Stop hook should pass without blockers, got ${stop}`);
+assert(stop === "", `Stop hook should pass without output, got ${stop}`);
 
 const preTool = runAgentq(
   ["hook", "codex", "pre-tool"],
@@ -355,6 +355,11 @@ function hookPayload(command: string): string {
 }
 
 function assertJsonOutput(command: string, output: string): void {
+  if (command.includes(" hook codex stop")) {
+    assert(output === "", `${command} should return empty stdout for a clean Codex Stop: ${output}`);
+    return;
+  }
+
   const parsed = JSON.parse(output) as unknown;
   assert(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed), `${command} returned non-object JSON`);
   if (command.endsWith(" session-start")) {
