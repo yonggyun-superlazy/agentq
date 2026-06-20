@@ -31,8 +31,8 @@ describe("AgentQ doctor", () => {
     expect(report.checks).toContainEqual(
       expect.objectContaining({
         level: "warn",
-        name: "Codex hook gate",
-        detail: expect.stringContaining("active stop gate is not claimed")
+        name: "Codex hook context",
+        detail: expect.stringContaining("Codex session context is not claimed")
       })
     );
   });
@@ -105,9 +105,9 @@ describe("AgentQ doctor", () => {
       path.join(workspace, ".codex", "hooks.json"),
       JSON.stringify({
         hooks: {
-          Stop: [
+          SessionStart: [
             {
-              hooks: [{ type: "command", command: "agentq hook codex stop" }]
+              hooks: [{ type: "command", command: "agentq hook codex session-start" }]
             }
           ]
         }
@@ -123,8 +123,41 @@ describe("AgentQ doctor", () => {
     expect(report.checks).toContainEqual(
       expect.objectContaining({
         level: "warn",
-        name: "Codex hook gate",
+        name: "Codex hook context",
         detail: expect.stringContaining("partial AgentQ hook entries")
+      })
+    );
+  });
+
+  it("fails when a legacy AgentQ Codex Stop hook remains installed", async () => {
+    const tempRoot = await createTempRoot();
+    const workspace = path.join(tempRoot, "workspace");
+    await mkdir(path.join(workspace, ".codex"), { recursive: true });
+    await writeFile(
+      path.join(workspace, ".codex", "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          Stop: [
+            {
+              hooks: [{ type: "command", command: "agentq hook codex stop" }]
+            }
+          ]
+        }
+      }),
+      "utf8"
+    );
+
+    const report = await runDoctor(workspace, {
+      platform: "linux",
+      env: { HOME: tempRoot, XDG_STATE_HOME: path.join(tempRoot, "state") }
+    });
+
+    expect(report.summary).toBe("fail");
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        level: "fail",
+        name: "Codex hook context",
+        detail: expect.stringContaining("deprecated AgentQ hook entries")
       })
     );
   });

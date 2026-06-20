@@ -13,7 +13,7 @@ describe("CLI doctor", () => {
 
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("AgentQ doctor: ok");
-    expect(result.stdout).toContain("Codex hook gate");
+    expect(result.stdout).toContain("Codex hook context");
     expect(result.stdout).toContain(".codex/hooks.json contains all AgentQ hook entries");
     expect(result.stdout).toContain("no repo .agentq directory found");
   });

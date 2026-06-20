@@ -237,7 +237,7 @@ Manual test matrix:
 
 | Agent Surface | Instruction File | Hook Surface | Must Verify |
 |---------------|------------------|--------------|-------------|
-| Codex CLI | `AGENTS.md` | `.codex/hooks.json` | Stop gate blocks unresolved work/replies. |
+| Codex CLI | `AGENTS.md` | `.codex/hooks.json` | SessionStart/PreToolUse provide actor context and scope updates. |
 | Claude Code | `CLAUDE.md` | `.claude/settings.json` | Required inbox is visible and answerable. |
 | Copilot CLI | `.github/instructions/agentq.instructions.md` | `.github/hooks/agentq.json` | Agent stop gate and explicit actor id usage. |
 | Custom CLI | user prompt | manual commands | `enter`, `owners`, `question`, `done-check` flow. |

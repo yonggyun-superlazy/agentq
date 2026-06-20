@@ -70,7 +70,7 @@ agentq done-check --actor <self>
 
 | Surface | Instruction File | Hook File | Evidence To Capture |
 |---------|------------------|-----------|---------------------|
-| Codex CLI | `AGENTS.md` | `.codex/hooks.json` | Stop hook blocks unresolved work/replies; actor id is read from hook context or `agentq actors`. |
+| Codex CLI | `AGENTS.md` | `.codex/hooks.json` | SessionStart/PreToolUse provide actor context and scope updates; actor id is read from hook context or `agentq actors`. |
 | Claude Code | `CLAUDE.md` | `.claude/settings.json` | Inbox question is visible and answered with `respond`; stop hook blocks unresolved state. |
 | Copilot CLI | `.github/instructions/agentq.instructions.md` | `.github/hooks/agentq.json` | Explicit actor id is used; agentStop hook blocks unresolved state. |
 | Custom CLI | external prompt | none/manual | Manual `enter`, `owners`, `question`, `respond`, `done-check` flow works. |

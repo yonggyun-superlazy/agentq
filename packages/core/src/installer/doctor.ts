@@ -24,17 +24,30 @@ export interface DoctorOptions {
   readonly env?: NodeJS.ProcessEnv;
 }
 
-const HOOK_TARGETS = [
+interface HookDoctorTarget {
+  readonly adapter: "codex" | "claude-code" | "copilot-cli";
+  readonly relativePath: string;
+  readonly name: string;
+  readonly commands: readonly string[];
+  readonly remediation: string;
+  readonly missingDetail: string;
+  readonly legacyCommands?: readonly string[];
+  readonly legacyRemediation?: string;
+}
+
+const HOOK_TARGETS: readonly HookDoctorTarget[] = [
   {
     adapter: "codex",
     relativePath: ".codex/hooks.json",
-    name: "Codex hook gate",
+    name: "Codex hook context",
     commands: [
       "agentq hook codex session-start",
-      "agentq hook codex pre-tool",
-      "agentq hook codex stop"
+      "agentq hook codex pre-tool"
     ],
-    remediation: "Run `agentq install --yes` to install Codex SessionStart, PreToolUse, and Stop hooks."
+    legacyCommands: ["agentq hook codex stop"],
+    remediation: "Run `agentq install --yes` to install Codex SessionStart and PreToolUse hooks.",
+    missingDetail: ".codex/hooks.json is not installed; Codex session context is not claimed",
+    legacyRemediation: "Run `agentq install --yes` with this version or remove the AgentQ Codex Stop entry from .codex/hooks.json."
   },
   {
     adapter: "claude-code",
@@ -45,7 +58,8 @@ const HOOK_TARGETS = [
       "agentq hook claude-code pre-tool",
       "agentq hook claude-code stop"
     ],
-    remediation: "Run `agentq install --yes` to install Claude Code SessionStart, PreToolUse, and Stop hooks."
+    remediation: "Run `agentq install --yes` to install Claude Code SessionStart, PreToolUse, and Stop hooks.",
+    missingDetail: ".claude/settings.json is not installed; active stop gate is not claimed"
   },
   {
     adapter: "copilot-cli",
@@ -56,7 +70,8 @@ const HOOK_TARGETS = [
       "agentq hook copilot-cli pre-tool",
       "agentq hook copilot-cli stop"
     ],
-    remediation: "Run `agentq install --yes` to install Copilot sessionStart, preToolUse, and agentStop hooks."
+    remediation: "Run `agentq install --yes` to install Copilot sessionStart, preToolUse, and agentStop hooks.",
+    missingDetail: ".github/hooks/agentq.json is not installed; active agentStop gate is not claimed"
   }
 ] as const;
 
@@ -156,6 +171,17 @@ async function checkHookTargets(workspaceRoot: string): Promise<DoctorCheck[]> {
   for (const target of HOOK_TARGETS) {
     const filePath = path.join(workspaceRoot, target.relativePath);
     const content = await readOptionalText(filePath);
+    const legacyCommands = target.legacyCommands?.filter((command) => contentHasHookCommand(content, command)) ?? [];
+    if (legacyCommands.length > 0) {
+      checks.push({
+        level: "fail",
+        name: target.name,
+        detail: `${target.relativePath} contains deprecated AgentQ hook entries: ${legacyCommands.join(", ")}`,
+        remediation: target.legacyRemediation ?? target.remediation
+      });
+      continue;
+    }
+
     const missingCommands = target.commands.filter((command) => !contentHasHookCommand(content, command));
     if (content !== undefined && missingCommands.length !== target.commands.length) {
       const disabledCheck = disabledHookCheck(target.adapter, target.relativePath, content);
@@ -187,7 +213,7 @@ async function checkHookTargets(workspaceRoot: string): Promise<DoctorCheck[]> {
       name: target.name,
       detail: content !== undefined
         ? `${target.relativePath} exists but AgentQ adapter ownership is not verified in this build`
-        : `${target.relativePath} is not installed; active stop gate is not claimed`,
+        : target.missingDetail,
       remediation: target.remediation
     });
   }
@@ -203,7 +229,7 @@ async function checkCodexProjectHooksFeature(workspaceRoot: string): Promise<Doc
       level: "fail",
       name: "Codex hooks feature",
       detail: `${relativePath} appears to disable hooks`,
-      remediation: "Remove the local hooks=false setting or enable hooks before relying on AgentQ Stop gates."
+      remediation: "Remove the local hooks=false setting or enable hooks before relying on AgentQ Codex hooks."
     };
   }
 

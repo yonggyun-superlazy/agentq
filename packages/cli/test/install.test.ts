@@ -13,7 +13,9 @@ describe("CLI install trust", () => {
     expect(result.stdout).toContain("Mode: no files written");
     expect(result.stdout).toContain("Rollback: agentq uninstall --yes");
     expect(result.stdout).toContain(".codex/hooks.json");
-    expect(result.stdout).toContain("hook codex stop");
+    expect(result.stdout).toContain("hook codex session-start");
+    expect(result.stdout).toContain("hook codex pre-tool");
+    expect(result.stdout).not.toContain("hook codex stop");
     await expect(readFile(path.join(workspace, "AGENTS.md"), "utf8")).rejects.toMatchObject({
       code: "ENOENT"
     });
@@ -33,6 +35,12 @@ describe("CLI install trust", () => {
       "<!-- agentq:begin -->"
     );
     await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
+      "hook codex session-start"
+    );
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.toContain(
+      "hook codex pre-tool"
+    );
+    await expect(readFile(path.join(workspace, ".codex", "hooks.json"), "utf8")).resolves.not.toContain(
       "hook codex stop"
     );
 

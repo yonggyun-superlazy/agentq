@@ -159,7 +159,7 @@ Copilot CLI prompt mode (`copilot -p`) loads repository hook files only when the
 | Surface | Commit? | Purpose |
 |---------|---------|---------|
 | `AGENTS.md` marker | Usually yes | Shared instruction marker for Codex-compatible agents |
-| `.codex/hooks.json` | Team choice | Codex project hook gate |
+| `.codex/hooks.json` | Team choice | Codex project hook context |
 | `CLAUDE.md` marker | Team choice | Claude Code instruction marker |
 | `.claude/settings.json` hook | Team choice | Claude Code project hook gate |
 | `.github/hooks/agentq.json` | Yes for Copilot projects | Copilot hook gate |

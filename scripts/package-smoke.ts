@@ -50,8 +50,9 @@ assert(installedScopedInstructions.includes("surface only the user-impacting res
 assert(installedScopedInstructions.includes("not stop conditions or quality proof"), "install missed AgentQ coordination-as-stop guard");
 assert(installedScopedInstructions.includes("aggregate diagnostics are triage"), "install missed AgentQ diagnostic evidence boundary");
 assert(agentqMarkerBlock(installedScopedInstructions).split("\n").length <= 16, "installed AgentQ instruction block grew too large");
-assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex stop"), "install missed Codex hook");
+assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex session-start"), "install missed Codex session hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex pre-tool"), "install missed Codex prehook");
+assert(!readFile(path.join(workspace, ".codex", "hooks.json")).includes("hook codex stop"), "install left legacy Codex Stop hook");
 assert(readFile(path.join(workspace, ".codex", "hooks.json")).includes("\"matcher\": \"apply_patch|functions.apply_patch|shell_command|functions.shell_command|multi_tool_use.parallel|Edit|MultiEdit|Write\""), "Codex prehook should include current Codex apply_patch/shell/wrapper tool names");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code stop"), "install missed Claude hook");
 assert(readFile(path.join(workspace, ".claude", "settings.json")).includes("hook claude-code pre-tool"), "install missed Claude prehook");
@@ -284,7 +285,7 @@ function assertInstalledHookCommandsExecute(): void {
   const commands = [...new Set(
     hookConfigPaths.flatMap((filePath) => collectAgentQHookCommands(JSON.parse(readFile(filePath))))
   )].sort();
-  assert(commands.length === 9, `expected 9 installed AgentQ hook commands, got ${commands.length}: ${commands.join(", ")}`);
+  assert(commands.length === 8, `expected 8 installed AgentQ hook commands, got ${commands.length}: ${commands.join(", ")}`);
 
   for (const command of commands) {
     const output = runInstalledHookCommand(command, hookPayload(command));
@@ -355,11 +356,6 @@ function hookPayload(command: string): string {
 }
 
 function assertJsonOutput(command: string, output: string): void {
-  if (command.includes(" hook codex stop")) {
-    assert(output === "", `${command} should return empty stdout for a clean Codex Stop: ${output}`);
-    return;
-  }
-
   const parsed = JSON.parse(output) as unknown;
   assert(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed), `${command} returned non-object JSON`);
   if (command.endsWith(" session-start")) {

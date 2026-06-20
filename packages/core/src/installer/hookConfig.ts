@@ -101,10 +101,10 @@ function quoteCommandArg(value: string): string {
 const HOOK_TARGETS: readonly HookTarget[] = [
   {
     adapter: "codex",
-    label: "Codex SessionStart/PreToolUse/Stop hook gate",
+    label: "Codex SessionStart/PreToolUse hook context",
     relativePath: ".codex/hooks.json",
     buildInstalledConfig: (existing, workspaceRoot) =>
-      upsertNestedHookConfig(existing, [
+      upsertNestedHookConfig(removeNestedHookConfig(existing, "codex") ?? {}, [
         {
           event: "SessionStart",
           group: {
@@ -128,19 +128,6 @@ const HOOK_TARGETS: readonly HookTarget[] = [
                 type: "command",
                 command: agentQHookCommand("codex", "pre-tool", workspaceRoot),
                 statusMessage: "Updating AgentQ active scope",
-                timeout: 10
-              }
-            ]
-          }
-        },
-        {
-          event: "Stop",
-          group: {
-            hooks: [
-              {
-                type: "command",
-                command: agentQHookCommand("codex", "stop", workspaceRoot),
-                statusMessage: "Checking AgentQ required replies",
                 timeout: 10
               }
             ]

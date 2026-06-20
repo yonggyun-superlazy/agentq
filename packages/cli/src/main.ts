@@ -2582,7 +2582,6 @@ function renderInstallPlan(
     "Hook commands:",
     "  agentq hook codex session-start",
     "  agentq hook codex pre-tool",
-    "  agentq hook codex stop",
     "  agentq hook claude-code session-start",
     "  agentq hook claude-code pre-tool",
     "  agentq hook claude-code stop",
