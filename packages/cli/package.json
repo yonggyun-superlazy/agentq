@@ -1,0 +1,63 @@
+{
+  "name": "agentq",
+  "version": "0.2.0",
+  "description": "The handshake between coding agents.",
+  "license": "MIT",
+  "author": "Yonggyun Superlazy <seeddl4@gmail.com>",
+  "type": "module",
+  "keywords": [
+    "coding-agent",
+    "agent",
+    "cli",
+    "coordination",
+    "hooks",
+    "queue"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yonggyun-superlazy/agentq.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/yonggyun-superlazy/agentq/issues"
+  },
+  "homepage": "https://github.com/yonggyun-superlazy/agentq#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/**/*.map"
+  ],
+  "bin": {
+    "agentq": "./dist/main.js"
+  },
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    },
+    "./adapters/codex": {
+      "types": "./dist/adapters/codex.d.ts",
+      "import": "./dist/adapters/codex.js"
+    },
+    "./adapters/claude": {
+      "types": "./dist/adapters/claude.d.ts",
+      "import": "./dist/adapters/claude.js"
+    }
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentq/core": "workspace:0.2.0",
+    "smol-toml": "^1.7.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
