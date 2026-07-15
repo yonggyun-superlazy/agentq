@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { runCommand, type CommandResult, type CommandRuntime } from "../src/main.js";
+import { expectedHookEntry } from "../src/installer/hookConfig.js";
 
 describe("project-local installer", () => {
   it("defaults to an all-adapter dry-run that writes nothing", async () => {
@@ -50,25 +51,19 @@ describe("project-local installer", () => {
     const claude = JSON.parse(await readFile(claudePath, "utf8"));
     expect(codex.keep).toBe(true);
     expect(claude.keep).toBe(true);
-    expect(codex.hooks.SessionStart).toContainEqual(ownedHook(
-      "startup|resume",
-      `${fixture.handlerCommand} hook codex session-start`,
-      true
-    ));
-    expect(codex.hooks.PreToolUse).toContainEqual(ownedHook(
-      "apply_patch",
-      `${fixture.handlerCommand} hook codex pre-tool-use`,
-      true
-    ));
+    expect(codex.hooks.SessionStart).toContainEqual(
+      expectedHookEntry("codex", "SessionStart", fixture.handlerCommand)
+    );
+    expect(codex.hooks.PreToolUse).toContainEqual(
+      expectedHookEntry("codex", "PreToolUse", fixture.handlerCommand)
+    );
     expect(claude.hooks.SessionStart).toContainEqual(ownedHook(
       "startup|resume",
-      `${fixture.handlerCommand} hook claude session-start`,
-      false
+      `${fixture.handlerCommand} hook claude session-start`
     ));
     expect(claude.hooks.PreToolUse).toContainEqual(ownedHook(
       "Edit|Write",
-      `${fixture.handlerCommand} hook claude pre-tool-use`,
-      false
+      `${fixture.handlerCommand} hook claude pre-tool-use`
     ));
     expect(Object.keys(codex.hooks).sort()).toEqual(["PreToolUse", "SessionStart"]);
     expect(Object.keys(claude.hooks).sort()).toEqual([
@@ -76,15 +71,15 @@ describe("project-local installer", () => {
       "PreToolUse",
       "SessionStart"
     ]);
-    const ownedText = JSON.stringify([
+    const ownedCommandText = JSON.stringify([
       ...codex.hooks.SessionStart,
       ...codex.hooks.PreToolUse.filter((entry: unknown) =>
         JSON.stringify(entry).includes(fixture.handlerCommand)
       ),
       ...claude.hooks.SessionStart,
       ...claude.hooks.PreToolUse
-    ]);
-    expect(ownedText).not.toMatch(/Stop|Shell|PowerShell|Read\||status|marker|mcp|co[p]ilot/i);
+    ].map((entry: any) => entry.hooks[0].command));
+    expect(ownedCommandText).not.toMatch(/Stop|Shell|PowerShell|Read\||status|marker|mcp|co[p]ilot/i);
     await expect(
       readFile(path.join(fixture.workspace, ".codex", "config.toml"), "utf8")
     ).resolves.toBe("[features]\nhooks = true\n");
@@ -160,6 +155,75 @@ describe("project-local installer", () => {
     expect(await snapshot(fixture.root)).toEqual(before);
   });
 
+  it("replaces legacy Codex Windows commands without duplicating owned hooks", async () => {
+    const fixture = await createFixture();
+    const hooksPath = path.join(fixture.workspace, ".codex", "hooks.json");
+    await writeJson(hooksPath, {
+      keep: true,
+      hooks: {
+        SessionStart: [
+          legacyCodexHook("SessionStart", fixture.handlerCommand),
+          { matcher: "resume", hooks: [{ type: "command", command: "user-session" }] }
+        ],
+        PreToolUse: [
+          legacyCodexHook("PreToolUse", fixture.handlerCommand),
+          { matcher: "apply_patch", hooks: [{ type: "command", command: "user-tool" }] }
+        ]
+      }
+    });
+
+    await expect(
+      runCommand(["install", "--adapter", "codex", "--yes"], fixture.runtime)
+    ).resolves.toMatchObject({ code: 0 });
+
+    const installed = JSON.parse(await readFile(hooksPath, "utf8"));
+    expect(ownedEntries(installed.hooks.SessionStart, fixture.handlerCommand)).toEqual([
+      expectedHookEntry("codex", "SessionStart", fixture.handlerCommand)
+    ]);
+    expect(ownedEntries(installed.hooks.PreToolUse, fixture.handlerCommand)).toEqual([
+      expectedHookEntry("codex", "PreToolUse", fixture.handlerCommand)
+    ]);
+    expect(installed.hooks.SessionStart).toContainEqual({
+      matcher: "resume",
+      hooks: [{ type: "command", command: "user-session" }]
+    });
+    expect(installed.hooks.PreToolUse).toContainEqual({
+      matcher: "apply_patch",
+      hooks: [{ type: "command", command: "user-tool" }]
+    });
+
+    const once = await snapshot(fixture.root);
+    await expect(
+      runCommand(["install", "--adapter", "codex", "--yes"], fixture.runtime)
+    ).resolves.toMatchObject({ code: 0 });
+    expect(await snapshot(fixture.root)).toEqual(once);
+  });
+
+  it("removes legacy Codex Windows commands while preserving user hooks", async () => {
+    const fixture = await createFixture();
+    const hooksPath = path.join(fixture.workspace, ".codex", "hooks.json");
+    await writeJson(hooksPath, {
+      hooks: {
+        SessionStart: [
+          legacyCodexHook("SessionStart", fixture.handlerCommand),
+          { matcher: "resume", hooks: [{ type: "command", command: "user-session" }] }
+        ],
+        PreToolUse: [legacyCodexHook("PreToolUse", fixture.handlerCommand)]
+      }
+    });
+
+    await expect(
+      runCommand(["uninstall", "--adapter", "codex", "--yes"], fixture.runtime)
+    ).resolves.toMatchObject({ code: 0 });
+
+    const uninstalled = JSON.parse(await readFile(hooksPath, "utf8"));
+    expect(uninstalled.hooks).toEqual({
+      SessionStart: [
+        { matcher: "resume", hooks: [{ type: "command", command: "user-session" }] }
+      ]
+    });
+  });
+
   it("preserves a valid dotted-key Codex feature config byte-for-byte", async () => {
     const fixture = await createFixture();
     const configPath = path.join(fixture.workspace, ".codex", "config.toml");
@@ -215,17 +279,41 @@ async function createFixture(): Promise<Fixture> {
   };
 }
 
-function ownedHook(matcher: string, command: string, codex: boolean) {
+function ownedHook(matcher: string, command: string) {
   return {
     matcher,
     hooks: [
       {
         type: "command",
-        command,
-        ...(codex ? { commandWindows: command } : {})
+        command
       }
     ]
   };
+}
+
+function legacyCodexHook(
+  event: "SessionStart" | "PreToolUse",
+  handlerCommand: string
+): Record<string, unknown> {
+  const command = `${handlerCommand} hook codex ${event === "SessionStart" ? "session-start" : "pre-tool-use"}`;
+  return {
+    matcher: event === "SessionStart" ? "startup|resume" : "apply_patch",
+    hooks: [{ type: "command", command, commandWindows: command }]
+  };
+}
+
+function ownedEntries(entries: readonly unknown[], handlerCommand: string): readonly unknown[] {
+  return entries.filter((entry) => {
+    if (typeof entry !== "object" || entry === null) {
+      return false;
+    }
+    const hooks = (entry as Record<string, unknown>).hooks;
+    if (!Array.isArray(hooks) || typeof hooks[0] !== "object" || hooks[0] === null) {
+      return false;
+    }
+    const command = (hooks[0] as Record<string, unknown>).command;
+    return typeof command === "string" && command.startsWith(handlerCommand);
+  });
 }
 
 function resultJson(result: CommandResult): Record<string, any> {

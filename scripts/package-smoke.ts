@@ -119,12 +119,10 @@ const claudeConfig = JSON.parse(readFileSync(claudeConfigPath, "utf8"));
 assertOwnedHookShape(codexConfig, "codex");
 assertOwnedHookShape(claudeConfig, "claude");
 
-const codexCommands = ownedCommands(codexConfig);
-const claudeCommands = ownedCommands(claudeConfig);
-assert(codexCommands.length === 2, `expected two Codex hook commands, got ${codexCommands.length}`);
-assert(claudeCommands.length === 2, `expected two Claude hook commands, got ${claudeCommands.length}`);
-assertQuietHook(
-  commandFor(codexCommands, "session-start"),
+const codexCommandField = process.platform === "win32" ? "commandWindows" : "command";
+const assertCodexHook = process.platform === "win32" ? assertQuietPowerShellHook : assertQuietHook;
+assertCodexHook(
+  commandFor(codexConfig, "SessionStart", codexCommandField),
   {
     session_id: "session-a",
     ["trans" + "cript_path"]: null,
@@ -135,8 +133,8 @@ assertQuietHook(
     source: "startup"
   }
 );
-assertQuietHook(
-  commandFor(codexCommands, "pre-tool-use"),
+assertCodexHook(
+  commandFor(codexConfig, "PreToolUse", codexCommandField),
   {
     session_id: "session-a",
     turn_id: "turn-a",
@@ -153,7 +151,7 @@ assertQuietHook(
   }
 );
 assertQuietHook(
-  commandFor(claudeCommands, "session-start"),
+  commandFor(claudeConfig, "SessionStart", "command"),
   {
     session_id: "session-b",
     ["trans" + "cript_path"]: path.join(workspace, "trans" + "cript.jsonl"),
@@ -163,7 +161,7 @@ assertQuietHook(
   }
 );
 assertQuietHook(
-  commandFor(claudeCommands, "pre-tool-use"),
+  commandFor(claudeConfig, "PreToolUse", "command"),
   {
     session_id: "session-b",
     ["trans" + "cript_path"]: path.join(workspace, "trans" + "cript.jsonl"),
@@ -224,6 +222,21 @@ function assertQuietHook(command: string, payload: unknown): void {
     stdio: ["pipe", "pipe", "pipe"]
   });
   assert(output === "", `hook output was not byte-empty: ${JSON.stringify(output)}`);
+}
+
+function assertQuietPowerShellHook(command: string, payload: unknown): void {
+  const output = execFileSync(
+    "pwsh",
+    ["-NoProfile", "-NonInteractive", "-Command", command],
+    {
+      cwd: workspace,
+      encoding: "utf8",
+      env: commandEnv(),
+      input: JSON.stringify(payload),
+      stdio: ["pipe", "pipe", "pipe"]
+    }
+  );
+  assert(output === "", `PowerShell hook output was not byte-empty: ${JSON.stringify(output)}`);
 }
 
 function commandEnv(): NodeJS.ProcessEnv {
@@ -321,21 +334,29 @@ function assertOwnedHookShape(config: any, adapter: "codex" | "claude"): void {
     hooks.PreToolUse[0].matcher === (adapter === "codex" ? "apply_patch" : "Edit|Write"),
     `${adapter} PreToolUse matcher mismatch`
   );
-  const text = JSON.stringify(config);
-  assertNoMatch(text, /\b(?:Stop|Bash|PowerShell|Read|MultiEdit|MCP|Co[p]ilot)\b/i, "broad installed hook");
-  assertNoMatch(text, /marker|AGENTS\.md|CLAUDE\.md/i, "instruction marker");
+  const boundaryText = JSON.stringify({
+    events: Object.keys(hooks),
+    matchers: [hooks.SessionStart[0].matcher, hooks.PreToolUse[0].matcher]
+  });
+  assertNoMatch(
+    boundaryText,
+    /\b(?:Stop|Bash|PowerShell|Read|MultiEdit|MCP|Co[p]ilot)\b/i,
+    "broad installed hook"
+  );
+  const commandText = JSON.stringify([
+    hooks.SessionStart[0].hooks[0].command,
+    hooks.PreToolUse[0].hooks[0].command
+  ]);
+  assertNoMatch(commandText, /marker|AGENTS\.md|CLAUDE\.md/i, "instruction marker");
 }
 
-function ownedCommands(config: any): string[] {
-  return [
-    ...config.hooks.SessionStart,
-    ...config.hooks.PreToolUse
-  ].map((entry: any) => String(entry.hooks[0].command));
-}
-
-function commandFor(commands: readonly string[], suffix: string): string {
-  const command = commands.find((candidate) => candidate.endsWith(` ${suffix}`));
-  assert(command !== undefined, `missing installed ${suffix} command`);
+function commandFor(
+  config: any,
+  event: "SessionStart" | "PreToolUse",
+  field: "command" | "commandWindows"
+): string {
+  const command = config.hooks[event]?.[0]?.hooks?.[0]?.[field];
+  assert(typeof command === "string", `missing installed ${event} ${field}`);
   return command;
 }
 

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -89,11 +90,16 @@ export function expectedHookEntry(
   event: "SessionStart" | "PreToolUse",
   handlerCommand: string
 ): Record<string, unknown> {
-  const command = `${handlerCommand} hook ${adapter} ${event === "SessionStart" ? "session-start" : "pre-tool-use"}`;
+  const eventName = event === "SessionStart" ? "session-start" : "pre-tool-use";
+  const command = `${handlerCommand} hook ${adapter} ${eventName}`;
   const hook = {
     type: "command",
     command,
-    ...(adapter === "codex" ? { commandWindows: command } : {})
+    ...(adapter === "codex"
+      ? {
+          commandWindows: codexWindowsCommand(handlerCommand, ["hook", adapter, eventName])
+        }
+      : {})
   };
   return {
     matcher:
@@ -194,9 +200,20 @@ function addOwnedEntries(
     }
     const entries = (existing ?? []) as unknown[];
     const owned = expectedHookEntry(adapter, event, handlerCommand);
-    if (!entries.some((entry) => deepEqual(entry, owned))) {
-      hooks[event] = [...entries, owned];
-    }
+    const legacy = legacyCodexHookEntry(adapter, event, handlerCommand);
+    const hasOwned = entries.some((entry) => deepEqual(entry, owned));
+    let replacedLegacy = false;
+    const next = entries.flatMap((entry) => {
+      if (legacy !== null && deepEqual(entry, legacy)) {
+        if (!hasOwned && !replacedLegacy) {
+          replacedLegacy = true;
+          return [owned];
+        }
+        return [];
+      }
+      return [entry];
+    });
+    hooks[event] = hasOwned || replacedLegacy ? next : [...next, owned];
   }
 }
 
@@ -222,7 +239,10 @@ function removeOwnedEntries(
       throw new HookConfigError("invalid_hook_config", `${filePath}: hooks.${event} must be an array`);
     }
     const owned = expectedHookEntry(adapter, event, handlerCommand);
-    const remaining = existing.filter((entry) => !deepEqual(entry, owned));
+    const legacy = legacyCodexHookEntry(adapter, event, handlerCommand);
+    const remaining = existing.filter(
+      (entry) => !deepEqual(entry, owned) && (legacy === null || !deepEqual(entry, legacy))
+    );
     if (remaining.length === 0) {
       delete hooks[event];
     } else {
@@ -383,6 +403,90 @@ function assertAbsoluteHandler(handlerCommand: string): void {
       "handler command must begin with a quoted absolute executable"
     );
   }
+}
+
+function legacyCodexHookEntry(
+  adapter: FirstPartyAdapter,
+  event: "SessionStart" | "PreToolUse",
+  handlerCommand: string
+): Record<string, unknown> | null {
+  if (adapter !== "codex") {
+    return null;
+  }
+  const command = `${handlerCommand} hook codex ${event === "SessionStart" ? "session-start" : "pre-tool-use"}`;
+  return {
+    matcher: event === "SessionStart" ? "startup|resume" : "apply_patch",
+    hooks: [{ type: "command", command, commandWindows: command }]
+  };
+}
+
+function codexWindowsCommand(
+  handlerCommand: string,
+  hookArguments: readonly string[]
+): string {
+  const invocation = [...parseHandlerCommand(handlerCommand), ...hookArguments]
+    .map(powerShellLiteral)
+    .join(" ");
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `& ${invocation}`,
+    "$hookSucceeded = $?",
+    "$hookExitCode = $LASTEXITCODE",
+    "if ($null -ne $hookExitCode) { exit $hookExitCode }",
+    "if ($hookSucceeded) { exit 0 }",
+    "exit 1"
+  ].join("\n");
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`;
+}
+
+function parseHandlerCommand(handlerCommand: string): readonly string[] {
+  const parts: string[] = [];
+  let index = 0;
+  while (index < handlerCommand.length) {
+    while (handlerCommand[index] === " ") {
+      index += 1;
+    }
+    if (handlerCommand[index] !== '"') {
+      throw new HookConfigError(
+        "invalid_handler_command",
+        "handler command parts must be double-quoted"
+      );
+    }
+    index += 1;
+    let part = "";
+    let closed = false;
+    while (index < handlerCommand.length) {
+      const current = handlerCommand[index];
+      if (current === '"') {
+        index += 1;
+        closed = true;
+        break;
+      }
+      if (current === "\\" && handlerCommand[index + 1] === '"') {
+        part += '"';
+        index += 2;
+        continue;
+      }
+      part += current;
+      index += 1;
+    }
+    if (!closed || (index < handlerCommand.length && handlerCommand[index] !== " ")) {
+      throw new HookConfigError(
+        "invalid_handler_command",
+        "handler command contains an invalid quoted part"
+      );
+    }
+    parts.push(part);
+  }
+  if (parts.length === 0) {
+    throw new HookConfigError("invalid_handler_command", "handler command is empty");
+  }
+  return parts;
+}
+
+function powerShellLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function deepEqual(left: unknown, right: unknown): boolean {
